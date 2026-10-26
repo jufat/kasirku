@@ -24,6 +24,10 @@ import { usePOS } from '../../context/POSContext';
 
 const PRESET_LOGOS = [
   {
+    name: 'Brother Ju-Fat Official (jF)',
+    data: '/assets/aistudio/logo_f5879a0f.png',
+  },
+  {
     name: 'Ju-Fat Emerald Emblem',
     data: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="%230d9488"/><circle cx="50" cy="50" r="40" stroke="%23facc15" stroke-width="4" stroke-dasharray="6 4" fill="none"/><text x="50" y="58" font-family="system-ui, sans-serif" font-weight="900" font-size="30" fill="%23ffffff" text-anchor="middle">JF</text><text x="50" y="74" font-family="system-ui, sans-serif" font-weight="700" font-size="9" fill="%23fef08a" text-anchor="middle" letter-spacing="2">CELL</text></svg>',
   },

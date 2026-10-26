@@ -109,7 +109,7 @@ export const Sidebar: React.FC = () => {
             <img
               src={storeProfile.logo}
               alt={storeProfile.name}
-              className="w-10 h-10 rounded-xl object-contain bg-white p-0.5 border border-white/40 shadow-md shrink-0"
+              className="w-11 h-11 rounded-xl object-contain bg-white p-1 border border-white/40 shadow-md shrink-0"
             />
           ) : (
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 via-teal-300 to-emerald-500 flex items-center justify-center shadow-md border border-white/30 shrink-0">

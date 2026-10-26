@@ -288,7 +288,19 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [storeProfile, setStoreProfile] = useState<StoreProfile>(() => {
     try {
       const saved = localStorage.getItem('jufat_store_profile');
-      return saved ? JSON.parse(saved) : INITIAL_STORE_PROFILE;
+      if (saved) {
+        const parsed: StoreProfile = JSON.parse(saved);
+        if (!parsed.logo || parsed.logo === '') {
+          parsed.logo = '/assets/aistudio/logo_f5879a0f.png';
+          try {
+            localStorage.setItem('jufat_store_profile', JSON.stringify(parsed));
+          } catch {
+            // ignore
+          }
+        }
+        return parsed;
+      }
+      return INITIAL_STORE_PROFILE;
     } catch {
       return INITIAL_STORE_PROFILE;
     }

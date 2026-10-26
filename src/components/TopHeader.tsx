@@ -97,7 +97,7 @@ export const TopHeader: React.FC = () => {
           <img
             src={storeProfile.logo}
             alt={storeProfile.name}
-            className="w-8 h-8 md:w-9 md:h-9 rounded-xl object-contain border border-teal-200/80 p-0.5 bg-teal-50/50 shadow-xs shrink-0"
+            className="w-8 h-8 md:w-9 md:h-9 rounded-xl object-contain border border-teal-200/80 p-1 bg-white shadow-xs shrink-0"
           />
         ) : null}
 

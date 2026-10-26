@@ -19,7 +19,7 @@ export const INITIAL_STORE_PROFILE: StoreProfile = {
   address: 'Jl. Raya Sukamaju No. 128 (Depan Pasar Induk)',
   phone: '0812-3456-7890 / 0858-1122-3344',
   receiptFooter: 'Terima kasih atas kunjungan Anda! Barang bergaransi wajib menyertakan nota ini.',
-  logo: '',
+  logo: '/assets/aistudio/logo_f5879a0f.png',
   isDemoMode: true,
 };
 
