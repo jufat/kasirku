@@ -9,6 +9,9 @@ import {
   Bell,
   Search,
   Menu,
+  Cloud,
+  RefreshCw,
+  Smartphone,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -24,6 +27,10 @@ export const TopHeader: React.FC = () => {
     storeProfile,
     lastSavedTime,
     setIsMobileSidebarOpen,
+    syncCode,
+    setIsSyncModalOpen,
+    isSyncing,
+    syncStatus,
   } = usePOS();
 
   // Real-time Indonesian clock
@@ -189,6 +196,40 @@ export const TopHeader: React.FC = () => {
         >
           <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
           <span className="hidden sm:inline">Catat Kas</span>
+        </button>
+
+        {/* Sync PC & HP Modal Button */}
+        <button
+          onClick={() => setIsSyncModalOpen(true)}
+          className={`flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 ${
+            syncCode
+              ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
+              : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-900'
+          }`}
+          title={
+            syncCode
+              ? `Tersinkron dengan Kode ${syncCode}. Klik untuk membuka menu sinkronisasi.`
+              : 'Sinkronisasi Data PC dan Smartphone HP dengan Kode'
+          }
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${
+              isSyncing
+                ? 'animate-spin text-teal-600'
+                : syncCode
+                ? 'text-emerald-600'
+                : 'text-indigo-600'
+            }`}
+          />
+          <span className="hidden sm:inline">
+            {syncCode ? `Sync: ${syncCode}` : 'Sinkron PC & HP'}
+          </span>
+          <span className="sm:hidden text-[10px] font-mono font-extrabold">
+            {syncCode ? syncCode : 'Sync'}
+          </span>
+          {syncCode && (
+            <span className="hidden md:inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          )}
         </button>
       </div>
     </header>

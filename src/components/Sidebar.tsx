@@ -17,6 +17,9 @@ import {
   CreditCard,
   Sparkles,
   X,
+  Cloud,
+  RefreshCw,
+  Smartphone,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -32,6 +35,9 @@ export const Sidebar: React.FC = () => {
     products,
     isMobileSidebarOpen,
     setIsMobileSidebarOpen,
+    syncCode,
+    setIsSyncModalOpen,
+    isSyncing,
   } = usePOS();
 
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
@@ -294,6 +300,42 @@ export const Sidebar: React.FC = () => {
               );
             })}
           </nav>
+        </div>
+
+        {/* Sync PC & HP Feature Highlight Card */}
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              setIsSyncModalOpen(true);
+              setIsMobileSidebarOpen(false);
+            }}
+            className="w-full p-3 rounded-2xl bg-gradient-to-br from-teal-950/40 to-emerald-950/50 border border-teal-300/30 hover:border-teal-200/60 transition group text-left cursor-pointer shadow-md"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-teal-400/20 text-teal-200 flex items-center justify-center shrink-0">
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                </div>
+                <span className="text-xs font-bold text-white leading-tight">
+                  Sinkron PC & HP
+                </span>
+              </div>
+              <span
+                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded font-mono ${
+                  syncCode
+                    ? 'bg-emerald-400 text-emerald-950 ring-1 ring-emerald-300'
+                    : 'bg-white/20 text-teal-100'
+                }`}
+              >
+                {syncCode ? syncCode : 'KODE'}
+              </span>
+            </div>
+            <p className="text-[11px] text-teal-100 leading-snug">
+              {syncCode
+                ? 'Terhubung! Data kasir, stok & mutasi tersinkronisasi.'
+                : 'Hubungkan HP kasir dengan PC via 6 digit kode atau QR.'}
+            </p>
+          </button>
         </div>
       </div>
 

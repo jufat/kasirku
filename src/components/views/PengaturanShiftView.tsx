@@ -19,6 +19,10 @@ import {
   Sparkles,
   ArrowRight,
   HardDrive,
+  Smartphone,
+  Cloud,
+  QrCode,
+  Wifi,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 
@@ -55,6 +59,16 @@ export const PengaturanShiftView: React.FC = () => {
     exportBackupJSON,
     importBackupJSON,
     resetAllDemoData,
+    syncCode,
+    setIsSyncModalOpen,
+    isSyncing,
+    lastSyncTime,
+    syncStatus,
+    isAutoSyncEnabled,
+    toggleAutoSync,
+    pushDataToCloud,
+    pullDataFromCloud,
+    disconnectSync,
   } = usePOS();
 
   // Store profile form states
@@ -563,6 +577,134 @@ export const PengaturanShiftView: React.FC = () => {
                 </button>
               )}
             </form>
+          </div>
+        </div>
+
+        {/* Card: Sinkronisasi Multi-Perangkat (PC & HP) */}
+        <div className="bg-white rounded-2xl border border-teal-200/90 p-5 shadow-xs space-y-4 lg:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-700 flex items-center justify-center shrink-0">
+                <Smartphone className="w-5 h-5 text-teal-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Sinkronisasi Multi-Perangkat (PC & Smartphone HP)
+                  </h4>
+                  <span
+                    className={`text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full ${
+                      syncCode
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-slate-100 text-slate-600 border border-slate-300'
+                    }`}
+                  >
+                    {syncCode ? `KODE AKTIF: ${syncCode}` : 'BELUM TERHUBUNG'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Sinkronkan katalog produk, penjualan kasir, stok, tiket servis, dan mutasi kas antara PC dan HP secara instan menggunakan kode unik 6 karakter.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsSyncModalOpen(true)}
+              className="px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition cursor-pointer active:scale-95"
+            >
+              <QrCode className="w-4 h-4 text-amber-300" />
+              <span>Buka Menu Sinkron & Scan QR</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Status box */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-xs">
+              <span className="text-slate-500 font-semibold block">Status Sinkronisasi</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    syncCode ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                  }`}
+                />
+                <span className="font-bold text-slate-900 text-sm">
+                  {syncCode ? 'Tersambung ke Cloud Relay' : 'Perangkat Mandiri (Lokal)'}
+                </span>
+              </div>
+              {lastSyncTime && (
+                <p className="text-[11px] text-slate-500 font-mono">
+                  Sinkron terakhir: {lastSyncTime}
+                </p>
+              )}
+              {syncCode && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={disconnectSync}
+                    className="text-[11px] text-red-600 hover:text-red-700 underline font-semibold cursor-pointer"
+                  >
+                    Putuskan Kode Ini
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Auto sync switch */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-xs">
+              <span className="text-slate-500 font-semibold block">Auto-Sync Otomatis (30 Detik)</span>
+              <p className="text-[11px] text-slate-600">
+                Kirim pembaruan kasir & transaksi ke cloud secara otomatis setiap 30 detik saat kode aktif.
+              </p>
+              <div className="pt-1 flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isAutoSyncEnabled}
+                    onChange={(e) => toggleAutoSync(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-600"></div>
+                </label>
+                <span className="text-xs font-bold text-slate-800">
+                  {isAutoSyncEnabled ? 'Auto-Sync Aktif' : 'Nonaktif (Manual)'}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick push action */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-xs flex flex-col justify-between">
+              <div>
+                <span className="text-slate-500 font-semibold block">Aksi Cepat</span>
+                <p className="text-[11px] text-slate-600">
+                  {syncCode
+                    ? `Perbarui data di server dengan kode ${syncCode} sekarang.`
+                    : 'Buat kode baru untuk menghubungkan HP ke PC.'}
+                </p>
+              </div>
+              <div className="pt-2">
+                {syncCode ? (
+                  <button
+                    type="button"
+                    onClick={() => pushDataToCloud()}
+                    disabled={isSyncing}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isSyncing ? 'Mengunggah...' : 'Unggah Data Sekarang'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsSyncModalOpen(true)}
+                    className="w-full py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Cloud className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Buat Kode Sinkronisasi</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

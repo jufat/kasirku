@@ -1,0 +1,18 @@
+{
+  "JF-8468": {
+    "code": "JF-8468",
+    "deviceName": "PC Kasir",
+    "lastUpdated": "26/10/2026, 14.52.20",
+    "timestamp": 1793026340300,
+    "data": {
+      "test": "123",
+      "products": [
+        {
+          "id": "1",
+          "name": "Kabel"
+        }
+      ]
+    },
+    "version": 2
+  }
+}

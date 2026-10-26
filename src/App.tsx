@@ -15,6 +15,7 @@ import { PengaturanShiftView } from './components/views/PengaturanShiftView';
 import { ThermalReceiptModal } from './components/modals/ThermalReceiptModal';
 import { ShiftClosingModal } from './components/modals/ShiftClosingModal';
 import { CashMutationModal } from './components/modals/CashMutationModal';
+import { DataSyncModal } from './components/modals/DataSyncModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 const AppContent: React.FC = () => {
@@ -70,6 +71,7 @@ const AppContent: React.FC = () => {
       <ThermalReceiptModal />
       <ShiftClosingModal />
       <CashMutationModal />
+      <DataSyncModal />
     </div>
   );
 };

@@ -196,6 +196,22 @@ interface POSContextType {
   exportBackupJSON: () => void;
   importBackupJSON: (jsonStr: string) => boolean;
   resetAllDemoData: () => void;
+
+  // PC & HP Data Sync
+  syncCode: string;
+  setSyncCode: (code: string) => void;
+  isSyncModalOpen: boolean;
+  setIsSyncModalOpen: (open: boolean) => void;
+  isSyncing: boolean;
+  lastSyncTime: string;
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+  syncMessage: string;
+  isAutoSyncEnabled: boolean;
+  generateNewSyncCode: () => Promise<{ success: boolean; code?: string; message?: string }>;
+  pushDataToCloud: (targetCode?: string) => Promise<{ success: boolean; message: string }>;
+  pullDataFromCloud: (targetCode: string) => Promise<{ success: boolean; message: string; data?: any }>;
+  disconnectSync: () => void;
+  toggleAutoSync: (enabled: boolean) => void;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -316,6 +332,21 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isCashMutationModalOpen, setIsCashMutationModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Data Sync State (PC & HP Sync)
+  const [syncCode, setSyncCode] = useState<string>(() => {
+    return localStorage.getItem('jufat_sync_code') || '';
+  });
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => {
+    return localStorage.getItem('jufat_last_sync_time') || '';
+  });
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [syncMessage, setSyncMessage] = useState('');
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('jufat_auto_sync') === 'true';
+  });
 
   // Sync back to localStorage
   useEffect(() => {
@@ -1388,6 +1419,238 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStoreProfile(INITIAL_STORE_PROFILE);
   };
 
+  // Helper to gather all store state into payload
+  const getFullStatePayload = () => {
+    return {
+      version: '1.0',
+      syncedAt: new Date().toISOString(),
+      storeProfile,
+      products,
+      categories,
+      transactions,
+      agencyTransactions,
+      atmMiniTransactions,
+      ppobPackages,
+      ppobTransactions,
+      services,
+      mutations,
+      debts,
+      returns,
+      shift,
+    };
+  };
+
+  const applySyncedDataObject = (data: any): boolean => {
+    try {
+      if (data.storeProfile) {
+        setStoreProfile(data.storeProfile);
+        localStorage.setItem('jufat_store_profile', JSON.stringify(data.storeProfile));
+      }
+      if (data.products) {
+        setProducts(data.products);
+        localStorage.setItem('jufat_products', JSON.stringify(data.products));
+      }
+      if (data.categories) {
+        setCategories(data.categories);
+        localStorage.setItem('jufat_categories', JSON.stringify(data.categories));
+      }
+      if (data.transactions) {
+        setTransactions(data.transactions);
+        localStorage.setItem('jufat_transactions', JSON.stringify(data.transactions));
+      }
+      if (data.agencyTransactions) {
+        setAgencyTransactions(data.agencyTransactions);
+        localStorage.setItem('jufat_agency_txs', JSON.stringify(data.agencyTransactions));
+      }
+      if (data.atmMiniTransactions) {
+        setAtmMiniTransactions(data.atmMiniTransactions);
+        localStorage.setItem('jufat_atm_mini_txs', JSON.stringify(data.atmMiniTransactions));
+      }
+      if (data.ppobPackages) {
+        setPpobPackages(data.ppobPackages);
+        localStorage.setItem('jufat_ppob_packages', JSON.stringify(data.ppobPackages));
+      }
+      if (data.ppobTransactions) {
+        setPpobTransactions(data.ppobTransactions);
+        localStorage.setItem('jufat_ppob_txs', JSON.stringify(data.ppobTransactions));
+      }
+      if (data.services) {
+        setServices(data.services);
+        localStorage.setItem('jufat_services', JSON.stringify(data.services));
+      }
+      if (data.mutations) {
+        setMutations(data.mutations);
+        localStorage.setItem('jufat_mutations', JSON.stringify(data.mutations));
+      }
+      if (data.debts) {
+        setDebts(data.debts);
+        localStorage.setItem('jufat_debts', JSON.stringify(data.debts));
+      }
+      if (data.returns) {
+        setReturns(data.returns);
+        localStorage.setItem('jufat_returns', JSON.stringify(data.returns));
+      }
+      if (data.shift) {
+        setShift(data.shift);
+        localStorage.setItem('jufat_shift', JSON.stringify(data.shift));
+      }
+      const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      setLastSavedTime(now);
+      return true;
+    } catch (err) {
+      console.error('Error applying synced data:', err);
+      return false;
+    }
+  };
+
+  const pushDataToCloud = async (targetCode?: string): Promise<{ success: boolean; message: string }> => {
+    const codeToUse = (targetCode || syncCode).trim().toUpperCase();
+    if (!codeToUse) {
+      return { success: false, message: 'Kode sinkronisasi belum dibuat atau kosong.' };
+    }
+    setIsSyncing(true);
+    setSyncStatus('syncing');
+    try {
+      const payload = getFullStatePayload();
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const deviceName = isMobile ? 'Smartphone (HP)' : 'Komputer (PC)';
+
+      const res = await fetch('/api/sync/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: codeToUse, deviceName, data: payload }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setSyncStatus('success');
+        setSyncCode(codeToUse);
+        localStorage.setItem('jufat_sync_code', codeToUse);
+        const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeNow);
+        localStorage.setItem('jufat_last_sync_time', timeNow);
+        setSyncMessage(`Data berhasil diunggah ke Kode ${codeToUse}`);
+        setIsSyncing(false);
+        return { success: true, message: result.message };
+      } else {
+        setSyncStatus('error');
+        setSyncMessage(result.message || 'Gagal sinkron data');
+        setIsSyncing(false);
+        return { success: false, message: result.message };
+      }
+    } catch (err: any) {
+      setSyncStatus('error');
+      setSyncMessage(err?.message || 'Koneksi ke server gagal');
+      setIsSyncing(false);
+      return { success: false, message: err?.message || 'Gagal terhubung ke server' };
+    }
+  };
+
+  const pullDataFromCloud = async (targetCode: string): Promise<{ success: boolean; message: string; data?: any }> => {
+    const cleanCode = targetCode.trim().toUpperCase();
+    if (!cleanCode) {
+      return { success: false, message: 'Kode sinkronisasi tidak boleh kosong.' };
+    }
+    setIsSyncing(true);
+    setSyncStatus('syncing');
+    try {
+      const res = await fetch(`/api/sync/pull/${encodeURIComponent(cleanCode)}`);
+      const result = await res.json();
+      if (result.success && result.data) {
+        applySyncedDataObject(result.data);
+        setSyncCode(cleanCode);
+        localStorage.setItem('jufat_sync_code', cleanCode);
+        const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeNow);
+        localStorage.setItem('jufat_last_sync_time', timeNow);
+        setSyncStatus('success');
+        setSyncMessage(`Berhasil menyinkronkan data dari Kode ${cleanCode}`);
+        setIsSyncing(false);
+        return {
+          success: true,
+          message: `Data dari ${result.deviceName || 'PC'} berhasil diterapkan ke perangkat ini!`,
+          data: result.data,
+        };
+      } else {
+        setSyncStatus('error');
+        setSyncMessage(result.message || 'Kode tidak ditemukan');
+        setIsSyncing(false);
+        return { success: false, message: result.message || 'Kode tidak ditemukan.' };
+      }
+    } catch (err: any) {
+      setSyncStatus('error');
+      setSyncMessage(err?.message || 'Gagal menarik data');
+      setIsSyncing(false);
+      return { success: false, message: err?.message || 'Gagal menghubungi server' };
+    }
+  };
+
+  const generateNewSyncCode = async (): Promise<{ success: boolean; code?: string; message?: string }> => {
+    setIsSyncing(true);
+    try {
+      const payload = getFullStatePayload();
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const deviceName = isMobile ? 'Smartphone (HP)' : 'Komputer (PC)';
+
+      const res = await fetch('/api/sync/generate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceName, data: payload }),
+      });
+      const result = await res.json();
+      if (result.success && result.code) {
+        setSyncCode(result.code);
+        localStorage.setItem('jufat_sync_code', result.code);
+        const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeNow);
+        localStorage.setItem('jufat_last_sync_time', timeNow);
+        setSyncStatus('success');
+        setSyncMessage(`Kode baru: ${result.code}`);
+        setIsSyncing(false);
+        return { success: true, code: result.code, message: result.message };
+      } else {
+        setIsSyncing(false);
+        return { success: false, message: result.message || 'Gagal membuat kode' };
+      }
+    } catch (err: any) {
+      setIsSyncing(false);
+      return { success: false, message: err?.message || 'Gagal membuat kode' };
+    }
+  };
+
+  const disconnectSync = () => {
+    setSyncCode('');
+    localStorage.removeItem('jufat_sync_code');
+    setSyncStatus('idle');
+    setSyncMessage('');
+  };
+
+  const toggleAutoSync = (enabled: boolean) => {
+    setIsAutoSyncEnabled(enabled);
+    localStorage.setItem('jufat_auto_sync', String(enabled));
+  };
+
+  // URL Query Sync Parameter Check (e.g. ?sync=JF-8468)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const syncParam = params.get('sync');
+      if (syncParam) {
+        const cleanParam = syncParam.trim().toUpperCase();
+        setSyncCode(cleanParam);
+        setIsSyncModalOpen(true);
+      }
+    }
+  }, []);
+
+  // Periodic Auto-Sync Effect (every 30 seconds when enabled and code is active)
+  useEffect(() => {
+    if (!isAutoSyncEnabled || !syncCode) return;
+    const interval = setInterval(() => {
+      pushDataToCloud(syncCode).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAutoSyncEnabled, syncCode, products, transactions, mutations, debts, services]);
+
   return (
     <POSContext.Provider
       value={{
@@ -1466,6 +1729,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exportBackupJSON,
         importBackupJSON,
         resetAllDemoData,
+        syncCode,
+        setSyncCode,
+        isSyncModalOpen,
+        setIsSyncModalOpen,
+        isSyncing,
+        lastSyncTime,
+        syncStatus,
+        syncMessage,
+        isAutoSyncEnabled,
+        generateNewSyncCode,
+        pushDataToCloud,
+        pullDataFromCloud,
+        disconnectSync,
+        toggleAutoSync,
       }}
     >
       {children}
