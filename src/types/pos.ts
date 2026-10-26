@@ -95,7 +95,7 @@ export interface AtmMiniTransaction {
   note?: string;
 }
 
-export type PPOBCategory = 'pulsa' | 'data' | 'pln' | 'bpjs' | 'pdam' | 'tagihan';
+export type PPOBCategory = 'pulsa' | 'data' | 'pln' | 'game' | 'bpjs' | 'pdam' | 'tagihan';
 
 export interface PPOBPackage {
   id: string;

@@ -561,5 +561,53 @@ export const INITIAL_PPOB_PACKAGES: PPOBPackage[] = [
   { id: 'pkg-tag-pdam', category: 'pdam', provider: 'PDAM', name: 'Tagihan PDAM Air Bersih', hpp: 65000, price: 68000, desc: 'Biaya admin konter Rp 3.000' },
   { id: 'pkg-tag-wifi', category: 'tagihan', provider: 'Indihome', name: 'Tagihan Indihome / Wifi', hpp: 280000, price: 283500, desc: 'Biaya admin konter Rp 3.500' },
   { id: 'pkg-tag-pln-post', category: 'tagihan', provider: 'PLN Pascabayar', name: 'Listrik Pascabayar Bulanan', hpp: 145000, price: 148000, desc: 'Biaya admin konter Rp 3.000' },
+
+  // Top Up & Voucher Game
+  // Mobile Legends (MLBB)
+  { id: 'pkg-game-ml-86', category: 'game', provider: 'Mobile Legends', name: 'MLBB 86 Diamonds', hpp: 19500, price: 23000, desc: 'Top up instan via ID & Server' },
+  { id: 'pkg-game-ml-172', category: 'game', provider: 'Mobile Legends', name: 'MLBB 172 Diamonds', hpp: 38500, price: 43000, desc: 'Top up instan via ID & Server' },
+  { id: 'pkg-game-ml-257', category: 'game', provider: 'Mobile Legends', name: 'MLBB 257 Diamonds', hpp: 57000, price: 63000, desc: 'Top up instan via ID & Server' },
+  { id: 'pkg-game-ml-344', category: 'game', provider: 'Mobile Legends', name: 'MLBB 344 Diamonds', hpp: 76000, price: 84000, desc: 'Top up instan via ID & Server' },
+  { id: 'pkg-game-ml-706', category: 'game', provider: 'Mobile Legends', name: 'MLBB 706 Diamonds', hpp: 154000, price: 168000, desc: 'Top up instan via ID & Server' },
+  { id: 'pkg-game-ml-wdp', category: 'game', provider: 'Mobile Legends', name: 'Weekly Diamond Pass (WDP)', hpp: 27500, price: 32000, desc: 'Klaim 210 Diamond + 70 COA selama 7 hari' },
+  { id: 'pkg-game-ml-twilight', category: 'game', provider: 'Mobile Legends', name: 'Twilight Pass MLBB', hpp: 135000, price: 148000, desc: 'Tiket reward level up + skin eksklusif' },
+
+  // Free Fire (FF)
+  { id: 'pkg-game-ff-70', category: 'game', provider: 'Free Fire', name: 'FF 70 Diamonds', hpp: 9000, price: 11000, desc: 'Top up via Player ID FF' },
+  { id: 'pkg-game-ff-140', category: 'game', provider: 'Free Fire', name: 'FF 140 Diamonds', hpp: 18000, price: 21000, desc: 'Top up via Player ID FF' },
+  { id: 'pkg-game-ff-355', category: 'game', provider: 'Free Fire', name: 'FF 355 Diamonds', hpp: 45000, price: 51000, desc: 'Top up via Player ID FF' },
+  { id: 'pkg-game-ff-720', category: 'game', provider: 'Free Fire', name: 'FF 720 Diamonds', hpp: 90000, price: 100000, desc: 'Top up via Player ID FF' },
+  { id: 'pkg-game-ff-week', category: 'game', provider: 'Free Fire', name: 'FF Membership Mingguan', hpp: 28000, price: 33000, desc: '450 Diamonds total selama 7 hari' },
+  { id: 'pkg-game-ff-month', category: 'game', provider: 'Free Fire', name: 'FF Membership Bulanan', hpp: 82000, price: 92000, desc: '2.600 Diamonds total selama 30 hari' },
+
+  // PUBG Mobile
+  { id: 'pkg-game-pubg-60', category: 'game', provider: 'PUBG Mobile', name: 'PUBG 60 UC', hpp: 14000, price: 17000, desc: 'Top up resmi via Player ID' },
+  { id: 'pkg-game-pubg-325', category: 'game', provider: 'PUBG Mobile', name: 'PUBG 325 UC', hpp: 69000, price: 78000, desc: 'Top up resmi via Player ID' },
+  { id: 'pkg-game-pubg-660', category: 'game', provider: 'PUBG Mobile', name: 'PUBG 660 UC (Royal Pass)', hpp: 138000, price: 152000, desc: 'Cukup untuk beli Royale Pass' },
+
+  // Genshin Impact
+  { id: 'pkg-game-gi-welkin', category: 'game', provider: 'Genshin Impact', name: 'Blessing of the Welkin Moon', hpp: 75000, price: 85000, desc: '300 Genesis Crystals + 90 Primogem/hari 30 hari' },
+  { id: 'pkg-game-gi-300', category: 'game', provider: 'Genshin Impact', name: 'Genshin 300+30 Genesis Crystals', hpp: 60000, price: 68000, desc: 'Top up via UID & Server' },
+  { id: 'pkg-game-gi-980', category: 'game', provider: 'Genshin Impact', name: 'Genshin 980+110 Genesis Crystals', hpp: 185000, price: 205000, desc: 'Top up via UID & Server' },
+
+  // Honor of Kings (HOK)
+  { id: 'pkg-game-hok-80', category: 'game', provider: 'Honor of Kings', name: 'HOK 80 Tokens', hpp: 13500, price: 16500, desc: 'Top up instan via Player ID' },
+  { id: 'pkg-game-hok-240', category: 'game', provider: 'Honor of Kings', name: 'HOK 240 Tokens', hpp: 40000, price: 47000, desc: 'Top up instan via Player ID' },
+  { id: 'pkg-game-hok-400', category: 'game', provider: 'Honor of Kings', name: 'HOK 400 Tokens', hpp: 67000, price: 76000, desc: 'Top up instan via Player ID' },
+
+  // Roblox
+  { id: 'pkg-game-rbx-80', category: 'game', provider: 'Roblox', name: 'Roblox 80 Robux', hpp: 15000, price: 19000, desc: 'Top up langsung ke Username' },
+  { id: 'pkg-game-rbx-400', category: 'game', provider: 'Roblox', name: 'Roblox 400 Robux', hpp: 72000, price: 82000, desc: 'Top up langsung ke Username' },
+  { id: 'pkg-game-rbx-800', category: 'game', provider: 'Roblox', name: 'Roblox 800 Robux', hpp: 145000, price: 162000, desc: 'Top up langsung ke Username' },
+
+  // Valorant
+  { id: 'pkg-game-val-475', category: 'game', provider: 'Valorant', name: 'Valorant 475 Points', hpp: 48000, price: 55000, desc: 'Riot ID & Tagline' },
+  { id: 'pkg-game-val-1000', category: 'game', provider: 'Valorant', name: 'Valorant 1000 Points', hpp: 98000, price: 110000, desc: 'Riot ID & Tagline' },
+
+  // Steam Wallet (IDR)
+  { id: 'pkg-game-steam-12', category: 'game', provider: 'Steam Wallet', name: 'Steam Wallet IDR 12.000', hpp: 12500, price: 15000, desc: 'Kode voucher resmi Steam' },
+  { id: 'pkg-game-steam-45', category: 'game', provider: 'Steam Wallet', name: 'Steam Wallet IDR 45.000', hpp: 47000, price: 52000, desc: 'Kode voucher resmi Steam' },
+  { id: 'pkg-game-steam-90', category: 'game', provider: 'Steam Wallet', name: 'Steam Wallet IDR 90.000', hpp: 93000, price: 102000, desc: 'Kode voucher resmi Steam' },
+  { id: 'pkg-game-steam-250', category: 'game', provider: 'Steam Wallet', name: 'Steam Wallet IDR 250.000', hpp: 256000, price: 275000, desc: 'Kode voucher resmi Steam' },
 ];
 

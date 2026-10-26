@@ -176,9 +176,9 @@ export const KasirView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden relative">
       {/* Left Column: Product Selection Grid */}
-      <div className="flex-1 flex flex-col h-full bg-[#f8fafc] border-r border-slate-200">
+      <div className="flex-1 flex flex-col h-full bg-[#f8fafc] md:border-r border-slate-200 min-w-0">
         {/* Rapid Barcode Scanner Bar at the Top */}
         <div className="bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 p-3 text-white shadow-sm border-b border-teal-500/30">
           <form onSubmit={handleBarcodeSubmit} className="flex items-center gap-2">
@@ -305,7 +305,22 @@ export const KasirView: React.FC = () => {
               </button>
             </div>
 
-            <div className="text-xs text-teal-900 font-mono font-bold tabular-nums shrink-0 bg-teal-50 border border-teal-200/80 px-2.5 py-1 rounded-lg">
+            {/* Mobile Cart Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setIsMobileCartOpen(true)}
+              className="md:hidden relative p-2 bg-gradient-to-r from-teal-600 to-emerald-600 text-white rounded-xl shadow-xs shrink-0 flex items-center justify-center cursor-pointer active:scale-95"
+              title="Buka Keranjang Belanja"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {cartTotalCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-amber-950 text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                  {cartTotalCount}
+                </span>
+              )}
+            </button>
+
+            <div className="hidden sm:block text-xs text-teal-900 font-mono font-bold tabular-nums shrink-0 bg-teal-50 border border-teal-200/80 px-2.5 py-1 rounded-lg">
               {filteredProducts.length} Produk
             </div>
           </div>
@@ -517,8 +532,8 @@ export const KasirView: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Column: Real-time Cart & Checkout Panel */}
-      <div className="w-96 bg-white flex flex-col h-full border-l border-slate-200 shadow-sm shrink-0">
+      {/* Right Column: Real-time Cart & Checkout Panel (Desktop) */}
+      <div className="hidden md:flex w-96 bg-white flex-col h-full border-l border-slate-200 shadow-sm shrink-0">
         {/* Cart Header */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2">
@@ -768,6 +783,275 @@ export const KasirView: React.FC = () => {
           </button>
         </form>
       </div>
+
+      {/* Mobile Full-Screen Cart & Checkout Drawer */}
+      {isMobileCartOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-white flex flex-col h-full animate-in slide-in-from-bottom duration-200 select-none">
+          {/* Mobile Cart Header */}
+          <div className="p-3.5 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-teal-700 via-emerald-600 to-teal-800 text-white shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsMobileCartOpen(false)}
+              className="p-1.5 px-3 rounded-xl bg-white/20 hover:bg-white/30 text-white transition cursor-pointer flex items-center gap-1.5 font-bold text-xs"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Kembali</span>
+            </button>
+            <div className="text-center">
+              <h3 className="text-sm font-extrabold text-white leading-tight">Keranjang & Bayar</h3>
+              <p className="text-[11px] text-teal-100 font-mono">{cartTotalCount} item terpilih</p>
+            </div>
+            {cart.length > 0 ? (
+              <button
+                onClick={clearCart}
+                className="text-xs text-rose-200 hover:text-white font-semibold flex items-center gap-1 cursor-pointer bg-rose-600/60 px-2 py-1 rounded-lg"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            ) : (
+              <div className="w-12"></div>
+            )}
+          </div>
+
+          {/* Customer input */}
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50 shrink-0">
+            <User className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="Nama Pelanggan (Umum / Langganan)"
+              className="w-full text-xs bg-transparent focus:outline-none text-slate-700 font-medium"
+            />
+          </div>
+
+          {/* Cart Items List */}
+          <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5">
+            {cart.length === 0 ? (
+              <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
+                <ShoppingCart className="w-10 h-10 stroke-[1.2] text-slate-300" />
+                <p className="text-xs font-medium">Keranjang belanja kosong</p>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileCartOpen(false)}
+                  className="mt-2 text-xs font-bold text-teal-700 hover:underline cursor-pointer"
+                >
+                  Pilih produk dari katalog
+                </button>
+              </div>
+            ) : (
+              cart.map((item) => (
+                <div
+                  key={item.product.id}
+                  className="bg-slate-50 rounded-xl p-2.5 border border-slate-200/80 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-900 truncate">
+                      {item.product.name}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono">
+                      Rp {item.product.price.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center border border-slate-200 rounded-lg bg-white">
+                      <button
+                        onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
+                        className="p-1 text-slate-600 hover:bg-slate-100"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="w-7 text-center text-xs font-bold font-mono text-slate-800">
+                        {item.quantity}
+                      </span>
+                      <button
+                        onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
+                        disabled={item.quantity >= item.product.stock}
+                        className="p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <span className="text-xs font-bold text-slate-900 font-mono w-20 text-right">
+                      Rp {item.subtotal.toLocaleString('id-ID')}
+                    </span>
+
+                    <button
+                      onClick={() => removeFromCart(item.product.id)}
+                      className="text-slate-400 hover:text-red-500 p-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Checkout Form */}
+          <form onSubmit={handleCheckout} className="border-t border-slate-200 bg-slate-50 p-3.5 space-y-3 shrink-0">
+            <div className="space-y-1 text-xs text-slate-600">
+              <div className="flex justify-between">
+                <span>Subtotal Barang:</span>
+                <span className="font-mono font-semibold text-slate-800">
+                  Rp {cartSubtotal.toLocaleString('id-ID')}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span>Diskon (Rp):</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="500"
+                  value={discountAmount || ''}
+                  onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
+                  placeholder="0"
+                  className="w-24 text-right px-2 py-0.5 text-xs bg-white border border-slate-300 rounded font-mono"
+                />
+              </div>
+              <div className="pt-1.5 border-t border-slate-200 flex justify-between items-baseline">
+                <span className="text-sm font-bold text-slate-900">Total Tagihan:</span>
+                <span className="text-xl font-extrabold text-emerald-900 font-mono">
+                  Rp {finalTotal.toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
+            {/* Payment Method Selector */}
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { id: 'tunai', label: 'Tunai', icon: Banknote },
+                { id: 'qris', label: 'QRIS', icon: QrCode },
+                { id: 'transfer', label: 'Transfer', icon: CreditCard },
+                { id: 'hutang', label: 'Tempo', icon: Receipt },
+              ].map((m) => {
+                const Icon = m.icon;
+                const active = paymentMethod === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod(m.id as PaymentMethod);
+                      if (m.id === 'tunai' && cashTendered === 0) setCashTendered(finalTotal);
+                    }}
+                    className={`py-1.5 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
+                      active
+                        ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-xs'
+                        : 'bg-white border border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Cash Tendered & Shortcuts */}
+            {paymentMethod === 'tunai' && (
+              <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-700">Uang Diterima:</span>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
+                      Rp
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={cashTendered || ''}
+                      onChange={(e) => setCashTendered(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-32 text-right pl-7 pr-2.5 py-1 text-sm bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1 text-[11px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setQuickCash(finalTotal)}
+                    className="py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg border border-emerald-200"
+                  >
+                    Uang Pas
+                  </button>
+                  {[50000, 100000, 200000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setQuickCash(amt)}
+                      className="py-1 bg-white text-slate-700 rounded-lg border border-slate-200"
+                    >
+                      {amt >= 1000 ? `${amt / 1000}k` : amt}
+                    </button>
+                  ))}
+                </div>
+
+                <div
+                  className={`p-2 rounded-lg flex items-center justify-between text-xs font-mono font-bold ${
+                    isCashInsufficient
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                  }`}
+                >
+                  <span>{isCashInsufficient ? 'Kurang:' : 'Kembalian:'}</span>
+                  <span className="text-sm">
+                    Rp{' '}
+                    {isCashInsufficient
+                      ? (finalTotal - cashTendered).toLocaleString('id-ID')
+                      : changeAmount.toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={cart.length === 0 || isCashInsufficient}
+              className={`w-full py-3 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer ${
+                cart.length === 0 || isCashInsufficient
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 text-white shadow-teal-900/20 active:scale-[0.99]'
+              }`}
+            >
+              <CheckCircle className="w-4 h-4 text-amber-300" />
+              <span>Bayar & Cetak Struk (Selesai)</span>
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Mobile Floating Bottom Bar */}
+      {cartTotalCount > 0 && !isMobileCartOpen && (
+        <div className="md:hidden fixed bottom-16 left-3 right-3 z-30 bg-slate-900/95 backdrop-blur-md text-white p-3 rounded-2xl shadow-xl border border-teal-500/40 flex items-center justify-between animate-in slide-in-from-bottom duration-150 select-none">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="relative w-9 h-9 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-bold shrink-0 shadow-sm">
+              <ShoppingCart className="w-4 h-4" />
+              <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+                {cartTotalCount}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] text-teal-200 truncate">{cartTotalCount} item terpilih</div>
+              <div className="text-sm font-extrabold font-mono text-white truncate">
+                Rp {finalTotal.toLocaleString('id-ID')}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileCartOpen(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-emerald-400 to-teal-300 text-slate-950 font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1 active:scale-95 cursor-pointer shrink-0"
+          >
+            <span>Bayar Sekarang</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

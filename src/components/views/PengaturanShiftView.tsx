@@ -173,9 +173,9 @@ export const PengaturanShiftView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-[#f8f9fa] space-y-6">
+    <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 bg-[#f8f9fa] space-y-4 sm:space-y-6">
       {/* Top Header */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs">
             <Settings className="w-5 h-5" />

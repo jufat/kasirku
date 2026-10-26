@@ -6,6 +6,7 @@ import {
   AgencyTransaction,
   ServiceTicket,
   AtmMiniTransaction,
+  PPOBTransaction,
 } from '../../types/pos';
 
 export const ThermalReceiptModal: React.FC = () => {
@@ -21,11 +22,13 @@ export const ThermalReceiptModal: React.FC = () => {
   const isAgency = 'nominal' in receiptData && 'counterFee' in receiptData && 'provider' in receiptData;
   const isService = 'deviceModel' in receiptData && 'problemDescription' in receiptData;
   const isAtmMini = 'terminalId' in receiptData && 'traceNo' in receiptData;
+  const isPPOB = 'packageName' in receiptData && 'targetNumber' in receiptData;
 
   const posTx = isPOS ? (receiptData as POSTransaction) : null;
   const agTx = isAgency ? (receiptData as AgencyTransaction) : null;
   const srvTx = isService ? (receiptData as ServiceTicket) : null;
   const atmTx = isAtmMini ? (receiptData as AtmMiniTransaction) : null;
+  const ppobTx = isPPOB ? (receiptData as unknown as PPOBTransaction) : null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -192,11 +195,57 @@ export const ThermalReceiptModal: React.FC = () => {
                 )}
               </>
             )}
+
+            {ppobTx && (
+              <>
+                <div className="text-center font-bold text-slate-800 pb-0.5 border-b border-dashed border-slate-300">
+                  {ppobTx.category === 'game'
+                    ? '*** STRUK TOP UP & VOUCHER GAME ***'
+                    : '*** STRUK PEMBELIAN PPOB & PULSA ***'}
+                </div>
+                <div className="flex justify-between pt-0.5">
+                  <span>No Ref   :</span>
+                  <span className="font-bold">{ppobTx.refNo}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Waktu    :</span>
+                  <span>{ppobTx.date}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Layanan  :</span>
+                  <span className="font-bold uppercase">{ppobTx.category === 'game' ? 'TOP UP GAME' : ppobTx.category}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{ppobTx.category === 'game' ? 'Game/App :' : 'Provider :'}</span>
+                  <span className="font-bold">{ppobTx.provider}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{ppobTx.category === 'game' ? 'ID Akun  :' : 'No Tujuan:'}</span>
+                  <span className="font-mono font-bold text-slate-900">{ppobTx.targetNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pelanggan:</span>
+                  <span>{ppobTx.customerName}</span>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="border-b border-dashed border-slate-400 my-1" />
 
           {/* Items / Breakdown */}
+          {ppobTx && (
+            <div className="space-y-1 py-1">
+              <div className="flex justify-between font-bold text-slate-900">
+                <span>Paket / Item:</span>
+                <span>{ppobTx.packageName}</span>
+              </div>
+              <div className="flex justify-between text-slate-600 text-[10px]">
+                <span>Status Transaksi:</span>
+                <span className="text-emerald-700 font-bold uppercase">{ppobTx.status}</span>
+              </div>
+            </div>
+          )}
           {posTx && (
             <div className="space-y-1.5 py-1">
               {posTx.items.map((item, idx) => (
@@ -356,6 +405,22 @@ export const ThermalReceiptModal: React.FC = () => {
                 )}
                 <div className="text-center text-[10px] text-emerald-800 font-bold bg-emerald-50 py-0.5 rounded mt-1">
                   STATUS: TRANSAKSI BERHASIL (APPROVED)
+                </div>
+              </>
+            )}
+
+            {ppobTx && (
+              <>
+                <div className="flex justify-between font-bold text-slate-900 text-sm">
+                  <span>TOTAL BAYAR:</span>
+                  <span>Rp {ppobTx.sellingPrice.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between text-slate-700 text-[10px] pt-1">
+                  <span>Metode: {ppobTx.paymentMethod.toUpperCase()}</span>
+                  <span>Produk: {ppobTx.packageName}</span>
+                </div>
+                <div className="text-center text-[10px] text-emerald-800 font-bold bg-emerald-50 py-0.5 rounded mt-1">
+                  STATUS: PENGISIAN SUKSES
                 </div>
               </>
             )}

@@ -174,9 +174,10 @@ export const HutangReturView: React.FC = () => {
           </div>
 
           {/* Table */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-              <table className="w-full text-left border-collapse text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                     <th className="py-2.5 px-3">No Ref / Tanggal</th>
@@ -260,6 +261,7 @@ export const HutangReturView: React.FC = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -280,9 +282,10 @@ export const HutangReturView: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-              <table className="w-full text-left border-collapse text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                     <th className="py-2.5 px-3">No Retur / Tgl</th>
@@ -359,6 +362,7 @@ export const HutangReturView: React.FC = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>

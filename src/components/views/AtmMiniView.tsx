@@ -115,6 +115,7 @@ export const AtmMiniView: React.FC = () => {
   // Table filter
   const [filterType, setFilterType] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [mobileTab, setMobileTab] = useState<'terminal' | 'history'>('terminal');
 
   // Switch mode defaults
   const handleModeChange = (mode: AtmMiniType) => {
@@ -245,11 +246,45 @@ export const AtmMiniView: React.FC = () => {
   });
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-[#f8fafc]">
+    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#f8fafc]">
+      {/* Mobile Tab Switcher */}
+      <div className="md:hidden flex items-center bg-white border-b border-slate-200 p-2 shrink-0">
+        <div className="grid grid-cols-2 w-full p-1 bg-slate-100 rounded-xl gap-1">
+          <button
+            type="button"
+            onClick={() => setMobileTab('terminal')}
+            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileTab === 'terminal'
+                ? 'bg-white text-teal-900 shadow-xs font-extrabold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>Mesin EDC Transaksi</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('history')}
+            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              mobileTab === 'history'
+                ? 'bg-white text-teal-900 shadow-xs font-extrabold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>Riwayat ({atmMiniTransactions.length})</span>
+          </button>
+        </div>
+      </div>
+
       {/* Left Column: EDC ATM Mini Terminal & Transaction Form */}
-      <div className="w-[490px] bg-white border-r border-slate-200 flex flex-col h-full shadow-xs shrink-0 overflow-y-auto">
+      <div
+        className={`${
+          mobileTab === 'terminal' ? 'flex' : 'hidden'
+        } md:flex w-full md:w-[490px] bg-white md:border-r border-slate-200 flex-col h-full shadow-xs shrink-0 overflow-y-auto`}
+      >
         {/* Terminal Header & Device Status */}
-        <div className="p-4 bg-gradient-to-r from-teal-700 via-emerald-600 to-cyan-700 text-white shadow-xs">
+        <div className="p-3.5 sm:p-4 bg-gradient-to-r from-teal-700 via-emerald-600 to-cyan-700 text-white shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-bold shadow-md">
@@ -280,7 +315,7 @@ export const AtmMiniView: React.FC = () => {
           </div>
 
           {/* 5 Main Mode Tabs: Tarik Tunai, Transfer, E-Wallet, Mobile Banking, Sistem QRIS */}
-          <div className="grid grid-cols-5 gap-1 mt-4 pt-3 border-t border-emerald-800/80">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 mt-3 sm:mt-4 pt-3 border-t border-emerald-800/80">
             <button
               type="button"
               onClick={() => handleModeChange('tarik_tunai_atm')}
@@ -869,9 +904,13 @@ export const AtmMiniView: React.FC = () => {
       </div>
 
       {/* Right Column: Mini ATM Analytics & Live Transaction Ledger */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div
+        className={`${
+          mobileTab === 'history' ? 'flex' : 'hidden'
+        } md:flex flex-1 flex-col h-full overflow-hidden min-w-0`}
+      >
         {/* KPI Strip for Mini ATM */}
-        <div className="p-4 bg-white border-b border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="p-3 sm:p-4 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 shrink-0">
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
             <span className="text-[10px] font-bold text-slate-500 uppercase block">
               Tarik Tunai Hari Ini
@@ -950,9 +989,10 @@ export const AtmMiniView: React.FC = () => {
         </div>
 
         {/* Transaction Table */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                   <th className="py-2.5 px-3">Trace No / Tgl</th>
@@ -1048,6 +1088,7 @@ export const AtmMiniView: React.FC = () => {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

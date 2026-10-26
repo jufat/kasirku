@@ -165,6 +165,7 @@ interface POSContextType {
     | AgencyTransaction
     | ServiceTicket
     | AtmMiniTransaction
+    | PPOBTransaction
     | null;
   isReceiptModalOpen: boolean;
   openReceipt: (
@@ -173,6 +174,7 @@ interface POSContextType {
       | AgencyTransaction
       | ServiceTicket
       | AtmMiniTransaction
+      | PPOBTransaction
   ) => void;
   closeReceipt: () => void;
   isShiftModalOpen: boolean;
@@ -233,7 +235,24 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [ppobPackages, setPpobPackages] = useState<PPOBPackage[]>(() => {
     const saved = localStorage.getItem('jufat_ppob_packages');
-    return saved ? JSON.parse(saved) : INITIAL_PPOB_PACKAGES;
+    if (!saved) return INITIAL_PPOB_PACKAGES;
+    try {
+      const parsed: PPOBPackage[] = JSON.parse(saved);
+      const hasGame = parsed.some((p) => p.category === 'game');
+      if (!hasGame) {
+        const gamePackages = INITIAL_PPOB_PACKAGES.filter((p) => p.category === 'game');
+        const merged = [...parsed, ...gamePackages];
+        try {
+          localStorage.setItem('jufat_ppob_packages', JSON.stringify(merged));
+        } catch {
+          // ignore
+        }
+        return merged;
+      }
+      return parsed;
+    } catch {
+      return INITIAL_PPOB_PACKAGES;
+    }
   });
 
   const [ppobTransactions, setPpobTransactions] = useState<PPOBTransaction[]>(() => {
@@ -279,7 +298,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Modal triggers
   const [receiptData, setReceiptData] = useState<
-    POSTransaction | AgencyTransaction | ServiceTicket | AtmMiniTransaction | null
+    POSTransaction | AgencyTransaction | ServiceTicket | AtmMiniTransaction | PPOBTransaction | null
   >(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
@@ -1076,7 +1095,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Receipt Modal actions
   const openReceipt = (
-    data: POSTransaction | AgencyTransaction | ServiceTicket | AtmMiniTransaction
+    data:
+      | POSTransaction
+      | AgencyTransaction
+      | ServiceTicket
+      | AtmMiniTransaction
+      | PPOBTransaction
   ) => {
     setReceiptData(data);
     setIsReceiptModalOpen(true);
