@@ -7,6 +7,7 @@ import {
   ServiceTicket,
   AtmMiniTransaction,
   PPOBTransaction,
+  PrintOrder,
 } from '../../types/pos';
 
 export const ThermalReceiptModal: React.FC = () => {
@@ -18,13 +19,15 @@ export const ThermalReceiptModal: React.FC = () => {
     window.print();
   };
 
-  const isPOS = 'items' in receiptData;
+  const isPOS = 'items' in receiptData && 'invoiceNo' in receiptData;
+  const isPrintOrder = 'items' in receiptData && 'remainingAmount' in receiptData && 'downPayment' in receiptData;
   const isAgency = 'nominal' in receiptData && 'counterFee' in receiptData && 'provider' in receiptData;
   const isService = 'deviceModel' in receiptData && 'problemDescription' in receiptData;
   const isAtmMini = 'terminalId' in receiptData && 'traceNo' in receiptData;
   const isPPOB = 'packageName' in receiptData && 'targetNumber' in receiptData;
 
   const posTx = isPOS ? (receiptData as POSTransaction) : null;
+  const printTx = isPrintOrder ? (receiptData as PrintOrder) : null;
   const agTx = isAgency ? (receiptData as AgencyTransaction) : null;
   const srvTx = isService ? (receiptData as ServiceTicket) : null;
   const atmTx = isAtmMini ? (receiptData as AtmMiniTransaction) : null;
@@ -92,6 +95,40 @@ export const ThermalReceiptModal: React.FC = () => {
                 <div className="flex justify-between">
                   <span>Pelanggan :</span>
                   <span>{posTx.customerName}</span>
+                </div>
+              </>
+            )}
+
+            {printTx && (
+              <>
+                <div className="text-center font-bold text-slate-800 pb-0.5 border-b border-dashed border-slate-300">
+                  *** NOTA ORDER PERCETAKAN & COPY ***
+                </div>
+                <div className="flex justify-between pt-0.5">
+                  <span>No Order  :</span>
+                  <span className="font-bold">{printTx.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Tanggal   :</span>
+                  <span>{printTx.date}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pelanggan :</span>
+                  <span className="font-bold">{printTx.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>No Telp   :</span>
+                  <span>{printTx.customerPhone}</span>
+                </div>
+                {printTx.deadline && (
+                  <div className="flex justify-between text-amber-900 font-semibold">
+                    <span>Deadline  :</span>
+                    <span>{printTx.deadline}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Status    :</span>
+                  <span className="font-bold uppercase text-indigo-700">{printTx.status}</span>
                 </div>
               </>
             )}
@@ -262,6 +299,30 @@ export const ThermalReceiptModal: React.FC = () => {
             </div>
           )}
 
+          {printTx && (
+            <div className="space-y-1.5 py-1">
+              {printTx.items.map((item, idx) => (
+                <div key={idx} className="space-y-0.5">
+                  <div className="font-semibold text-slate-800">{item.serviceName}</div>
+                  {item.specNote && (
+                    <div className="text-[10px] text-slate-500 italic">[{item.specNote}]</div>
+                  )}
+                  <div className="flex justify-between text-slate-600 text-[10px]">
+                    <span>
+                      {item.quantity} {item.unit} x Rp {item.pricePerUnit.toLocaleString('id-ID')}
+                    </span>
+                    <span className="font-bold text-slate-800">Rp {item.subtotal.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+              ))}
+              {printTx.fileOrNote && (
+                <div className="pt-1 text-[10px] text-slate-500 border-t border-dashed border-slate-200">
+                  Catatan: {printTx.fileOrNote}
+                </div>
+              )}
+            </div>
+          )}
+
           {agTx && (
             <div className="space-y-1 py-1">
               <div className="flex justify-between">
@@ -382,6 +443,23 @@ export const ThermalReceiptModal: React.FC = () => {
                 <div className="flex justify-between text-red-600 font-bold text-[11px]">
                   <span>Sisa Pelunasan:</span>
                   <span>Rp {Math.max(0, srvTx.totalCost - srvTx.downPayment).toLocaleString('id-ID')}</span>
+                </div>
+              </>
+            )}
+
+            {printTx && (
+              <>
+                <div className="flex justify-between font-bold text-slate-900 text-sm">
+                  <span>TOTAL ORDER:</span>
+                  <span>Rp {printTx.totalAmount.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between text-slate-700 text-[10px] pt-1">
+                  <span>DP Dibayar ({printTx.paymentMethod.toUpperCase()}):</span>
+                  <span>Rp {printTx.downPayment.toLocaleString('id-ID')}</span>
+                </div>
+                <div className={`flex justify-between font-bold text-[11px] ${printTx.remainingAmount > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                  <span>{printTx.remainingAmount > 0 ? 'Sisa Tagihan (Belum Lunas):' : 'Status Pembayaran:'}</span>
+                  <span>{printTx.remainingAmount > 0 ? `Rp ${printTx.remainingAmount.toLocaleString('id-ID')}` : 'LUNAS'}</span>
                 </div>
               </>
             )}

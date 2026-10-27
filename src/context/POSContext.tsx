@@ -15,6 +15,9 @@ import {
   PaymentMethod,
   PPOBPackage,
   StoreProfile,
+  PrintOrder,
+  PrintOrderStatus,
+  PrintServiceItem,
 } from '../types/pos';
 import * as XLSX from 'xlsx';
 import {
@@ -29,6 +32,8 @@ import {
   INITIAL_CATEGORIES,
   INITIAL_PPOB_PACKAGES,
   INITIAL_STORE_PROFILE,
+  INITIAL_PRINT_ORDERS,
+  PRINT_PRICE_LIST,
 } from '../data/initialData';
 
 interface POSContextType {
@@ -125,6 +130,17 @@ interface POSContextType {
   updateServiceStatus: (id: string, newStatus: ServiceTicket['status']) => void;
   deleteServiceTicket: (id: string) => void;
 
+  // Percetakan & Fotokopi
+  printOrders: PrintOrder[];
+  addPrintOrder: (order: Omit<PrintOrder, 'id' | 'date'>) => PrintOrder;
+  updatePrintOrderStatus: (id: string, newStatus: PrintOrderStatus) => void;
+  deletePrintOrder: (id: string) => void;
+  printServices: PrintServiceItem[];
+  addPrintService: (service: Omit<PrintServiceItem, 'id'>) => PrintServiceItem;
+  updatePrintService: (service: PrintServiceItem) => void;
+  deletePrintService: (id: string) => void;
+  resetPrintServices: () => void;
+
   // Cash Ledger & Auto-Journal
   mutations: CashMutation[];
   addCashMutation: (
@@ -166,6 +182,7 @@ interface POSContextType {
     | ServiceTicket
     | AtmMiniTransaction
     | PPOBTransaction
+    | PrintOrder
     | null;
   isReceiptModalOpen: boolean;
   openReceipt: (
@@ -175,6 +192,7 @@ interface POSContextType {
       | ServiceTicket
       | AtmMiniTransaction
       | PPOBTransaction
+      | PrintOrder
   ) => void;
   closeReceipt: () => void;
   isShiftModalOpen: boolean;
@@ -281,6 +299,24 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_SERVICES;
   });
 
+  const [printOrders, setPrintOrders] = useState<PrintOrder[]>(() => {
+    const saved = localStorage.getItem('jufat_print_orders');
+    return saved ? JSON.parse(saved) : INITIAL_PRINT_ORDERS;
+  });
+
+  const [printServices, setPrintServices] = useState<PrintServiceItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_print_services');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return PRINT_PRICE_LIST;
+  });
+
   const [mutations, setMutations] = useState<CashMutation[]>(() => {
     const saved = localStorage.getItem('jufat_mutations');
     return saved ? JSON.parse(saved) : INITIAL_MUTATIONS;
@@ -326,7 +362,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Modal triggers
   const [receiptData, setReceiptData] = useState<
-    POSTransaction | AgencyTransaction | ServiceTicket | AtmMiniTransaction | PPOBTransaction | null
+    | POSTransaction
+    | AgencyTransaction
+    | ServiceTicket
+    | AtmMiniTransaction
+    | PPOBTransaction
+    | PrintOrder
+    | null
   >(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
@@ -389,6 +431,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('jufat_services', JSON.stringify(services));
   }, [services]);
+
+  useEffect(() => {
+    localStorage.setItem('jufat_print_orders', JSON.stringify(printOrders));
+  }, [printOrders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_print_services', JSON.stringify(printServices));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [printServices]);
 
   useEffect(() => {
     localStorage.setItem('jufat_mutations', JSON.stringify(mutations));
@@ -892,6 +946,124 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setServices((prev) => prev.filter((s) => s.id !== id));
   };
 
+  // Percetakan & Fotokopi Management
+  const addPrintOrder = (
+    orderData: Omit<PrintOrder, 'id' | 'date'>
+  ): PrintOrder => {
+    const id = `PRT-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+    const newOrder: PrintOrder = {
+      ...orderData,
+      id,
+      date: new Date().toLocaleString('id-ID'),
+    };
+
+    setPrintOrders((prev) => [newOrder, ...prev]);
+
+    // If down payment is paid in cash, auto-journal to Cash Drawer
+    if (newOrder.downPayment > 0) {
+      const mutation: CashMutation = {
+        id: `mut-${Date.now()}`,
+        timestamp: nowTime,
+        type: 'masuk',
+        category: 'percetakan',
+        description: `DP Order Percetakan ${id} (${newOrder.customerName})`,
+        amount: newOrder.downPayment,
+        paymentMethod: newOrder.paymentMethod === 'tunai' ? 'tunai' : 'non_tunai',
+        runningCashBalance:
+          newOrder.paymentMethod === 'tunai'
+            ? drawerCashBalance + newOrder.downPayment
+            : drawerCashBalance,
+        recordedBy: shift.cashierName,
+      };
+      setMutations((prev) => [mutation, ...prev]);
+    }
+
+    setReceiptData(newOrder);
+    setIsReceiptModalOpen(true);
+
+    return newOrder;
+  };
+
+  const updatePrintOrderStatus = (id: string, newStatus: PrintOrderStatus) => {
+    setPrintOrders((prev) =>
+      prev.map((o) => {
+        if (o.id === id) {
+          const wasNotDiambil = o.status !== 'diambil';
+          const isNowDiambil = newStatus === 'diambil';
+
+          // If transitioning to diambil, auto-journal remaining unpaid amount into cash drawer if any
+          if (wasNotDiambil && isNowDiambil) {
+            const remaining = Math.max(0, o.totalAmount - o.downPayment);
+            if (remaining > 0) {
+              const nowTime = new Date().toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const mutation: CashMutation = {
+                id: `mut-${Date.now()}`,
+                timestamp: nowTime,
+                type: 'masuk',
+                category: 'percetakan',
+                description: `Pelunasan Percetakan ${o.id} (${o.customerName})`,
+                amount: remaining,
+                paymentMethod: 'tunai',
+                runningCashBalance: drawerCashBalance + remaining,
+                recordedBy: shift.cashierName,
+              };
+              setMutations((prevMut) => [mutation, ...prevMut]);
+            }
+          }
+
+          return {
+            ...o,
+            status: newStatus,
+            dateCompleted:
+              newStatus === 'selesai' || newStatus === 'diambil'
+                ? new Date().toLocaleString('id-ID')
+                : o.dateCompleted,
+          };
+        }
+        return o;
+      })
+    );
+  };
+
+  const deletePrintOrder = (id: string) => {
+    setPrintOrders((prev) => prev.filter((o) => o.id !== id));
+  };
+
+  const addPrintService = (
+    srvData: Omit<PrintServiceItem, 'id'>
+  ): PrintServiceItem => {
+    const newSrv: PrintServiceItem = {
+      ...srvData,
+      id: `srv-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+    };
+    setPrintServices((prev) => [...prev, newSrv]);
+    return newSrv;
+  };
+
+  const updatePrintService = (updatedSrv: PrintServiceItem) => {
+    setPrintServices((prev) =>
+      prev.map((s) => (s.id === updatedSrv.id ? updatedSrv : s))
+    );
+  };
+
+  const deletePrintService = (id: string) => {
+    setPrintServices((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const resetPrintServices = () => {
+    setPrintServices(PRINT_PRICE_LIST);
+    try {
+      localStorage.setItem('jufat_print_services', JSON.stringify(PRINT_PRICE_LIST));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Manual cash mutation (e.g., Pengeluaran operasional / Kas Masuk modal)
   const addCashMutation = (
     type: 'masuk' | 'keluar',
@@ -1144,6 +1316,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       | ServiceTicket
       | AtmMiniTransaction
       | PPOBTransaction
+      | PrintOrder
   ) => {
     setReceiptData(data);
     setIsReceiptModalOpen(true);
@@ -1317,9 +1490,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('jufat_atm_mini_txs', JSON.stringify([]));
       localStorage.setItem('jufat_ppob_txs', JSON.stringify([]));
       localStorage.setItem('jufat_services', JSON.stringify([]));
+      localStorage.setItem('jufat_print_orders', JSON.stringify([]));
       localStorage.setItem('jufat_debts', JSON.stringify([]));
       localStorage.setItem('jufat_returns', JSON.stringify([]));
       localStorage.setItem('jufat_mutations', JSON.stringify([cleanMutation]));
+      setPrintOrders([]);
       if (option === 'clear_all') {
         localStorage.setItem('jufat_products', JSON.stringify([]));
       }
@@ -1340,6 +1515,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPpobPackages(INITIAL_PPOB_PACKAGES);
     setPpobTransactions([]);
     setServices(INITIAL_SERVICES);
+    setPrintOrders(INITIAL_PRINT_ORDERS);
     setMutations(INITIAL_MUTATIONS);
     setDebts(INITIAL_DEBTS);
     setReturns(INITIAL_RETURNS);
@@ -1365,6 +1541,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ppobPackages,
       ppobTransactions,
       services,
+      printOrders,
+      printServices,
       mutations,
       debts,
       returns,
@@ -1391,6 +1569,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.ppobPackages) setPpobPackages(data.ppobPackages);
       if (data.ppobTransactions) setPpobTransactions(data.ppobTransactions);
       if (data.services) setServices(data.services);
+      if (data.printOrders) setPrintOrders(data.printOrders);
+      if (data.printServices) setPrintServices(data.printServices);
       if (data.mutations) setMutations(data.mutations);
       if (data.debts) setDebts(data.debts);
       if (data.returns) setReturns(data.returns);
@@ -1412,6 +1592,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPpobPackages(INITIAL_PPOB_PACKAGES);
     setPpobTransactions([]);
     setServices(INITIAL_SERVICES);
+    setPrintOrders(INITIAL_PRINT_ORDERS);
+    setPrintServices(PRINT_PRICE_LIST);
     setMutations(INITIAL_MUTATIONS);
     setDebts(INITIAL_DEBTS);
     setReturns(INITIAL_RETURNS);
@@ -1433,6 +1615,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ppobPackages,
       ppobTransactions,
       services,
+      printOrders,
+      printServices,
       mutations,
       debts,
       returns,
@@ -1477,6 +1661,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.services) {
         setServices(data.services);
         localStorage.setItem('jufat_services', JSON.stringify(data.services));
+      }
+      if (data.printOrders) {
+        setPrintOrders(data.printOrders);
+        localStorage.setItem('jufat_print_orders', JSON.stringify(data.printOrders));
+      }
+      if (data.printServices) {
+        setPrintServices(data.printServices);
+        localStorage.setItem('jufat_print_services', JSON.stringify(data.printServices));
       }
       if (data.mutations) {
         setMutations(data.mutations);
@@ -1700,6 +1892,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addServiceTicket,
         updateServiceStatus,
         deleteServiceTicket,
+        printOrders,
+        addPrintOrder,
+        updatePrintOrderStatus,
+        deletePrintOrder,
+        printServices,
+        addPrintService,
+        updatePrintService,
+        deletePrintService,
+        resetPrintServices,
         mutations,
         addCashMutation,
         drawerCashBalance,

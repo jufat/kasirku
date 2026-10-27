@@ -1,10 +1,10 @@
-import React from 'react';
 import {
   ShoppingCart,
   CreditCard,
   Zap,
   Package,
   Menu,
+  Printer,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -15,9 +15,18 @@ export const MobileBottomNav: React.FC = () => {
     cartTotalCount,
     products,
     setIsMobileSidebarOpen,
+    printOrders,
   } = usePOS();
 
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
+  const activePrintOrdersCount = printOrders.filter(
+    (o) => o.status === 'antrean' || o.status === 'proses'
+  ).length;
+
+  // Sembunyikan navigasi menu bawah pada ATM Mini / Mobile Banking agar layar tampil penuh tanpa terhalang
+  if (activeTab === 'atm_mini' || activeTab === 'transfer') {
+    return null;
+  }
 
   const navItems = [
     {
@@ -36,15 +45,15 @@ export const MobileBottomNav: React.FC = () => {
     },
     {
       id: 'ppob',
-      label: 'Pulsa/PPOB',
+      label: 'PPOB',
       icon: Zap,
     },
     {
-      id: 'stok',
-      label: 'Stok',
-      icon: Package,
-      badge: lowStockCount > 0 ? lowStockCount : undefined,
-      badgeColor: 'bg-rose-500 text-white animate-pulse',
+      id: 'percetakan',
+      label: 'Percetakan',
+      icon: Printer,
+      badge: activePrintOrdersCount > 0 ? activePrintOrdersCount : undefined,
+      badgeColor: 'bg-indigo-600 text-white font-bold',
     },
   ];
 

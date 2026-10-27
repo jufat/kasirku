@@ -20,6 +20,7 @@ import {
   Cloud,
   RefreshCw,
   Smartphone,
+  Printer,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -38,9 +39,13 @@ export const Sidebar: React.FC = () => {
     syncCode,
     setIsSyncModalOpen,
     isSyncing,
+    printOrders,
   } = usePOS();
 
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
+  const activePrintOrdersCount = printOrders.filter(
+    (o) => o.status === 'antrean' || o.status === 'proses'
+  ).length;
 
   const operationalNav = [
     {
@@ -69,6 +74,14 @@ export const Sidebar: React.FC = () => {
       name: 'Service HP',
       icon: Wrench,
       sublabel: 'Status Reparasi',
+    },
+    {
+      id: 'percetakan',
+      name: 'Percetakan & Copy',
+      icon: Printer,
+      sublabel: 'Print, Foto, Banner, Jilid',
+      badge: activePrintOrdersCount > 0 ? `${activePrintOrdersCount} Order` : undefined,
+      badgeColor: 'bg-indigo-300 text-indigo-950 font-extrabold',
     },
   ];
 

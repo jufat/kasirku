@@ -69,6 +69,8 @@ export const TopHeader: React.FC = () => {
         return { title: 'Pulsa, Data & Tagihan PPOB', sub: 'Isi Ulang Operator, Token PLN & Tagihan Bulanan' };
       case 'service':
         return { title: 'Service Handphone & Reparasi', sub: 'Manajemen Antrean, Pengerjaan & Pengambilan' };
+      case 'percetakan':
+        return { title: 'Percetakan & Copy', sub: 'Print Dokumen, Cetak Foto, Banner Spanduk & Jilid' };
       case 'dashboard':
         return { title: 'Dashboard & Analitik Bisnis', sub: 'Ringkasan Omset, Profit, Service & Stok Kritis' };
       case 'kas_harian':
@@ -88,13 +90,13 @@ export const TopHeader: React.FC = () => {
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
 
   return (
-    <header className="h-14 md:h-16 bg-white/95 backdrop-blur-md border-b border-teal-100/90 px-3 md:px-6 flex items-center justify-between shrink-0 sticky top-0 z-10 shadow-xs select-none">
+    <header className="h-14 md:h-16 bg-white/95 backdrop-blur-md border-b border-teal-100/90 px-2 sm:px-4 md:px-6 flex items-center justify-between shrink-0 sticky top-0 z-10 shadow-xs select-none">
       {/* Zone 1: Mobile Hamburger, Breadcrumb, Store Logo & Title */}
-      <div className="flex items-center gap-2 md:gap-3 min-w-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 min-w-0 pr-1">
         <button
           type="button"
           onClick={() => setIsMobileSidebarOpen(true)}
-          className="md:hidden p-1.5 -ml-1 text-slate-700 hover:text-teal-700 hover:bg-teal-50 rounded-xl transition cursor-pointer"
+          className="md:hidden p-1.5 -ml-0.5 text-slate-700 hover:text-teal-700 hover:bg-teal-50 rounded-xl transition cursor-pointer shrink-0"
           title="Buka Menu"
         >
           <Menu className="w-5 h-5" />
@@ -104,19 +106,19 @@ export const TopHeader: React.FC = () => {
           <img
             src={storeProfile.logo}
             alt={storeProfile.name}
-            className="w-8 h-8 md:w-9 md:h-9 rounded-xl object-contain border border-teal-200/80 p-1 bg-white shadow-xs shrink-0"
+            className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-contain border border-teal-200/80 p-0.5 sm:p-1 bg-white shadow-xs shrink-0"
           />
         ) : null}
 
         <div className="min-w-0">
-          <h2 className="text-xs md:text-base font-extrabold text-slate-900 leading-tight flex items-center gap-1.5 md:gap-2">
-            <span className="truncate max-w-[140px] sm:max-w-none">{breadcrumb.title}</span>
+          <h2 className="text-xs sm:text-sm md:text-base font-extrabold text-slate-900 leading-tight flex items-center gap-1 sm:gap-1.5 md:gap-2">
+            <span className="truncate max-w-[120px] xs:max-w-[170px] sm:max-w-none">{breadcrumb.title}</span>
             <span className="hidden sm:inline text-xs font-normal text-slate-300">/</span>
             <span className="hidden sm:inline text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200 truncate max-w-[160px]">
               {storeProfile.name || 'Ju-Fat Cell'}
             </span>
           </h2>
-          <p className="hidden sm:block text-xs text-slate-500 font-medium truncate">{breadcrumb.sub}</p>
+          <p className="hidden md:block text-xs text-slate-500 font-medium truncate">{breadcrumb.sub}</p>
         </div>
       </div>
 
@@ -170,20 +172,22 @@ export const TopHeader: React.FC = () => {
       </div>
 
       {/* Zone 3: Actions & Drawer Cash balance */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* Physical Cash Drawer Pill */}
         <button
           onClick={() => setActiveTab('kas_harian')}
-          className="flex items-center gap-1.5 md:gap-2 px-2.5 md:px-3 py-1.5 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 hover:from-teal-100 hover:to-emerald-100 border border-teal-200/90 rounded-xl text-teal-950 transition cursor-pointer shadow-xs active:scale-95"
+          className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 hover:from-teal-100 hover:to-emerald-100 border border-teal-200/90 rounded-xl text-teal-950 transition cursor-pointer shadow-xs active:scale-95"
           title="Klik untuk membuka buku arus kas"
         >
-          <div className="w-6 h-6 md:w-7 md:h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Wallet className="w-3.5 h-3.5" />
+          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </div>
           <div className="text-left leading-tight">
-            <span className="hidden sm:block text-[10px] text-teal-700 font-semibold">Kas Fisik di Laci</span>
-            <span className="text-xs font-extrabold text-teal-950 font-mono tabular-nums">
-              Rp {drawerCashBalance.toLocaleString('id-ID')}
+            <span className="hidden sm:block text-[9px] text-teal-700 font-semibold">Kas Laci</span>
+            <span className="text-[11px] sm:text-xs font-black text-teal-950 font-mono tabular-nums">
+              Rp {drawerCashBalance >= 10000000
+                ? `${(drawerCashBalance / 1000000).toFixed(1)}Jt`
+                : drawerCashBalance.toLocaleString('id-ID')}
             </span>
           </div>
         </button>
@@ -191,17 +195,17 @@ export const TopHeader: React.FC = () => {
         {/* Quick Cash Mutation Modal Trigger */}
         <button
           onClick={() => setIsCashMutationModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl transition shadow-sm shadow-teal-700/20 cursor-pointer active:scale-95"
+          className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl transition shadow-sm shadow-teal-700/20 cursor-pointer active:scale-95"
           title="Catat pengeluaran operasional atau uang kas masuk"
         >
-          <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
+          <PlusCircle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
           <span className="hidden sm:inline">Catat Kas</span>
         </button>
 
         {/* Sync PC & HP Modal Button */}
         <button
           onClick={() => setIsSyncModalOpen(true)}
-          className={`flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 ${
+          className={`flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 ${
             syncCode
               ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
               : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-900'
@@ -213,7 +217,7 @@ export const TopHeader: React.FC = () => {
           }
         >
           <RefreshCw
-            className={`w-3.5 h-3.5 ${
+            className={`w-3.5 h-3.5 shrink-0 ${
               isSyncing
                 ? 'animate-spin text-teal-600'
                 : syncCode
@@ -222,13 +226,13 @@ export const TopHeader: React.FC = () => {
             }`}
           />
           <span className="hidden sm:inline">
-            {syncCode ? `Sync: ${syncCode}` : 'Sinkron PC & HP'}
+            {syncCode ? `Sync: ${syncCode}` : 'Sync'}
           </span>
           <span className="sm:hidden text-[10px] font-mono font-extrabold">
             {syncCode ? syncCode : 'Sync'}
           </span>
           {syncCode && (
-            <span className="hidden md:inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
           )}
         </button>
       </div>

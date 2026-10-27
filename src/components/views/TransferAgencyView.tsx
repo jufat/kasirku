@@ -121,9 +121,9 @@ export const TransferAgencyView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-[#f8f9fa]">
+    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#f8f9fa]">
       {/* Left Form: Agency Terminal */}
-      <div className="w-[460px] bg-white border-r border-slate-200 flex flex-col h-full shadow-xs shrink-0 overflow-y-auto">
+      <div className="w-full md:w-[460px] bg-white md:border-r border-slate-200 flex flex-col h-full shadow-xs shrink-0 overflow-y-auto pb-10 md:pb-4">
         <div className="p-5 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-pink-600 text-white flex items-center justify-center shadow-md">
@@ -259,43 +259,82 @@ export const TransferAgencyView: React.FC = () => {
             </div>
           </div>
 
-          {/* Nominal Transfer with Quick Chips */}
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-bold text-slate-700">Nominal Transaksi</label>
-              <span className="text-[11px] text-slate-500 font-mono">
+          {/* Nominal Transfer with Dynamic Input */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>Nominal Transaksi</span>
+                <span className="text-[10px] font-extrabold text-pink-700 bg-pink-50 px-2 py-0.5 rounded border border-pink-200">
+                  Dinamis (Bebas)
+                </span>
+              </label>
+              <span className="text-xs text-pink-800 font-mono font-extrabold">
                 Rp {nominal.toLocaleString('id-ID')}
               </span>
             </div>
 
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-mono font-bold text-slate-500">
                 Rp
               </span>
               <input
-                type="number"
-                step="5000"
-                min="5000"
-                value={nominal || ''}
-                onChange={(e) => setNominal(Number(e.target.value) || 0)}
-                className="w-full pl-10 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900 focus:ring-2 focus:ring-pink-500 focus:bg-white focus:outline-none"
+                type="text"
+                inputMode="numeric"
+                required
+                value={nominal ? nominal.toLocaleString('id-ID') : ''}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '');
+                  setNominal(raw ? parseInt(raw, 10) : 0);
+                }}
+                placeholder="0 (Ketik nominal berapa saja)"
+                className="w-full pl-11 pr-20 py-2.5 text-base font-extrabold bg-white border border-pink-300 rounded-xl font-mono text-slate-900 focus:ring-2 focus:ring-pink-500 focus:outline-none shadow-xs"
               />
+              {nominal > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setNominal(0)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                  title="Hapus / Reset Angka"
+                >
+                  Hapus
+                </button>
+              )}
             </div>
 
-            {/* Nominal Presets */}
-            <div className="grid grid-cols-4 gap-1.5 mt-2">
-              {[50000, 100000, 250000, 500000, 1000000, 1500000, 2000000, 3000000].map(
-                (amt) => (
+            {/* Nominal Presets & Additives */}
+            <div className="space-y-1.5 pt-0.5">
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+                {[50000, 100000, 250000, 500000, 1000000, 1500000, 2000000, 3000000].map(
+                  (amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setNominal(amt)}
+                      className={`py-1 px-1 text-[11px] font-mono font-bold rounded-lg border transition cursor-pointer text-center ${
+                        nominal === amt
+                          ? 'bg-pink-600 text-white border-pink-700 shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {amt >= 1000000 ? `${amt / 1000000}Jt` : `${amt / 1000}rb`}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div className="grid grid-cols-5 gap-1 pt-0.5">
+                {[10000, 50000, 100000, 500000, 1000000].map((addAmt) => (
                   <button
-                    key={amt}
+                    key={addAmt}
                     type="button"
-                    onClick={() => setNominal(amt)}
-                    className="py-1 px-1 text-[11px] font-mono font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                    onClick={() => setNominal((prev) => prev + addAmt)}
+                    className="py-1 px-1 text-[11px] font-mono font-bold rounded-lg bg-pink-50 hover:bg-pink-100 border border-pink-200 text-pink-800 transition cursor-pointer text-center"
+                    title={`Tambah +Rp ${addAmt.toLocaleString('id-ID')}`}
                   >
-                    {amt >= 1000000 ? `${amt / 1000000} Jt` : `${amt / 1000}k`}
+                    +{addAmt >= 1000000 ? `${addAmt / 1000000}Jt` : `${addAmt / 1000}rb`}
                   </button>
-                )
-              )}
+                ))}
+              </div>
             </div>
           </div>
 
@@ -307,10 +346,11 @@ export const TransferAgencyView: React.FC = () => {
                 <span className="text-slate-400">Rp</span>
                 <input
                   type="number"
-                  step="500"
+                  step="any"
+                  min="0"
                   value={bankAdminFee}
                   onChange={(e) => setBankAdminFee(Number(e.target.value) || 0)}
-                  className="w-20 text-right px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold"
+                  className="w-24 text-right px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-pink-500"
                 />
               </div>
             </div>
@@ -324,10 +364,11 @@ export const TransferAgencyView: React.FC = () => {
                 <span className="text-slate-400">Rp</span>
                 <input
                   type="number"
-                  step="500"
+                  step="any"
+                  min="0"
                   value={counterFee}
                   onChange={(e) => setCounterFee(Number(e.target.value) || 0)}
-                  className="w-20 text-right px-2 py-0.5 bg-white border border-pink-300 rounded text-xs font-bold text-pink-700"
+                  className="w-24 text-right px-2 py-0.5 bg-white border border-pink-300 rounded text-xs font-bold text-pink-700 focus:outline-none focus:ring-1 focus:ring-pink-500"
                 />
               </div>
             </div>

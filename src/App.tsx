@@ -7,6 +7,7 @@ import { AtmMiniView } from './components/views/AtmMiniView';
 import { TransferAgencyView } from './components/views/TransferAgencyView';
 import { PPOBView } from './components/views/PPOBView';
 import { ServiceHPView } from './components/views/ServiceHPView';
+import { PercetakanView } from './components/views/PercetakanView';
 import { DashboardView } from './components/views/DashboardView';
 import { KasHarianView } from './components/views/KasHarianView';
 import { StokKategoriView } from './components/views/StokKategoriView';
@@ -33,6 +34,8 @@ const AppContent: React.FC = () => {
         return <PPOBView />;
       case 'service':
         return <ServiceHPView />;
+      case 'percetakan':
+        return <PercetakanView />;
       case 'dashboard':
         return <DashboardView />;
       case 'kas_harian':
@@ -58,14 +61,18 @@ const AppContent: React.FC = () => {
         {/* Top Header Navigation */}
         <TopHeader />
 
-        {/* Dynamic Viewport with mobile bottom bar clearance */}
-        <main className="flex-1 flex flex-col overflow-hidden relative pb-14 md:pb-0">
+        {/* Dynamic Viewport with mobile bottom bar clearance (pb-0 on ATM Mini / Mobile banking for full visibility) */}
+        <main
+          className={`flex-1 flex flex-col overflow-hidden relative ${
+            activeTab === 'atm_mini' || activeTab === 'transfer' ? 'pb-0' : 'pb-14 md:pb-0'
+          }`}
+        >
           {renderActiveView()}
         </main>
       </div>
 
-      {/* Smartphone Bottom Navigation Bar */}
-      <MobileBottomNav />
+      {/* Smartphone Bottom Navigation Bar: Hidden on ATM Mini / Mobile Banking as requested */}
+      {!(activeTab === 'atm_mini' || activeTab === 'transfer') && <MobileBottomNav />}
 
       {/* Global Interactive Modals */}
       <ThermalReceiptModal />

@@ -19,6 +19,12 @@ import {
   QrCode,
   ScanLine,
   SmartphoneNfc,
+  X,
+  Banknote,
+  AlertCircle,
+  Info,
+  Menu,
+  ArrowLeft,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType } from '../../types/pos';
@@ -89,7 +95,13 @@ const QRIS_TYPES = [
 ];
 
 export const AtmMiniView: React.FC = () => {
-  const { atmMiniTransactions, recordAtmMiniTransaction, openReceipt } = usePOS();
+  const {
+    atmMiniTransactions,
+    recordAtmMiniTransaction,
+    openReceipt,
+    setActiveTab,
+    setIsMobileSidebarOpen,
+  } = usePOS();
 
   // Mode Selection
   const [activeMode, setActiveMode] = useState<AtmMiniType>('tarik_tunai_atm');
@@ -116,6 +128,11 @@ export const AtmMiniView: React.FC = () => {
   const [filterType, setFilterType] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [mobileTab, setMobileTab] = useState<'terminal' | 'history'>('terminal');
+
+  // Interactive Payment Dialog states
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [cashReceivedInput, setCashReceivedInput] = useState<number>(0);
+  const [selectedTxDetail, setSelectedTxDetail] = useState<any | null>(null);
 
   // Switch mode defaults
   const handleModeChange = (mode: AtmMiniType) => {
@@ -149,6 +166,7 @@ export const AtmMiniView: React.FC = () => {
 
   const totalDebited = nominal + adminEdcFee + counterFee;
 
+  // Step 1: Open Payment & Confirmation Dialog
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -157,6 +175,18 @@ export const AtmMiniView: React.FC = () => {
       return;
     }
 
+    if ((activeMode === 'topup_ewallet_atm' || activeMode === 'transfer_atm') && !targetAccountOrPhone.trim()) {
+      alert('Nomor tujuan / rekening / no HP e-wallet wajib diisi!');
+      return;
+    }
+
+    // Default cash received in modal to totalDebited
+    setCashReceivedInput(totalDebited);
+    setIsPaymentModalOpen(true);
+  };
+
+  // Step 2: Confirm and process transaction + open thermal receipt
+  const handleConfirmAndExecuteTransaction = () => {
     let providerName = bankName;
     let actualCardType = cardType;
     let maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
@@ -197,6 +227,8 @@ export const AtmMiniView: React.FC = () => {
       note
     );
 
+    setIsPaymentModalOpen(false);
+
     const serviceName =
       activeMode === 'tarik_tunai_atm'
         ? 'Tarik Tunai'
@@ -209,7 +241,10 @@ export const AtmMiniView: React.FC = () => {
         : 'Sistem QRIS';
 
     setToastMessage(`Transaksi ${serviceName} berhasil diproses & dicatat ke kas laci!`);
-    setTimeout(() => setToastMessage(''), 4000);
+    setTimeout(() => setToastMessage(''), 4500);
+
+    // Auto open receipt thermal modal
+    openReceipt(tx);
 
     // Reset fields
     setTargetAccountOrPhone('');
@@ -247,25 +282,25 @@ export const AtmMiniView: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#f8fafc]">
-      {/* Mobile Tab Switcher */}
-      <div className="md:hidden flex items-center bg-white border-b border-slate-200 p-2 shrink-0">
-        <div className="grid grid-cols-2 w-full p-1 bg-slate-100 rounded-xl gap-1">
+      {/* Mobile Header Bar & Switcher (No bottom menu obstructing the view) */}
+      <div className="md:hidden flex items-center justify-between bg-white border-b border-slate-200 px-2.5 py-1.5 shrink-0 gap-2">
+        <div className="grid grid-cols-2 flex-1 p-0.5 bg-slate-100 rounded-xl gap-1">
           <button
             type="button"
             onClick={() => setMobileTab('terminal')}
-            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`py-1.5 px-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
               mobileTab === 'terminal'
                 ? 'bg-white text-teal-900 shadow-xs font-extrabold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <CreditCard className="w-3.5 h-3.5" />
-            <span>Mesin EDC Transaksi</span>
+            <span>EDC Transaksi</span>
           </button>
           <button
             type="button"
             onClick={() => setMobileTab('history')}
-            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`py-1.5 px-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
               mobileTab === 'history'
                 ? 'bg-white text-teal-900 shadow-xs font-extrabold'
                 : 'text-slate-600 hover:text-slate-900'
@@ -275,13 +310,34 @@ export const AtmMiniView: React.FC = () => {
             <span>Riwayat ({atmMiniTransactions.length})</span>
           </button>
         </div>
+
+        {/* Quick Nav: Back to Kasir or Open Sidebar Drawer */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('kasir')}
+            className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
+            title="Kembali ke Kasir Utama"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Kasir</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="p-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg transition flex items-center cursor-pointer"
+            title="Buka Menu Lengkap POS"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Left Column: EDC ATM Mini Terminal & Transaction Form */}
       <div
         className={`${
           mobileTab === 'terminal' ? 'flex' : 'hidden'
-        } md:flex w-full md:w-[490px] bg-white md:border-r border-slate-200 flex-col h-full shadow-xs shrink-0 overflow-y-auto`}
+        } md:flex w-full md:w-[490px] bg-white md:border-r border-slate-200 flex-col h-full shadow-xs shrink-0 overflow-y-auto pb-10 md:pb-4`}
       >
         {/* Terminal Header & Device Status */}
         <div className="p-3.5 sm:p-4 bg-gradient-to-r from-teal-700 via-emerald-600 to-cyan-700 text-white shadow-xs">
@@ -389,7 +445,7 @@ export const AtmMiniView: React.FC = () => {
         </div>
 
         {/* Transaction Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 flex-1">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 pb-12 sm:pb-8 space-y-4 flex-1">
           {toastMessage && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 font-bold animate-fade-in">
               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -750,48 +806,92 @@ export const AtmMiniView: React.FC = () => {
             </div>
           )}
 
-          {/* Nominal Transaksi with Quick Chips */}
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-bold text-slate-700">
-                {activeMode === 'tarik_tunai_atm'
-                  ? 'Nominal Uang Ditarik Nasabah'
-                  : 'Nominal Transaksi (Rp)'}
+          {/* Nominal Transaksi Dinamis */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>
+                  {activeMode === 'tarik_tunai_atm'
+                    ? 'Nominal Uang Ditarik Nasabah'
+                    : 'Nominal Transaksi (Rp)'}
+                </span>
+                <span className="text-[10px] font-extrabold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                  Dinamis (Bebas)
+                </span>
               </label>
-              <span className="text-[11px] font-mono text-slate-500 font-bold">
+              <span className="text-xs font-mono text-emerald-800 font-extrabold">
                 Rp {nominal.toLocaleString('id-ID')}
               </span>
             </div>
 
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-slate-400 font-bold">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-slate-500 font-extrabold text-base">
                 Rp
               </span>
               <input
-                type="number"
-                step="50000"
-                min="10000"
+                type="text"
+                inputMode="numeric"
                 required
-                value={nominal || ''}
-                onChange={(e) => setNominal(Number(e.target.value) || 0)}
-                className="w-full pl-10 pr-3 py-2 text-base font-extrabold bg-slate-50 border border-slate-300 rounded-xl font-mono text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                value={nominal ? nominal.toLocaleString('id-ID') : ''}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '');
+                  setNominal(raw ? parseInt(raw, 10) : 0);
+                }}
+                placeholder="0 (Ketik nominal berapa saja)"
+                className="w-full pl-12 pr-20 py-2.5 text-lg font-black bg-white border-2 border-teal-500/70 focus:border-teal-600 rounded-xl font-mono text-slate-900 focus:ring-2 focus:ring-teal-400/40 focus:outline-none shadow-xs transition"
               />
+              {nominal > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setNominal(0)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                  title="Hapus / Reset Angka"
+                >
+                  Hapus (C)
+                </button>
+              )}
             </div>
 
-            {/* Preset Amount Chips */}
-            <div className="grid grid-cols-4 gap-1.5 mt-2">
-              {[50000, 100000, 200000, 500000, 1000000, 1500000, 2000000, 3000000].map(
-                (amt) => (
+            {/* Quick Presets & Dynamic Additives */}
+            <div className="space-y-1.5 pt-0.5">
+              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                <span>Pilih Cepat (Nominal Langsung):</span>
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+                {[50000, 100000, 200000, 500000, 1000000, 1500000, 2000000, 5000000].map(
+                  (amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setNominal(amt)}
+                      className={`py-1 px-1 text-[11px] font-mono font-bold rounded-lg border transition cursor-pointer text-center ${
+                        nominal === amt
+                          ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {amt >= 1000000 ? `${amt / 1000000}Jt` : `${amt / 1000}rb`}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium pt-1">
+                <span>Tambah Cepat (+ Akumulasi):</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {[10000, 50000, 100000, 500000, 1000000].map((addAmt) => (
                   <button
-                    key={amt}
+                    key={addAmt}
                     type="button"
-                    onClick={() => setNominal(amt)}
-                    className="py-1 px-1 text-[11px] font-mono font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                    onClick={() => setNominal((prev) => prev + addAmt)}
+                    className="py-1 px-1 text-[11px] font-mono font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 transition cursor-pointer text-center"
+                    title={`Tambah +Rp ${addAmt.toLocaleString('id-ID')}`}
                   >
-                    {amt >= 1000000 ? `${amt / 1000000} Jt` : `${amt / 1000}k`}
+                    +{addAmt >= 1000000 ? `${addAmt / 1000000}Jt` : `${addAmt / 1000}rb`}
                   </button>
-                )
-              )}
+                ))}
+              </div>
             </div>
           </div>
 
@@ -809,10 +909,11 @@ export const AtmMiniView: React.FC = () => {
                 <span className="text-slate-400">Rp</span>
                 <input
                   type="number"
-                  step="500"
+                  step="any"
+                  min="0"
                   value={adminEdcFee}
                   onChange={(e) => setAdminEdcFee(Number(e.target.value) || 0)}
-                  className="w-20 text-right px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold"
+                  className="w-24 text-right px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
             </div>
@@ -826,10 +927,11 @@ export const AtmMiniView: React.FC = () => {
                 <span className="text-slate-400">Rp</span>
                 <input
                   type="number"
-                  step="500"
+                  step="any"
+                  min="0"
                   value={counterFee}
                   onChange={(e) => setCounterFee(Number(e.target.value) || 0)}
-                  className="w-20 text-right px-2 py-0.5 bg-white border border-emerald-300 rounded text-xs font-bold text-emerald-800"
+                  className="w-24 text-right px-2 py-0.5 bg-white border border-emerald-300 rounded text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
             </div>
@@ -1074,14 +1176,25 @@ export const AtmMiniView: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => openReceipt(tx)}
-                          className="px-2.5 py-1 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded flex items-center gap-1 mx-auto transition cursor-pointer"
-                          title="Cetak Struk Transaksi"
-                        >
-                          <Printer className="w-3 h-3" />
-                          <span>Struk</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTxDetail(tx)}
+                            className="px-2 py-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 rounded border border-teal-200 transition cursor-pointer"
+                            title="Lihat Dialog Rincian Pembayaran"
+                          >
+                            Detail
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openReceipt(tx)}
+                            className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded flex items-center gap-1 transition cursor-pointer"
+                            title="Cetak Struk Transaksi"
+                          >
+                            <Printer className="w-3 h-3 text-slate-500" />
+                            <span>Struk</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1092,6 +1205,350 @@ export const AtmMiniView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* 1. DIALOG PEMBAYARAN & KONFIRMASI MESIN EDC ATM MINI (MODAL AKTIF)         */}
+      {/* ========================================================================= */}
+      {isPaymentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden my-auto animate-scale-up">
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-teal-700 via-emerald-700 to-cyan-700 text-white flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-black shadow">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold tracking-tight">Dialog Pembayaran & Otorisasi EDC</h3>
+                  <p className="text-[11px] text-teal-100">Ju-Fat Cell · Terminal Sunmi P2 Pro Multi-Payment</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                title="Tutup Dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Service & Customer Identification Badge */}
+              <div className="p-3 bg-teal-50/70 border border-teal-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-teal-700 text-white tracking-wider">
+                    {activeMode === 'tarik_tunai_atm'
+                      ? 'Layanan Tarik Tunai'
+                      : activeMode === 'transfer_atm'
+                      ? 'Layanan Transfer EDC'
+                      : activeMode === 'topup_ewallet_atm'
+                      ? 'Top Up E-Wallet'
+                      : activeMode === 'mbanking_atm'
+                      ? 'Mobile Banking'
+                      : 'Sistem QRIS Merchant'}
+                  </span>
+                  <span className="text-[11px] font-mono text-teal-900 font-bold">
+                    EDC-JUFAT-01
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-medium block">Kanal / Bank:</span>
+                    <span className="font-extrabold text-slate-900">
+                      {activeMode === 'topup_ewallet_atm'
+                        ? ewalletProvider
+                        : activeMode === 'mbanking_atm'
+                        ? mbankingApp
+                        : activeMode === 'qris_atm'
+                        ? qrisProvider
+                        : `${bankName} (${cardType})`}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-medium block">Nama Nasabah:</span>
+                    <span className="font-bold text-slate-900">
+                      {customerName || 'Nasabah Langsung (Walk-in)'}
+                    </span>
+                  </div>
+                </div>
+
+                {(targetAccountOrPhone || activeMode === 'qris_atm') && (
+                  <div className="pt-1 border-t border-teal-200/60 text-xs">
+                    <span className="text-[10px] text-slate-500 font-medium block">
+                      {activeMode === 'topup_ewallet_atm'
+                        ? 'No. Handphone E-Wallet:'
+                        : activeMode === 'qris_atm'
+                        ? 'RRN Referensi QRIS:'
+                        : 'No. Rekening / VA Tujuan:'}
+                    </span>
+                    <span className="font-mono font-black text-teal-950 text-sm">
+                      {targetAccountOrPhone || qrisRrn}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Financial Calculation Breakdown Table */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>Nominal Pokok Transaksi:</span>
+                  <span className="font-mono font-bold text-slate-900">
+                    Rp {nominal.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>
+                    {activeMode === 'qris_atm'
+                      ? 'Biaya MDR / Sistem QRIS:'
+                      : activeMode === 'mbanking_atm'
+                      ? 'Biaya Admin Aplikasi:'
+                      : 'Biaya Admin EDC / Bank:'}
+                  </span>
+                  <span className="font-mono font-semibold text-slate-700">
+                    Rp {adminEdcFee.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-emerald-800 font-medium">
+                  <span className="flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Jasa Konter Ju-Fat (Laba):</span>
+                  </span>
+                  <span className="font-mono font-bold text-emerald-700">
+                    +Rp {counterFee.toLocaleString('id-ID')}
+                  </span>
+                </div>
+
+                <div className="border-t-2 border-slate-200 pt-2 flex items-baseline justify-between">
+                  <span className="text-xs font-black text-slate-900 uppercase">
+                    {activeMode === 'qris_atm'
+                      ? 'Total Bayar via QRIS:'
+                      : 'Total Didebet dari Kartu Nasabah:'}
+                  </span>
+                  <span className="text-xl font-black font-mono text-emerald-800 tabular-nums">
+                    Rp {totalDebited.toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Physical Cash Instruction for Cashier Drawer */}
+              {activeMode === 'tarik_tunai_atm' ||
+              (activeMode === 'mbanking_atm' && mbankingType.includes('Tarik Tunai')) ||
+              (activeMode === 'qris_atm' && qrisType.includes('Tarik Tunai')) ? (
+                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-1 text-amber-950">
+                  <div className="flex items-center gap-1.5 font-bold text-xs">
+                    <Banknote className="w-4 h-4 text-amber-600" />
+                    <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
+                  </div>
+                  <div className="flex items-baseline justify-between pt-1">
+                    <span className="text-xs">Uang Fisik Diberikan dari Laci:</span>
+                    <span className="text-lg font-black font-mono text-amber-900">
+                      Rp {nominal.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-800">
+                    💡 Saldo rekening bank agen Ju-Fat otomatis bertambah Rp {totalDebited.toLocaleString('id-ID')} (Nominal + Biaya Admin + Laba Jasa).
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2 text-emerald-950">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <Banknote className="w-4 h-4 text-emerald-700" />
+                      <span>Uang Fisik Diterima ke Laci Kasir</span>
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-emerald-900">
+                      Wajib: Rp {totalDebited.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+
+                  {/* Cash Received Calculator for Cashier */}
+                  <div className="space-y-1.5 pt-1 border-t border-emerald-200">
+                    <label className="text-[11px] font-bold text-emerald-900 block">
+                      Jumlah Uang Tunai Diberikan Nasabah:
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-500">
+                        Rp
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={cashReceivedInput ? cashReceivedInput.toLocaleString('id-ID') : ''}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          setCashReceivedInput(val ? parseInt(val, 10) : 0);
+                        }}
+                        className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder={totalDebited.toLocaleString('id-ID')}
+                      />
+                    </div>
+
+                    {/* Quick money chips */}
+                    <div className="flex items-center gap-1 overflow-x-auto pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setCashReceivedInput(totalDebited)}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200/80 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer"
+                      >
+                        Uang Pas
+                      </button>
+                      {[50000, 100000, 200000, 500000, 1000000].map((quickCash) => (
+                        <button
+                          key={quickCash}
+                          type="button"
+                          onClick={() => setCashReceivedInput(quickCash)}
+                          className="px-2 py-0.5 text-[10px] font-mono font-bold bg-white border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100 transition cursor-pointer shrink-0"
+                        >
+                          Rp {quickCash.toLocaleString('id-ID')}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Change Amount */}
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <span className="font-bold text-slate-700">Uang Kembalian Kasir:</span>
+                      <span
+                        className={`font-mono font-black text-sm ${
+                          cashReceivedInput >= totalDebited ? 'text-emerald-700' : 'text-rose-600'
+                        }`}
+                      >
+                        {cashReceivedInput >= totalDebited
+                          ? `Rp ${(cashReceivedInput - totalDebited).toLocaleString('id-ID')}`
+                          : `Kurang Rp ${(totalDebited - cashReceivedInput).toLocaleString('id-ID')}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Simulated EDC Hardware Status Indicator */}
+              <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between text-[11px] text-slate-600">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-semibold text-slate-800">
+                    Mesin EDC Siap · Otorisasi PIN / Chip Sukses
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] text-slate-500">
+                  Trace: TRC-{Math.floor(100000 + Math.random() * 900000)}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Kembali / Ubah Input
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAndExecuteTransaction}
+                className="flex-2 py-2.5 px-4 bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              >
+                <CheckCircle className="w-4 h-4 text-amber-300" />
+                <span>Konfirmasi & Selesaikan Transaksi</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. DIALOG DETAIL RIWAYAT TRANSAKSI EDC (MODAL LIHAT DATA)                  */}
+      {/* ========================================================================= */}
+      {selectedTxDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden my-auto animate-scale-up">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-bold">Rincian Transaksi EDC #{selectedTxDetail.traceNo}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedTxDetail(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">Waktu Transaksi:</span>
+                <span className="font-semibold text-slate-800">{selectedTxDetail.date}</span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">Layanan:</span>
+                <span className="font-bold text-teal-800 uppercase">{selectedTxDetail.type}</span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">Bank / Provider:</span>
+                <span className="font-bold text-slate-800">{selectedTxDetail.bankName}</span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">No Kartu / Akun:</span>
+                <span className="font-mono font-bold text-slate-800">{selectedTxDetail.cardNumberMasked}</span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">Nama Nasabah:</span>
+                <span className="font-bold text-slate-900">{selectedTxDetail.customerName}</span>
+              </div>
+              {selectedTxDetail.targetAccountOrPhone && (
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">No Tujuan:</span>
+                  <span className="font-mono font-bold text-teal-900">{selectedTxDetail.targetAccountOrPhone}</span>
+                </div>
+              )}
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">Nominal Pokok:</span>
+                <span className="font-mono font-bold text-slate-900">Rp {selectedTxDetail.nominal.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-500">Biaya Admin EDC:</span>
+                <span className="font-mono text-slate-700">Rp {selectedTxDetail.adminEdcFee.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-100">
+                <span className="text-emerald-700 font-bold">Laba Jasa Konter:</span>
+                <span className="font-mono font-bold text-emerald-800">+Rp {selectedTxDetail.counterFee.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between pt-1 font-bold text-sm text-slate-900">
+                <span>Total Transaksi:</span>
+                <span className="font-mono font-black text-emerald-800">Rp {selectedTxDetail.totalDebited.toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedTxDetail(null)}
+                className="flex-1 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 cursor-pointer"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = selectedTxDetail;
+                  setSelectedTxDetail(null);
+                  openReceipt(tx);
+                }}
+                className="flex-1 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-600 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Ulang Struk</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

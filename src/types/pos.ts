@@ -149,6 +149,7 @@ export type CashMutationCategory =
   | 'jasa_transfer'
   | 'pulsa_ppob'
   | 'service_hp'
+  | 'percetakan'
   | 'operasional_keluar'
   | 'belanja_stok'
   | 'piutang_masuk'
@@ -215,4 +216,62 @@ export interface StoreProfile {
   logo?: string; // Base64 data URL or image URL
   isDemoMode: boolean; // true = Demo Mode with mock data, false = Live Production Mode
 }
+
+export type PrintServiceCategory =
+  | 'print_dokumen'
+  | 'fotokopi'
+  | 'cetak_foto'
+  | 'banner_spanduk'
+  | 'stiker_label'
+  | 'jilid_laminating'
+  | 'undangan_nota'
+  | 'kartu_nama_id';
+
+export type PrintOrderStatus = 'antrean' | 'proses' | 'selesai' | 'diambil';
+
+export interface PrintPriceTier {
+  minQty: number;
+  price: number;
+  label?: string; // e.g. "1 - 20 lbr", "21 - 50 lbr", "51 - 100 lbr", "101+ lbr"
+}
+
+export interface PrintServiceItem {
+  id: string;
+  category: PrintServiceCategory;
+  name: string;
+  price: number; // default base unit price
+  unit: string;
+  desc?: string;
+  tiers?: PrintPriceTier[];
+}
+
+export interface PrintOrderItem {
+  id: string;
+  serviceName: string;
+  category: PrintServiceCategory;
+  quantity: number;
+  unit: string; // 'lembar' | 'meter' | 'pcs' | 'buku' | 'paket'
+  pricePerUnit: number;
+  subtotal: number;
+  basePrice?: number;
+  isCustomPrice?: boolean;
+  specNote?: string;
+}
+
+export interface PrintOrder {
+  id: string; // e.g. PRT-2026-001
+  date: string;
+  dateCompleted?: string;
+  customerName: string;
+  customerPhone: string;
+  items: PrintOrderItem[];
+  totalAmount: number;
+  downPayment: number;
+  remainingAmount: number;
+  paymentMethod: PaymentMethod;
+  status: PrintOrderStatus;
+  deadline?: string;
+  fileOrNote?: string;
+}
+
 
