@@ -21,6 +21,9 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  Banknote,
+  QrCode,
+  Receipt,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { PPOBCategory, PPOBPackage, PPOBTransaction } from '../../types/pos';
@@ -162,7 +165,17 @@ export const PPOBView: React.FC = () => {
     }
   };
 
-  const handlePurchase = (pkg: PPOBPackage) => {
+  // PPOB Interactive Payment / Checkout Modal
+  const [selectedPackageForCheckout, setSelectedPackageForCheckout] = useState<PPOBPackage | null>(null);
+  const [ppobPaymentMethod, setPpobPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
+  const [ppobCashReceived, setPpobCashReceived] = useState<number>(0);
+  const [ppobCustomerPhone, setPpobCustomerPhone] = useState('');
+  const [ppobDueDate, setPpobDueDate] = useState(() =>
+    new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+  );
+  const [ppobNote, setPpobNote] = useState('');
+
+  const handleInitiatePurchase = (pkg: PPOBPackage) => {
     let target = phoneNumber.trim();
     if (category === 'game') {
       if (!gameUserId.trim()) {
@@ -183,6 +196,23 @@ export const PPOBView: React.FC = () => {
       }
     }
 
+    setSelectedPackageForCheckout(pkg);
+    setPpobCashReceived(pkg.price);
+    setPpobPaymentMethod('tunai');
+    setPpobCustomerPhone(phoneNumber.trim() || '');
+    setPpobNote('');
+  };
+
+  const handleConfirmPurchase = () => {
+    if (!selectedPackageForCheckout) return;
+    const pkg = selectedPackageForCheckout;
+    let target = phoneNumber.trim();
+    if (category === 'game') {
+      target = gameZoneId.trim()
+        ? `${gameUserId.trim()} (${gameZoneId.trim()})`
+        : gameUserId.trim();
+    }
+
     const tx = recordPPOBTransaction(
       category,
       category === 'pln' ? 'PLN Prepaid' : pkg.provider,
@@ -190,12 +220,24 @@ export const PPOBView: React.FC = () => {
       pkg.name,
       pkg.hpp,
       pkg.price,
-      customerName.trim() || (category === 'game' ? 'Player Game' : 'Pelanggan PPOB')
+      customerName.trim() || (category === 'game' ? 'Player Game' : 'Pelanggan PPOB'),
+      ppobPaymentMethod,
+      ppobCustomerPhone.trim() || target,
+      ppobDueDate,
+      ppobNote.trim() || undefined
     );
 
+    setSelectedPackageForCheckout(null);
     setLastTxForReceipt(tx);
+    const methodLabel =
+      ppobPaymentMethod === 'tunai'
+        ? 'Tunai'
+        : ppobPaymentMethod === 'qris'
+        ? 'QRIS'
+        : 'Kasbon (Hutang)';
+
     setSuccessMessage(
-      `Pembelian ${pkg.name} untuk ${target} (${pkg.provider}) berhasil diproses & dicatat ke Kas!`
+      `Pembelian ${pkg.name} untuk ${target} (${methodLabel}) berhasil diproses!`
     );
     setTimeout(() => setSuccessMessage(''), 6000);
   };
@@ -786,7 +828,7 @@ export const PPOBView: React.FC = () => {
 
                       <button
                         type="button"
-                        onClick={() => handlePurchase(pkg)}
+                        onClick={() => handleInitiatePurchase(pkg)}
                         className={`px-3.5 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 ${
                           isGame
                             ? 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
@@ -1244,6 +1286,263 @@ export const PPOBView: React.FC = () => {
                 className="px-4 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition cursor-pointer"
               >
                 Ya, Hapus Transaksi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: Pembayaran PPOB Interaktif (Tunai, QRIS, Kasbon/Hutang)            */}
+      {/* ========================================================================= */}
+      {selectedPackageForCheckout && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-teal-700 to-emerald-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-300" />
+                <div>
+                  <h3 className="text-sm font-extrabold">Pembayaran & Proses Transaksi PPOB</h3>
+                  <p className="text-[10px] text-emerald-100">Ju-Fat Cell · Konter Pulsa, Data & Game</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPackageForCheckout(null)}
+                className="text-emerald-100 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 space-y-3.5 text-xs max-h-[80vh] overflow-y-auto">
+              {/* Product and Destination Summary */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    {selectedPackageForCheckout.provider} · {selectedPackageForCheckout.category.toUpperCase()}
+                  </span>
+                  <span className="text-[10px] bg-teal-100 text-teal-800 font-bold px-2 py-0.5 rounded-full font-mono">
+                    Laba +Rp {(selectedPackageForCheckout.price - selectedPackageForCheckout.hpp).toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="font-extrabold text-sm text-slate-900">
+                  {selectedPackageForCheckout.name}
+                </div>
+                <div className="text-slate-600 font-mono text-xs flex items-center gap-1">
+                  <span>Tujuan:</span>
+                  <span className="font-bold text-teal-900">
+                    {category === 'game'
+                      ? gameZoneId.trim()
+                        ? `${gameUserId.trim()} (${gameZoneId.trim()})`
+                        : gameUserId.trim()
+                      : phoneNumber.trim()}
+                  </span>
+                  {customerName.trim() && (
+                    <span className="text-slate-500 text-[11px]">({customerName.trim()})</span>
+                  )}
+                </div>
+                <div className="border-t border-slate-200 pt-1.5 flex justify-between items-baseline">
+                  <span className="font-bold text-slate-800">Total Tagihan:</span>
+                  <span className="text-lg font-black font-mono text-emerald-800">
+                    Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payment Method Selector */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-700 block">
+                  Pilih Metode Pembayaran:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'tunai', label: 'Tunai', icon: Banknote },
+                    { id: 'qris', label: 'QRIS', icon: QrCode },
+                    { id: 'hutang', label: 'Kasbon', icon: Receipt },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    const active = ppobPaymentMethod === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setPpobPaymentMethod(m.id as any);
+                          if (m.id === 'tunai' && ppobCashReceived === 0) {
+                            setPpobCashReceived(selectedPackageForCheckout.price);
+                          }
+                        }}
+                        className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border ${
+                          active
+                            ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white border-teal-600 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="text-[11px]">{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Detail Pembayaran Tunai */}
+              {ppobPaymentMethod === 'tunai' && (
+                <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2 text-emerald-950">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs flex items-center gap-1.5">
+                      <Banknote className="w-4 h-4 text-emerald-700" />
+                      <span>Uang Fisik Diterima Kasir:</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-emerald-900">
+                      Tagihan: Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-500">
+                      Rp
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={ppobCashReceived || ''}
+                      onChange={(e) => setPpobCashReceived(Number(e.target.value) || 0)}
+                      className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder={selectedPackageForCheckout.price.toString()}
+                    />
+                  </div>
+
+                  {/* Quick cash buttons */}
+                  <div className="flex items-center gap-1 overflow-x-auto pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setPpobCashReceived(selectedPackageForCheckout.price)}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer"
+                    >
+                      Uang Pas
+                    </button>
+                    {[20000, 50000, 100000, 200000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setPpobCashReceived(amt)}
+                        className="px-2 py-0.5 text-[10px] font-mono font-bold bg-white border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100 transition cursor-pointer shrink-0"
+                      >
+                        Rp {amt.toLocaleString('id-ID')}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Kembalian */}
+                  <div className="flex items-center justify-between pt-1 border-t border-emerald-200 text-xs">
+                    <span className="font-bold text-slate-700">Uang Kembalian:</span>
+                    <span
+                      className={`font-mono font-black text-sm ${
+                        ppobCashReceived >= selectedPackageForCheckout.price
+                          ? 'text-emerald-800'
+                          : 'text-rose-600'
+                      }`}
+                    >
+                      {ppobCashReceived >= selectedPackageForCheckout.price
+                        ? `Rp ${(ppobCashReceived - selectedPackageForCheckout.price).toLocaleString('id-ID')}`
+                        : `Kurang Rp ${(selectedPackageForCheckout.price - ppobCashReceived).toLocaleString('id-ID')}`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Detail Pembayaran QRIS */}
+              {ppobPaymentMethod === 'qris' && (
+                <div className="p-3 bg-sky-50 border-2 border-sky-300 rounded-xl space-y-1.5 text-sky-950">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <QrCode className="w-4 h-4 text-sky-600" />
+                      <span>QRIS Ju-Fat Cell</span>
+                    </span>
+                    <span className="text-[10px] bg-sky-200 text-sky-800 px-1.5 py-0.5 rounded font-mono">
+                      ID10202688190
+                    </span>
+                  </div>
+                  <p className="text-xs text-sky-900">
+                    Minta pembeli scan kode QRIS sebesar <span className="font-bold font-mono">Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}</span>.
+                  </p>
+                  <p className="text-[10px] text-sky-700">
+                    💡 Saldo masuk ke rekening QRIS toko, saldo kas laci tetap aman.
+                  </p>
+                </div>
+              )}
+
+              {/* Detail Pembayaran Kasbon (Hutang) */}
+              {ppobPaymentMethod === 'hutang' && (
+                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900">
+                    <Receipt className="w-4 h-4 text-amber-600" />
+                    <span>Data Kasbon Pelanggan (Masuk Buku Hutang)</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                        No. WA / HP:
+                      </label>
+                      <input
+                        type="text"
+                        value={ppobCustomerPhone}
+                        onChange={(e) => setPpobCustomerPhone(e.target.value)}
+                        placeholder={phoneNumber.trim() || '08...'}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                        Jatuh Tempo:
+                      </label>
+                      <input
+                        type="date"
+                        value={ppobDueDate}
+                        onChange={(e) => setPpobDueDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                      Catatan Kasbon (Opsional):
+                    </label>
+                    <input
+                      type="text"
+                      value={ppobNote}
+                      onChange={(e) => setPpobNote(e.target.value)}
+                      placeholder="Cth: Nanti sore dibayar / tetangga sebelah"
+                      className="w-full px-2.5 py-1 text-xs bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <p className="text-[11px] text-amber-800">
+                    ⚡ Total tagihan <span className="font-bold">Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{customerName.trim() || 'Pelanggan PPOB'}</span>.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPackageForCheckout(null)}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPurchase}
+                className="flex-2 py-2.5 px-4 bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <CheckCircle className="w-4 h-4 text-amber-300" />
+                <span>Konfirmasi & Proses Transaksi</span>
               </button>
             </div>
           </div>

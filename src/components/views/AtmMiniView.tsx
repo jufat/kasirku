@@ -25,6 +25,7 @@ import {
   Info,
   Menu,
   ArrowLeft,
+  Receipt,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType } from '../../types/pos';
@@ -133,6 +134,11 @@ export const AtmMiniView: React.FC = () => {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [cashReceivedInput, setCashReceivedInput] = useState<number>(0);
   const [selectedTxDetail, setSelectedTxDetail] = useState<any | null>(null);
+  const [atmMiniPaymentMethod, setAtmMiniPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
+  const [atmMiniCustomerPhone, setAtmMiniCustomerPhone] = useState('');
+  const [atmMiniDueDate, setAtmMiniDueDate] = useState(() =>
+    new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+  );
 
   // Switch mode defaults
   const handleModeChange = (mode: AtmMiniType) => {
@@ -224,7 +230,10 @@ export const AtmMiniView: React.FC = () => {
       adminEdcFee,
       counterFee,
       destination,
-      note
+      note,
+      atmMiniPaymentMethod,
+      atmMiniCustomerPhone || targetAccountOrPhone,
+      atmMiniDueDate
     );
 
     setIsPaymentModalOpen(false);
@@ -1333,95 +1342,186 @@ export const AtmMiniView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Physical Cash Instruction for Cashier Drawer */}
-              {activeMode === 'tarik_tunai_atm' ||
-              (activeMode === 'mbanking_atm' && mbankingType.includes('Tarik Tunai')) ||
-              (activeMode === 'qris_atm' && qrisType.includes('Tarik Tunai')) ? (
-                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-1 text-amber-950">
-                  <div className="flex items-center gap-1.5 font-bold text-xs">
-                    <Banknote className="w-4 h-4 text-amber-600" />
-                    <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
-                  </div>
-                  <div className="flex items-baseline justify-between pt-1">
-                    <span className="text-xs">Uang Fisik Diberikan dari Laci:</span>
-                    <span className="text-lg font-black font-mono text-amber-900">
-                      Rp {nominal.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-amber-800">
-                    💡 Saldo rekening bank agen Ju-Fat otomatis bertambah Rp {totalDebited.toLocaleString('id-ID')} (Nominal + Biaya Admin + Laba Jasa).
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2 text-emerald-950">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <Banknote className="w-4 h-4 text-emerald-700" />
-                      <span>Uang Fisik Diterima ke Laci Kasir</span>
-                    </div>
-                    <span className="text-[11px] font-mono font-bold text-emerald-900">
-                      Wajib: Rp {totalDebited.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-
-                  {/* Cash Received Calculator for Cashier */}
-                  <div className="space-y-1.5 pt-1 border-t border-emerald-200">
-                    <label className="text-[11px] font-bold text-emerald-900 block">
-                      Jumlah Uang Tunai Diberikan Nasabah:
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-500">
-                        Rp
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={cashReceivedInput ? cashReceivedInput.toLocaleString('id-ID') : ''}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '');
-                          setCashReceivedInput(val ? parseInt(val, 10) : 0);
-                        }}
-                        className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        placeholder={totalDebited.toLocaleString('id-ID')}
-                      />
-                    </div>
-
-                    {/* Quick money chips */}
-                    <div className="flex items-center gap-1 overflow-x-auto pt-1">
+              {/* Pilihan Metode Pembayaran: Tunai, QRIS, Kasbon (Hutang) */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-700 block">
+                  Metode Pembayaran Transaksi EDC:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'tunai', label: 'Tunai', icon: Banknote },
+                    { id: 'qris', label: 'QRIS', icon: QrCode },
+                    { id: 'hutang', label: 'Kasbon', icon: Receipt },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    const active = atmMiniPaymentMethod === m.id;
+                    return (
                       <button
+                        key={m.id}
                         type="button"
-                        onClick={() => setCashReceivedInput(totalDebited)}
-                        className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200/80 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer"
-                      >
-                        Uang Pas
-                      </button>
-                      {[50000, 100000, 200000, 500000, 1000000].map((quickCash) => (
-                        <button
-                          key={quickCash}
-                          type="button"
-                          onClick={() => setCashReceivedInput(quickCash)}
-                          className="px-2 py-0.5 text-[10px] font-mono font-bold bg-white border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100 transition cursor-pointer shrink-0"
-                        >
-                          Rp {quickCash.toLocaleString('id-ID')}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Change Amount */}
-                    <div className="flex items-center justify-between pt-1 text-xs">
-                      <span className="font-bold text-slate-700">Uang Kembalian Kasir:</span>
-                      <span
-                        className={`font-mono font-black text-sm ${
-                          cashReceivedInput >= totalDebited ? 'text-emerald-700' : 'text-rose-600'
+                        onClick={() => setAtmMiniPaymentMethod(m.id as any)}
+                        className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border ${
+                          active
+                            ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white border-teal-600 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
-                        {cashReceivedInput >= totalDebited
-                          ? `Rp ${(cashReceivedInput - totalDebited).toLocaleString('id-ID')}`
-                          : `Kurang Rp ${(totalDebited - cashReceivedInput).toLocaleString('id-ID')}`}
-                      </span>
+                        <Icon className="w-4 h-4" />
+                        <span className="text-[11px]">{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Conditional Payment Guidance based on atmMiniPaymentMethod */}
+              {atmMiniPaymentMethod === 'qris' && (
+                <div className="p-3 bg-sky-50 border-2 border-sky-300 rounded-xl space-y-1.5 text-sky-950">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <QrCode className="w-4 h-4 text-sky-600" />
+                      <span>QRIS Merchant Ju-Fat Cell</span>
+                    </span>
+                    <span className="text-[10px] bg-sky-200 text-sky-800 px-1.5 py-0.5 rounded font-mono">
+                      ID10202688190
+                    </span>
+                  </div>
+                  <p className="text-xs text-sky-900">
+                    Minta nasabah scan QRIS toko sebesar <span className="font-bold font-mono">Rp {totalDebited.toLocaleString('id-ID')}</span>.
+                  </p>
+                  <p className="text-[10px] text-sky-700">
+                    💡 Saldo masuk ke rekening QRIS toko, kas laci tetap seimbang.
+                  </p>
+                </div>
+              )}
+
+              {atmMiniPaymentMethod === 'hutang' && (
+                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900">
+                    <Receipt className="w-4 h-4 text-amber-600" />
+                    <span>Rincian Kasbon Nasabah (Masuk Data Hutang)</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                        No. WA / HP:
+                      </label>
+                      <input
+                        type="text"
+                        value={atmMiniCustomerPhone}
+                        onChange={(e) => setAtmMiniCustomerPhone(e.target.value)}
+                        placeholder={targetAccountOrPhone || '08...'}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                        Jatuh Tempo:
+                      </label>
+                      <input
+                        type="date"
+                        value={atmMiniDueDate}
+                        onChange={(e) => setAtmMiniDueDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
                     </div>
                   </div>
+                  <p className="text-[11px] text-amber-800">
+                    ⚡ Total tagihan <span className="font-bold">Rp {totalDebited.toLocaleString('id-ID')}</span> akan langsung tercatat di menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{customerName || 'Nasabah EDC'}</span>.
+                  </p>
                 </div>
+              )}
+
+              {atmMiniPaymentMethod === 'tunai' && (
+                activeMode === 'tarik_tunai_atm' ||
+                (activeMode === 'mbanking_atm' && mbankingType.includes('Tarik Tunai')) ||
+                (activeMode === 'qris_atm' && qrisType.includes('Tarik Tunai')) ? (
+                  <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-1 text-amber-950">
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <Banknote className="w-4 h-4 text-amber-600" />
+                      <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
+                    </div>
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className="text-xs">Uang Fisik Diberikan dari Laci:</span>
+                      <span className="text-lg font-black font-mono text-amber-900">
+                        Rp {nominal.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-amber-800">
+                      💡 Saldo rekening bank agen Ju-Fat otomatis bertambah Rp {totalDebited.toLocaleString('id-ID')} (Nominal + Biaya Admin + Laba Jasa).
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2 text-emerald-950">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <Banknote className="w-4 h-4 text-emerald-700" />
+                        <span>Uang Fisik Diterima ke Laci Kasir</span>
+                      </div>
+                      <span className="text-[11px] font-mono font-bold text-emerald-900">
+                        Wajib: Rp {totalDebited.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+
+                    {/* Cash Received Calculator for Cashier */}
+                    <div className="space-y-1.5 pt-1 border-t border-emerald-200">
+                      <label className="text-[11px] font-bold text-emerald-900 block">
+                        Jumlah Uang Tunai Diberikan Nasabah:
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-500">
+                          Rp
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={cashReceivedInput ? cashReceivedInput.toLocaleString('id-ID') : ''}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setCashReceivedInput(val ? parseInt(val, 10) : 0);
+                          }}
+                          className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder={totalDebited.toLocaleString('id-ID')}
+                        />
+                      </div>
+
+                      {/* Quick money chips */}
+                      <div className="flex items-center gap-1 overflow-x-auto pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setCashReceivedInput(totalDebited)}
+                          className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200/80 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer"
+                        >
+                          Uang Pas
+                        </button>
+                        {[50000, 100000, 200000, 500000, 1000000].map((quickCash) => (
+                          <button
+                            key={quickCash}
+                            type="button"
+                            onClick={() => setCashReceivedInput(quickCash)}
+                            className="px-2 py-0.5 text-[10px] font-mono font-bold bg-white border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100 transition cursor-pointer shrink-0"
+                          >
+                            Rp {quickCash.toLocaleString('id-ID')}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Change Amount */}
+                      <div className="flex items-center justify-between pt-1 text-xs">
+                        <span className="font-bold text-slate-700">Uang Kembalian Kasir:</span>
+                        <span
+                          className={`font-mono font-black text-sm ${
+                            cashReceivedInput >= totalDebited ? 'text-emerald-700' : 'text-rose-600'
+                          }`}
+                        >
+                          {cashReceivedInput >= totalDebited
+                            ? `Rp ${(cashReceivedInput - totalDebited).toLocaleString('id-ID')}`
+                            : `Kurang Rp ${(totalDebited - cashReceivedInput).toLocaleString('id-ID')}`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
               )}
 
               {/* Simulated EDC Hardware Status Indicator */}

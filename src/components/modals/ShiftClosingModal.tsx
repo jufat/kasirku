@@ -118,11 +118,13 @@ export const ShiftClosingModal: React.FC = () => {
                 </span>
                 <input
                   type="number"
-                  step="500"
+                  step="any"
+                  min="0"
                   required
                   value={actualCash}
                   onChange={(e) => setActualCash(Number(e.target.value) || 0)}
                   className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                  placeholder="Berapa saja boleh, cth: 483250"
                 />
               </div>
             </div>
@@ -201,11 +203,13 @@ export const ShiftClosingModal: React.FC = () => {
               <label className="font-bold text-slate-700 block mb-1">Modal Kas Awal Laci (Rp) *</label>
               <input
                 type="number"
-                step="5000"
+                step="any"
+                min="0"
                 required
                 value={newStartingCash}
                 onChange={(e) => setNewStartingCash(Number(e.target.value) || 0)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900"
+                placeholder="Bisa angka berapa saja, cth: 450500"
               />
             </div>
 

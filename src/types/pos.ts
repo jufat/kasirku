@@ -91,6 +91,7 @@ export interface AtmMiniTransaction {
   counterFee: number;
   totalDebited: number;
   cashHandedOrReceived: number;
+  paymentMethod?: 'tunai' | 'qris' | 'hutang';
   status: 'sukses' | 'gagal';
   note?: string;
 }
@@ -119,7 +120,7 @@ export interface PPOBTransaction {
   sellingPrice: number;
   profit: number;
   customerName: string;
-  paymentMethod: 'tunai' | 'qris';
+  paymentMethod: 'tunai' | 'qris' | 'hutang';
   status: 'sukses' | 'proses';
 }
 

@@ -48,6 +48,10 @@ export const KasirView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [customerName, setCustomerName] = useState('Pelanggan Umum');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('tunai');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [debtDueDate, setDebtDueDate] = useState(() => {
+    return new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  });
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [taxPercent, setTaxPercent] = useState<number>(0);
   const [cashTendered, setCashTendered] = useState<number>(0);
@@ -158,13 +162,20 @@ export const KasirView: React.FC = () => {
       return;
     }
 
+    if (paymentMethod === 'hutang' && (!customerName.trim() || customerName.trim() === 'Pelanggan Umum')) {
+      alert('Untuk pembayaran Kasbon / Hutang, mohon isi Nama Pelanggan yang jelas!');
+      return;
+    }
+
     checkoutPOS(
       paymentMethod,
       cashTendered,
       customerName,
       discountAmount,
       taxPercent,
-      checkoutNote
+      checkoutNote,
+      customerPhone,
+      debtDueDate
     );
 
     // Reset checkout form
@@ -172,6 +183,7 @@ export const KasirView: React.FC = () => {
     setTaxPercent(0);
     setCashTendered(0);
     setCheckoutNote('');
+    setCustomerPhone('');
     setIsMobileCartOpen(false);
   };
 
@@ -679,8 +691,8 @@ export const KasirView: React.FC = () => {
               {[
                 { id: 'tunai', label: 'Tunai', icon: Banknote },
                 { id: 'qris', label: 'QRIS', icon: QrCode },
+                { id: 'hutang', label: 'Kasbon', icon: Receipt },
                 { id: 'transfer', label: 'Transfer', icon: CreditCard },
-                { id: 'hutang', label: 'Tempo', icon: Receipt },
               ].map((m) => {
                 const Icon = m.icon;
                 const active = paymentMethod === m.id;
@@ -707,6 +719,62 @@ export const KasirView: React.FC = () => {
               })}
             </div>
           </div>
+
+          {/* QRIS Guidance */}
+          {paymentMethod === 'qris' && (
+            <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl space-y-1.5 text-sky-950">
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-sky-600" />
+                  <span>QRIS Merchant Ju-Fat Cell</span>
+                </span>
+                <span className="text-[10px] bg-sky-200/70 text-sky-800 px-1.5 py-0.5 rounded font-mono">
+                  ID10202688190
+                </span>
+              </div>
+              <p className="text-[11px] text-sky-800">
+                Arahkan pelanggan scan kode QRIS toko sebesar <span className="font-bold font-mono">Rp {finalTotal.toLocaleString('id-ID')}</span>.
+              </p>
+            </div>
+          )}
+
+          {/* Kasbon / Hutang Direct Input Fields */}
+          {paymentMethod === 'hutang' && (
+            <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950 animate-in fade-in duration-150">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                <Receipt className="w-4 h-4 text-amber-600" />
+                <span>Rincian Kasbon Pelanggan (Masuk Data Hutang)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                    No. WA / HP:
+                  </label>
+                  <input
+                    type="text"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="08..."
+                    className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                    Jatuh Tempo:
+                  </label>
+                  <input
+                    type="date"
+                    value={debtDueDate}
+                    onChange={(e) => setDebtDueDate(e.target.value)}
+                    className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-amber-800">
+                ⚡ Total <span className="font-bold">Rp {finalTotal.toLocaleString('id-ID')}</span> akan langsung tercatat di menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline">{customerName}</span>.
+              </p>
+            </div>
+          )}
 
           {/* Cash Tendered & Shortcuts (Only for Tunai) */}
           {paymentMethod === 'tunai' && (
@@ -926,7 +994,7 @@ export const KasirView: React.FC = () => {
                 { id: 'tunai', label: 'Tunai', icon: Banknote },
                 { id: 'qris', label: 'QRIS', icon: QrCode },
                 { id: 'transfer', label: 'Transfer', icon: CreditCard },
-                { id: 'hutang', label: 'Tempo', icon: Receipt },
+                { id: 'hutang', label: 'Kasbon', icon: Receipt },
               ].map((m) => {
                 const Icon = m.icon;
                 const active = paymentMethod === m.id;
@@ -950,6 +1018,62 @@ export const KasirView: React.FC = () => {
                 );
               })}
             </div>
+
+            {/* QRIS Guidance Mobile */}
+            {paymentMethod === 'qris' && (
+              <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl space-y-1.5 text-sky-950">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-sky-600" />
+                    <span>QRIS Ju-Fat Cell</span>
+                  </span>
+                  <span className="text-[10px] bg-sky-200/70 text-sky-800 px-1.5 py-0.5 rounded font-mono">
+                    ID10202688190
+                  </span>
+                </div>
+                <p className="text-[11px] text-sky-800">
+                  Scan QRIS toko sebesar <span className="font-bold font-mono">Rp {finalTotal.toLocaleString('id-ID')}</span>.
+                </p>
+              </div>
+            )}
+
+            {/* Kasbon / Hutang Direct Input Fields Mobile */}
+            {paymentMethod === 'hutang' && (
+              <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                  <Receipt className="w-4 h-4 text-amber-600" />
+                  <span>Rincian Kasbon (Masuk Buku Hutang)</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                      No. WA / HP:
+                    </label>
+                    <input
+                      type="text"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="08..."
+                      className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                      Jatuh Tempo:
+                    </label>
+                    <input
+                      type="date"
+                      value={debtDueDate}
+                      onChange={(e) => setDebtDueDate(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-amber-800">
+                  ⚡ Total <span className="font-bold">Rp {finalTotal.toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline">{customerName}</span>.
+                </p>
+              </div>
+            )}
 
             {/* Cash Tendered & Shortcuts */}
             {paymentMethod === 'tunai' && (

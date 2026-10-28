@@ -94,9 +94,55 @@ export const PercetakanView: React.FC = () => {
   const [orderItems, setOrderItems] = useState<PrintOrderItem[]>([]);
   const [downPayment, setDownPayment] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('tunai');
+  const [debtDueDate, setDebtDueDate] = useState(() =>
+    new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+  );
   const [deadline, setDeadline] = useState('Hari ini');
   const [fileOrNote, setFileOrNote] = useState('');
   const [successToast, setSuccessToast] = useState('');
+
+  // Settle & Pickup Modal State for Percetakan
+  const [settlingPrintOrder, setSettlingPrintOrder] = useState<PrintOrder | null>(null);
+  const [settlePrintMethod, setSettlePrintMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
+  const [settlePrintCashReceived, setSettlePrintCashReceived] = useState<number>(0);
+  const [settlePrintDueDate, setSettlePrintDueDate] = useState(() =>
+    new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+  );
+  const [settlePrintPhone, setSettlePrintPhone] = useState('');
+  const [settlePrintNote, setSettlePrintNote] = useState('');
+
+  const handleOpenSettlePrintOrder = (order: PrintOrder) => {
+    const rem = order.remainingAmount ?? Math.max(0, order.totalAmount - order.downPayment);
+    if (rem > 0) {
+      setSettlingPrintOrder(order);
+      setSettlePrintMethod('tunai');
+      setSettlePrintCashReceived(rem);
+      setSettlePrintPhone(order.customerPhone && order.customerPhone !== '-' ? order.customerPhone : '');
+      setSettlePrintDueDate(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+      setSettlePrintNote(`Pelunasan cetak ${order.id} - ${order.customerName}`);
+    } else {
+      updatePrintOrderStatus(order.id, 'diambil');
+    }
+  };
+
+  const handleConfirmSettlePrintOrder = () => {
+    if (!settlingPrintOrder) return;
+    updatePrintOrderStatus(
+      settlingPrintOrder.id,
+      'diambil',
+      settlePrintMethod,
+      settlePrintDueDate,
+      settlePrintPhone || settlingPrintOrder.customerPhone,
+      settlePrintNote
+    );
+    setSettlingPrintOrder(null);
+    setSuccessToast(
+      settlePrintMethod === 'hutang'
+        ? `Pesanan ${settlingPrintOrder.id} diserahkan & sisa tagihan masuk ke Buku Hutang / Kasbon!`
+        : `Pesanan ${settlingPrintOrder.id} berhasil dilunasi (${settlePrintMethod.toUpperCase()}) & diserahkan!`
+    );
+    setTimeout(() => setSuccessToast(''), 4500);
+  };
 
   // Fallback if no services exist
   const fallbackService: PrintServiceItem = {
@@ -397,18 +443,21 @@ export const PercetakanView: React.FC = () => {
       return;
     }
 
-    const order = addPrintOrder({
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim() || '-',
-      items: orderItems,
-      totalAmount: totalOrderAmount,
-      downPayment: Math.min(downPayment, totalOrderAmount),
-      remainingAmount: remainingBill,
-      paymentMethod,
-      status: 'antrean',
-      deadline: deadline.trim() || undefined,
-      fileOrNote: fileOrNote.trim() || undefined,
-    });
+    const order = addPrintOrder(
+      {
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || '-',
+        items: orderItems,
+        totalAmount: totalOrderAmount,
+        downPayment: Math.min(downPayment, totalOrderAmount),
+        remainingAmount: remainingBill,
+        paymentMethod,
+        status: 'antrean',
+        deadline: deadline.trim() || undefined,
+        fileOrNote: fileOrNote.trim() || undefined,
+      },
+      paymentMethod === 'hutang' || remainingBill > 0 ? debtDueDate : undefined
+    );
 
     setSuccessToast(`Pesanan Percetakan ${order.id} berhasil dicatat & masuk antrean!`);
     setTimeout(() => setSuccessToast(''), 4500);
@@ -1008,22 +1057,101 @@ export const PercetakanView: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Metode Pembayaran DP:
+              <div className="col-span-2 space-y-1.5 pt-1">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Metode Pembayaran:
                 </label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                >
-                  <option value="tunai">Tunai (Cash Drawer)</option>
-                  <option value="qris">QRIS Standar</option>
-                  <option value="transfer">Transfer Bank</option>
-                  <option value="hutang">Hutang / Tempo (Nanti)</option>
-                </select>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { id: 'tunai', label: 'Tunai', icon: Banknote },
+                    { id: 'qris', label: 'QRIS', icon: QrCode },
+                    { id: 'hutang', label: 'Kasbon', icon: Receipt },
+                    { id: 'transfer', label: 'Transfer', icon: CreditCard },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    const active = paymentMethod === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod(m.id as PaymentMethod);
+                          if (m.id === 'hutang') {
+                            setDownPayment(0);
+                          } else if (downPayment === 0) {
+                            setDownPayment(totalOrderAmount);
+                          }
+                        }}
+                        className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border ${
+                          active
+                            ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white border-teal-600 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="text-[11px]">{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+
+            {/* QRIS Guidance */}
+            {paymentMethod === 'qris' && (
+              <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl space-y-1.5 text-sky-950">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-sky-600" />
+                    <span>QRIS Percetakan Ju-Fat Cell</span>
+                  </span>
+                  <span className="text-[10px] bg-sky-200/70 text-sky-800 px-1.5 py-0.5 rounded font-mono">
+                    ID10202688190
+                  </span>
+                </div>
+                <p className="text-[11px] text-sky-800">
+                  Arahkan pelanggan scan QRIS toko untuk pembayaran DP / Pelunasan sebesar <span className="font-bold font-mono">Rp {downPayment.toLocaleString('id-ID')}</span>.
+                </p>
+              </div>
+            )}
+
+            {/* Kasbon / Hutang Direct Input Fields */}
+            {paymentMethod === 'hutang' && (
+              <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                  <Receipt className="w-4 h-4 text-amber-600" />
+                  <span>Rincian Kasbon Percetakan (Masuk Data Hutang)</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                      No. WA / HP Pelanggan:
+                    </label>
+                    <input
+                      type="text"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="08..."
+                      className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                      Jatuh Tempo:
+                    </label>
+                    <input
+                      type="date"
+                      value={debtDueDate}
+                      onChange={(e) => setDebtDueDate(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-amber-800">
+                  ⚡ Sisa tagihan percetakan <span className="font-bold font-mono">Rp {remainingBill.toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{customerName || 'Pelanggan'}</span>.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -1347,7 +1475,7 @@ export const PercetakanView: React.FC = () => {
                       {order.status === 'selesai' && (
                         <button
                           type="button"
-                          onClick={() => updatePrintOrderStatus(order.id, 'diambil')}
+                          onClick={() => handleOpenSettlePrintOrder(order)}
                           className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
                         >
                           {remaining > 0 ? `Pelunasan & Serahkan` : `Serahkan ke Pelanggan`}
@@ -1974,6 +2102,218 @@ export const PercetakanView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Pelunasan & Serahkan Hasil Cetak (Tunai, QRIS, Kasbon) */}
+      {settlingPrintOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-teal-700 via-emerald-700 to-teal-800 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-base flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-emerald-300" />
+                  Pelunasan & Serahkan Hasil Cetak
+                </h3>
+                <p className="text-[11px] text-teal-100">
+                  Order #{settlingPrintOrder.id} • {settlingPrintOrder.customerName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettlingPrintOrder(null)}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 max-h-[82vh] overflow-y-auto">
+              {/* Order summary card */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600">Pelanggan:</span>
+                  <span className="font-bold text-slate-800">{settlingPrintOrder.customerName} ({settlingPrintOrder.customerPhone})</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600">Item Cetak:</span>
+                  <span className="font-bold text-slate-800 text-right truncate max-w-[200px]">
+                    {settlingPrintOrder.items.map((i) => `${i.serviceName} (${i.quantity} ${i.unit})`).join(', ')}
+                  </span>
+                </div>
+                <div className="border-t border-slate-200 pt-2 grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-white p-2 rounded-lg border border-slate-200">
+                    <span className="text-[10px] text-slate-500 block">Total Biaya</span>
+                    <span className="font-mono font-bold text-xs text-slate-900">
+                      Rp {settlingPrintOrder.totalAmount.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-slate-200">
+                    <span className="text-[10px] text-slate-500 block">DP Masuk</span>
+                    <span className="font-mono font-bold text-xs text-emerald-700">
+                      Rp {settlingPrintOrder.downPayment.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="bg-rose-50 p-2 rounded-lg border border-rose-200">
+                    <span className="text-[10px] text-rose-700 font-bold block">Sisa Tagihan</span>
+                    <span className="font-mono font-extrabold text-xs text-rose-700">
+                      Rp {(settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method Selector */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-2">
+                  Metode Pembayaran Pelunasan:
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'tunai', label: 'Tunai', icon: Banknote, color: 'emerald' },
+                    { id: 'qris', label: 'QRIS', icon: QrCode, color: 'blue' },
+                    { id: 'hutang', label: 'Kasbon / Hutang', icon: Receipt, color: 'rose' },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    const isSelected = settlePrintMethod === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setSettlePrintMethod(m.id as any);
+                          const rem = settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment);
+                          if (m.id === 'tunai' && settlePrintCashReceived < rem) {
+                            setSettlePrintCashReceived(rem);
+                          }
+                        }}
+                        className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition cursor-pointer text-xs font-bold ${
+                          isSelected
+                            ? m.id === 'hutang'
+                              ? 'bg-rose-50 border-rose-500 text-rose-800 ring-2 ring-rose-400/40 shadow-xs'
+                              : m.id === 'qris'
+                              ? 'bg-blue-50 border-blue-500 text-blue-800 ring-2 ring-blue-400/40 shadow-xs'
+                              : 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-400/40 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span>{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Method specific fields */}
+              {settlePrintMethod === 'tunai' && (
+                <div className="space-y-2 p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700">Uang Diterima:</span>
+                    <span className="text-[11px] text-slate-500">Pas / Lebih</span>
+                  </div>
+                  <input
+                    type="number"
+                    min={settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)}
+                    step="1000"
+                    value={settlePrintCashReceived || ''}
+                    onChange={(e) => setSettlePrintCashReceived(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl font-mono font-black text-sm text-right text-emerald-950 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    placeholder="Masukkan nominal uang tunai..."
+                  />
+                  <div className="flex items-center justify-between pt-1 text-xs font-bold">
+                    <span className="text-slate-600">Kembalian:</span>
+                    <span className="font-mono text-sm text-emerald-700">
+                      Rp {Math.max(0, settlePrintCashReceived - (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment))).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {settlePrintMethod === 'qris' && (
+                <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1.5 text-xs text-blue-900">
+                  <div className="flex items-center gap-2 font-bold text-blue-950">
+                    <QrCode className="w-4 h-4 text-blue-600" />
+                    <span>Pembayaran QRIS Dinamis</span>
+                  </div>
+                  <p className="text-[11px] text-blue-800">
+                    Arahkan pelanggan untuk scan QRIS toko sebesar <b className="font-mono">Rp {(settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)).toLocaleString('id-ID')}</b>. Pastikan notifikasi dana masuk telah diterima.
+                  </p>
+                </div>
+              )}
+
+              {settlePrintMethod === 'hutang' && (
+                <div className="space-y-2.5 p-3 bg-rose-50 border border-rose-200 rounded-xl">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-900">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Sisa Tagihan Masuk ke Kasbon / Buku Hutang</span>
+                  </div>
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    Pelanggan membawa pulang hasil cetak. Tagihan sebesar <b className="font-mono font-bold">Rp {(settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)).toLocaleString('id-ID')}</b> akan otomatis tersimpan di menu <b>Hutang & Retur</b>.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-700 block mb-0.5">
+                        Jatuh Tempo:
+                      </label>
+                      <input
+                        type="date"
+                        value={settlePrintDueDate}
+                        onChange={(e) => setSettlePrintDueDate(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-700 block mb-0.5">
+                        No. WhatsApp / HP:
+                      </label>
+                      <input
+                        type="text"
+                        value={settlePrintPhone}
+                        onChange={(e) => setSettlePrintPhone(e.target.value)}
+                        placeholder="0812..."
+                        className="w-full px-2 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-mono focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">
+                      Catatan / Keterangan:
+                    </label>
+                    <input
+                      type="text"
+                      value={settlePrintNote}
+                      onChange={(e) => setSettlePrintNote(e.target.value)}
+                      placeholder="Cth: Janji bayar hari Sabtu"
+                      className="w-full px-2 py-1.5 bg-white border border-rose-300 rounded-lg text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSettlingPrintOrder(null)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSettlePrintOrder}
+                className="px-5 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-extrabold rounded-xl shadow-md transition cursor-pointer active:scale-95 flex items-center gap-1.5"
+              >
+                <CheckCircle className="w-4 h-4 text-emerald-200" />
+                <span>Konfirmasi Pelunasan & Serahkan</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
