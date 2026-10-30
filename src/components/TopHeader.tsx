@@ -12,6 +12,8 @@ import {
   Cloud,
   RefreshCw,
   Smartphone,
+  PanelBottomClose,
+  PanelBottomOpen,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -31,6 +33,8 @@ export const TopHeader: React.FC = () => {
     setIsSyncModalOpen,
     isSyncing,
     syncStatus,
+    isBottomNavVisible,
+    toggleBottomNav,
   } = usePOS();
 
   // Real-time Indonesian clock
@@ -233,6 +237,20 @@ export const TopHeader: React.FC = () => {
           </span>
           {syncCode && (
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          )}
+        </button>
+
+        {/* Mobile Toggle Hilang Timbul Menu Bawah */}
+        <button
+          type="button"
+          onClick={toggleBottomNav}
+          className="md:hidden flex items-center justify-center p-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition cursor-pointer active:scale-95 shadow-xs"
+          title={isBottomNavVisible ? 'Sembunyikan Menu Bawah (Layar Penuh)' : 'Tampilkan Menu Bawah'}
+        >
+          {isBottomNavVisible ? (
+            <PanelBottomClose className="w-3.5 h-3.5 text-teal-700" />
+          ) : (
+            <PanelBottomOpen className="w-3.5 h-3.5 text-amber-600" />
           )}
         </button>
       </div>

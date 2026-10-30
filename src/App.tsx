@@ -20,7 +20,7 @@ import { DataSyncModal } from './components/modals/DataSyncModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 const AppContent: React.FC = () => {
-  const { activeTab } = usePOS();
+  const { activeTab, isBottomNavVisible } = usePOS();
 
   const renderActiveView = () => {
     switch (activeTab) {
@@ -61,18 +61,18 @@ const AppContent: React.FC = () => {
         {/* Top Header Navigation */}
         <TopHeader />
 
-        {/* Dynamic Viewport with mobile bottom bar clearance (pb-0 on ATM Mini / Mobile banking for full visibility) */}
+        {/* Dynamic Viewport with dynamic mobile bottom bar clearance (pb-0 when hidden for full visibility) */}
         <main
-          className={`flex-1 flex flex-col overflow-hidden relative ${
-            activeTab === 'atm_mini' || activeTab === 'transfer' ? 'pb-0' : 'pb-14 md:pb-0'
+          className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-200 ${
+            isBottomNavVisible ? 'pb-16 md:pb-0' : 'pb-0 md:pb-0'
           }`}
         >
           {renderActiveView()}
         </main>
       </div>
 
-      {/* Smartphone Bottom Navigation Bar: Hidden on ATM Mini / Mobile Banking as requested */}
-      {!(activeTab === 'atm_mini' || activeTab === 'transfer') && <MobileBottomNav />}
+      {/* Smartphone Bottom Navigation Bar: Hilang & Timbul di setiap menu */}
+      <MobileBottomNav />
 
       {/* Global Interactive Modals */}
       <ThermalReceiptModal />

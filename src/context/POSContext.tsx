@@ -228,6 +228,9 @@ interface POSContextType {
   setIsCashMutationModalOpen: (open: boolean) => void;
   isMobileSidebarOpen: boolean;
   setIsMobileSidebarOpen: (open: boolean) => void;
+  isBottomNavVisible: boolean;
+  setIsBottomNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  toggleBottomNav: () => void;
 
   // Shift Drawer Closing
   closeShiftDrawer: (actualCash: number, note?: string) => {
@@ -401,6 +404,24 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isCashMutationModalOpen, setIsCashMutationModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isBottomNavVisible, setIsBottomNavVisible] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_bottom_nav_visible');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_bottom_nav_visible', JSON.stringify(isBottomNavVisible));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [isBottomNavVisible]);
+
+  const toggleBottomNav = () => setIsBottomNavVisible((prev) => !prev);
 
   // Data Sync State (PC & HP Sync)
   const [syncCode, setSyncCode] = useState<string>(() => {
@@ -2228,6 +2249,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsCashMutationModalOpen,
         isMobileSidebarOpen,
         setIsMobileSidebarOpen,
+        isBottomNavVisible,
+        setIsBottomNavVisible,
+        toggleBottomNav,
         closeShiftDrawer,
         openNewShift,
         exportBackupJSON,
