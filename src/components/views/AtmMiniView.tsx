@@ -26,6 +26,8 @@ import {
   Menu,
   ArrowLeft,
   Receipt,
+  Wallet,
+  Building2,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType } from '../../types/pos';
@@ -116,6 +118,7 @@ export const AtmMiniView: React.FC = () => {
   const [ewalletProvider, setEwalletProvider] = useState('DANA');
   const [mbankingApp, setMbankingApp] = useState(MBANKING_APPS[0]);
   const [mbankingType, setMbankingType] = useState(MBANKING_TYPES[0]);
+  const [tarikTunaiSource, setTarikTunaiSource] = useState<'kartu_debit' | 'ewallet' | 'mbanking'>('kartu_debit');
   const [qrisProvider, setQrisProvider] = useState(QRIS_PROVIDERS[0]);
   const [qrisType, setQrisType] = useState(QRIS_TYPES[0]);
   const [qrisRrn, setQrisRrn] = useState('RRN-882901');
@@ -147,6 +150,7 @@ export const AtmMiniView: React.FC = () => {
       setAdminEdcFee(3000);
       setCounterFee(5000);
       setCardType('GPN');
+      setTarikTunaiSource('kartu_debit');
     } else if (mode === 'transfer_atm') {
       setAdminEdcFee(2500);
       setCounterFee(6000);
@@ -181,8 +185,24 @@ export const AtmMiniView: React.FC = () => {
       return;
     }
 
-    if ((activeMode === 'topup_ewallet_atm' || activeMode === 'transfer_atm') && !targetAccountOrPhone.trim()) {
-      alert('Nomor tujuan / rekening / no HP e-wallet wajib diisi!');
+    if (
+      activeMode === 'tarik_tunai_atm' &&
+      (tarikTunaiSource === 'ewallet' || tarikTunaiSource === 'mbanking') &&
+      !targetAccountOrPhone.trim()
+    ) {
+      alert(
+        tarikTunaiSource === 'ewallet'
+          ? 'Nomor HP Akun E-Wallet nasabah wajib diisi untuk penarikan tunai!'
+          : 'Nomor Rekening / No. HP M-Banking nasabah wajib diisi untuk penarikan tunai!'
+      );
+      return;
+    }
+
+    if (
+      (activeMode === 'topup_ewallet_atm' || activeMode === 'transfer_atm') &&
+      !targetAccountOrPhone.trim()
+    ) {
+      alert('Nomor tujuan / rekening / no HP e-wallet / m-banking wajib diisi!');
       return;
     }
 
@@ -198,7 +218,25 @@ export const AtmMiniView: React.FC = () => {
     let maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
     let destination: string | undefined = undefined;
 
-    if (activeMode === 'topup_ewallet_atm') {
+    if (activeMode === 'tarik_tunai_atm') {
+      if (tarikTunaiSource === 'kartu_debit') {
+        providerName = bankName;
+        actualCardType = cardType;
+        maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
+        destination = `Kartu Debit ATM (${bankName} - ${cardType})`;
+      } else if (tarikTunaiSource === 'ewallet') {
+        providerName = ewalletProvider;
+        actualCardType = 'M-Banking';
+        maskedIdentifier = `EW-${ewalletProvider.toUpperCase()} · ${targetAccountOrPhone}`;
+        destination = `Tarik Tunai E-Wallet ${ewalletProvider} (${targetAccountOrPhone})${cardNumberLast4.trim() ? ' · Ref: ' + cardNumberLast4.trim() : ''}`;
+      } else {
+        // mbanking
+        providerName = mbankingApp;
+        actualCardType = 'M-Banking';
+        maskedIdentifier = `APP ${mbankingApp.split(' ')[0]} · ${cardNumberLast4.trim() ? 'Kode: ' + cardNumberLast4.trim() : targetAccountOrPhone || 'Cardless'}`;
+        destination = `Tarik Tunai M-Banking ${mbankingApp} (${targetAccountOrPhone})${cardNumberLast4.trim() ? ' · Token: ' + cardNumberLast4.trim() : ''}`;
+      }
+    } else if (activeMode === 'topup_ewallet_atm') {
       providerName = ewalletProvider;
       destination = `${targetAccountOrPhone} (${ewalletProvider})`;
     } else if (activeMode === 'transfer_atm') {
@@ -206,7 +244,7 @@ export const AtmMiniView: React.FC = () => {
     } else if (activeMode === 'mbanking_atm') {
       providerName = mbankingApp;
       actualCardType = 'M-Banking';
-      maskedIdentifier = `APP ${mbankingApp.split(' ')[0]} · ${cardNumberLast4.trim() ? 'Kode: ' + cardNumberLast4 : 'Cardless'}`;
+      maskedIdentifier = `APP ${mbankingApp.split(' ')[0]} · ${cardNumberLast4.trim() ? 'Kode: ' + cardNumberLast4.trim() : 'Cardless'}`;
       destination = targetAccountOrPhone ? `${targetAccountOrPhone} [${mbankingType.split(' ')[0]}]` : mbankingType;
     } else if (activeMode === 'qris_atm') {
       providerName = qrisProvider.split(' ')[0] + ' ' + (qrisProvider.split(' ')[1] || '');
@@ -223,8 +261,8 @@ export const AtmMiniView: React.FC = () => {
       customerName ||
         (activeMode === 'qris_atm'
           ? 'Pelanggan QRIS'
-          : activeMode === 'mbanking_atm'
-          ? 'Nasabah M-Banking'
+          : activeMode === 'mbanking_atm' || (activeMode === 'tarik_tunai_atm' && tarikTunaiSource !== 'kartu_debit')
+          ? 'Nasabah M-Banking / E-Wallet'
           : 'Nasabah EDC'),
       nominal,
       adminEdcFee,
@@ -379,7 +417,7 @@ export const AtmMiniView: React.FC = () => {
             </div>
           </div>
 
-          {/* 5 Main Mode Tabs: Tarik Tunai, Transfer, E-Wallet, Mobile Banking, Sistem QRIS */}
+          {/* 5 Main Mode Tabs: Tarik Tunai, Transfer EDC, E-Wallet, Mobile Banking, Sistem QRIS */}
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 mt-3 sm:mt-4 pt-3 border-t border-emerald-800/80">
             <button
               type="button"
@@ -462,20 +500,109 @@ export const AtmMiniView: React.FC = () => {
             </div>
           )}
 
-          {/* Mode Header Banner */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-            <span className="font-bold text-slate-700">Layanan Dipilih:</span>
-            <span className="font-extrabold uppercase px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-right">
-              {activeMode === 'tarik_tunai_atm'
-                ? 'Tarik Uang Tunai Kartu Debit'
-                : activeMode === 'transfer_atm'
-                ? 'Transfer Antar Bank via EDC'
-                : activeMode === 'topup_ewallet_atm'
-                ? 'Top Up Dompet Digital (E-Wallet)'
-                : activeMode === 'mbanking_atm'
-                ? 'Mobile Banking (BRImo, BCA, Livin)'
-                : 'Sistem Pembayaran QRIS (Scan Dynamic/Static)'}
-            </span>
+          {/* Mode Header Banner & Interactive Selector */}
+          <div className="p-3 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 border border-teal-200 rounded-xl space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <span className="font-extrabold text-teal-950 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>Layanan Dipilih:</span>
+              </span>
+              <select
+                value={activeMode}
+                onChange={(e) => handleModeChange(e.target.value as AtmMiniType)}
+                className="px-3 py-1.5 text-xs bg-white border border-teal-500 rounded-xl font-extrabold text-teal-950 shadow-2xs focus:ring-2 focus:ring-teal-500 focus:outline-none cursor-pointer"
+              >
+                <option value="tarik_tunai_atm">Tarik Tunai (Kartu Debit / E-Wallet / M-Banking)</option>
+                <option value="transfer_atm">Transfer Antar Bank via EDC</option>
+                <option value="topup_ewallet_atm">Top Up Dompet Digital (E-Wallet)</option>
+                <option value="mbanking_atm">Mobile Banking (BRImo, BCA, Livin)</option>
+                <option value="qris_atm">Sistem Pembayaran QRIS (Scan Dynamic/Static)</option>
+              </select>
+            </div>
+
+            {/* Quick interactive chips di bagian Layanan Dipilih */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-teal-200/60 pb-0.5">
+              {[
+                { id: 'tarik_tunai_atm', label: 'Tarik Tunai' },
+                { id: 'transfer_atm', label: 'Transfer EDC' },
+                { id: 'topup_ewallet_atm', label: 'E-Wallet' },
+                { id: 'mbanking_atm', label: 'Mobile Banking' },
+                { id: 'qris_atm', label: 'Sistem QRIS' },
+              ].map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => handleModeChange(chip.id as AtmMiniType)}
+                  className={`px-2.5 py-1 text-[10px] font-bold rounded-lg whitespace-nowrap transition cursor-pointer ${
+                    activeMode === chip.id
+                      ? 'bg-teal-700 text-white shadow-xs font-black ring-1 ring-teal-800'
+                      : 'bg-white hover:bg-teal-100/70 text-teal-900 border border-teal-300/80'
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Jika mode Tarik Tunai aktif: Tampilkan sumber penarikan uang (Kartu Debit, E-Wallet, M-Banking) */}
+            {activeMode === 'tarik_tunai_atm' && (
+              <div className="pt-2 border-t border-teal-200/80 flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                <span className="text-[11px] font-extrabold text-teal-950 flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Sumber Penarikan:</span>
+                </span>
+                <div className="flex items-center gap-1 overflow-x-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTarikTunaiSource('kartu_debit');
+                      setCardType('GPN');
+                      setAdminEdcFee(3000);
+                    }}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                      tarikTunaiSource === 'kartu_debit'
+                        ? 'bg-teal-800 text-white shadow-xs font-black ring-1 ring-teal-900'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-teal-200'
+                    }`}
+                  >
+                    <CreditCard className="w-3 h-3" />
+                    <span>Kartu Debit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTarikTunaiSource('ewallet');
+                      setCardType('M-Banking');
+                      setAdminEdcFee(2000);
+                    }}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                      tarikTunaiSource === 'ewallet'
+                        ? 'bg-emerald-700 text-white shadow-xs font-black ring-1 ring-emerald-800'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-teal-200'
+                    }`}
+                  >
+                    <Smartphone className="w-3 h-3" />
+                    <span>E-Wallet</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTarikTunaiSource('mbanking');
+                      setCardType('M-Banking');
+                      setAdminEdcFee(2500);
+                    }}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                      tarikTunaiSource === 'mbanking'
+                        ? 'bg-cyan-700 text-white shadow-xs font-black ring-1 ring-cyan-800'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-teal-200'
+                    }`}
+                  >
+                    <Building2 className="w-3 h-3" />
+                    <span>Mobile Banking</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Dynamic Configuration per Service Mode */}
@@ -729,13 +856,318 @@ export const AtmMiniView: React.FC = () => {
             </div>
           )}
 
-          {/* 4. Tarik Tunai & Transfer Bank Modes */}
-          {(activeMode === 'tarik_tunai_atm' || activeMode === 'transfer_atm') && (
+
+
+          {/* 4. Tarik Tunai Mode: Mendukung Kartu Debit, E-Wallet, dan Mobile Banking */}
+          {activeMode === 'tarik_tunai_atm' && (
             <div className="space-y-3">
+              {/* Selector Sumber Penarikan Uang di dalam form */}
+              <div className="p-3 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 border border-teal-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-teal-950 flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4 text-teal-700" />
+                    <span>Sumber Penarikan Uang Nasabah:</span>
+                  </label>
+                  <span className="text-[10px] font-extrabold text-teal-800 bg-white px-2 py-0.5 rounded-full border border-teal-200">
+                    {tarikTunaiSource === 'kartu_debit'
+                      ? '💳 Kartu ATM / Debit Fisik'
+                      : tarikTunaiSource === 'ewallet'
+                      ? '📱 Saldo E-Wallet'
+                      : '🏦 Mobile Banking'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTarikTunaiSource('kartu_debit');
+                      setCardType('GPN');
+                      setAdminEdcFee(3000);
+                    }}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer border ${
+                      tarikTunaiSource === 'kartu_debit'
+                        ? 'bg-gradient-to-r from-teal-700 to-teal-800 text-white border-teal-800 shadow-sm'
+                        : 'bg-white hover:bg-teal-50 border-teal-200 text-slate-700'
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4 shrink-0" />
+                    <span>Kartu Debit</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTarikTunaiSource('ewallet');
+                      setCardType('M-Banking');
+                      setAdminEdcFee(2000);
+                    }}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer border ${
+                      tarikTunaiSource === 'ewallet'
+                        ? 'bg-gradient-to-r from-emerald-700 to-emerald-800 text-white border-emerald-800 shadow-sm'
+                        : 'bg-white hover:bg-emerald-50 border-emerald-200 text-slate-700'
+                    }`}
+                  >
+                    <Smartphone className="w-4 h-4 shrink-0" />
+                    <span>E-Wallet</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTarikTunaiSource('mbanking');
+                      setCardType('M-Banking');
+                      setAdminEdcFee(2500);
+                    }}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer border ${
+                      tarikTunaiSource === 'mbanking'
+                        ? 'bg-gradient-to-r from-cyan-700 to-blue-800 text-white border-blue-800 shadow-sm'
+                        : 'bg-white hover:bg-cyan-50 border-cyan-200 text-slate-700'
+                    }`}
+                  >
+                    <Building2 className="w-4 h-4 shrink-0" />
+                    <span>Mobile Banking</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sub-form 1: Tarik Tunai Kartu Debit ATM */}
+              {tarikTunaiSource === 'kartu_debit' && (
+                <div className="space-y-3 bg-white p-3.5 rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Bank Penerbit Kartu ATM
+                      </label>
+                      <select
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                      >
+                        {BANK_LIST.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Jaringan Kartu ATM
+                      </label>
+                      <select
+                        value={cardType}
+                        onChange={(e) => setCardType(e.target.value as any)}
+                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                      >
+                        {CARD_TYPES.map((ct) => (
+                          <option key={ct} value={ct}>
+                            {ct}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        4 Digit Terakhir Kartu
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        value={cardNumberLast4}
+                        onChange={(e) => setCardNumberLast4(e.target.value.replace(/\D/g, ''))}
+                        placeholder="7192"
+                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Nama Pemilik / Nasabah
+                      </label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Nama Nasabah"
+                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-form 2: Tarik Tunai dari E-Wallet (DANA, OVO, GoPay, Shopee, dll) */}
+              {tarikTunaiSource === 'ewallet' && (
+                <div className="space-y-3 bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-emerald-700" />
+                      <span>Pilih Provider Dompet Digital Nasabah:</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                      Cashout E-Wallet
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                    {EWALLET_LIST.map((ew) => {
+                      const active = ewalletProvider === ew;
+                      return (
+                        <button
+                          key={ew}
+                          type="button"
+                          onClick={() => setEwalletProvider(ew)}
+                          className={`py-1.5 px-2 text-xs font-bold rounded-lg border transition cursor-pointer text-center ${
+                            active
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                              : 'bg-white hover:bg-emerald-100/60 border-emerald-200 text-slate-700'
+                          }`}
+                        >
+                          {ew}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Nomor HP Akun {ewalletProvider} Nasabah <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={targetAccountOrPhone}
+                        onChange={(e) => setTargetAccountOrPhone(e.target.value)}
+                        placeholder="Contoh: 081234567890"
+                        className="w-full px-3 py-2 text-sm bg-white border border-emerald-300 rounded-lg font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Nama Pemilik Akun E-Wallet
+                      </label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Contoh: Agus Salim"
+                        className="w-full px-3 py-2 text-sm bg-white border border-emerald-300 rounded-lg font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Kode Tarik Tunai / Ref Token / Catatan Penarikan (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      value={cardNumberLast4}
+                      onChange={(e) => setCardNumberLast4(e.target.value)}
+                      placeholder="Contoh: Token 6 digit DANA / Tarik Tunai Agen"
+                      className="w-full px-3 py-2 text-xs bg-white border border-emerald-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-form 3: Tarik Tunai dari Mobile Banking (BRImo, Livin, BCA, dll) */}
+              {tarikTunaiSource === 'mbanking' && (
+                <div className="space-y-3 bg-cyan-50/40 p-3.5 rounded-xl border border-cyan-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Aplikasi Bank Nasabah
+                      </label>
+                      <select
+                        value={mbankingApp}
+                        onChange={(e) => setMbankingApp(e.target.value)}
+                        className="w-full px-3 py-2 text-sm bg-white border border-cyan-300 rounded-lg font-semibold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                      >
+                        {MBANKING_APPS.map((app) => (
+                          <option key={app} value={app}>
+                            {app}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Metode Penarikan M-Banking
+                      </label>
+                      <select
+                        value={mbankingType}
+                        onChange={(e) => setMbankingType(e.target.value)}
+                        className="w-full px-3 py-2 text-sm bg-white border border-cyan-300 rounded-lg font-semibold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                      >
+                        <option value="Tarik Tunai Tanpa Kartu (Cardless Token)">Tarik Tunai Tanpa Kartu (Cardless Token)</option>
+                        <option value="Transfer Sesama Bank ke Rekening Agen Ju-Fat">Transfer Sesama Bank ke Rekening Agen Ju-Fat</option>
+                        <option value="Transfer BI-FAST / Antar-Bank ke Agen">Transfer BI-FAST / Antar-Bank ke Agen</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        No. Rekening / No. HP M-Banking Nasabah <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={targetAccountOrPhone}
+                        onChange={(e) => setTargetAccountOrPhone(e.target.value)}
+                        placeholder="Contoh: 012901048821503 / 0812xxxx"
+                        className="w-full px-3 py-2 text-sm bg-white border border-cyan-300 rounded-lg font-mono font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Nama Nasabah Pemilik Rekening
+                      </label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Nama Nasabah"
+                        className="w-full px-3 py-2 text-sm bg-white border border-cyan-300 rounded-lg font-medium focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Kode Tarik Tunai / Token 6 Digit (Dari Aplikasi Nasabah)
+                    </label>
+                    <input
+                      type="text"
+                      value={cardNumberLast4}
+                      onChange={(e) => setCardNumberLast4(e.target.value)}
+                      placeholder="Contoh: 618290 (Token Cardless Tarik Tunai)"
+                      className="w-full px-3 py-2 text-xs bg-white border border-cyan-300 rounded-lg font-mono font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 5. Transfer Antar Bank EDC Mode */}
+          {activeMode === 'transfer_atm' && (
+            <div className="space-y-3 bg-white p-3.5 rounded-xl border border-slate-200">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Bank Penerbit Kartu
+                    Bank Pengirim Kartu ATM
                   </label>
                   <select
                     value={bankName}
@@ -791,27 +1223,25 @@ export const AtmMiniView: React.FC = () => {
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama Nasabah"
+                    placeholder="Nama Pengirim"
                     className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
 
-              {activeMode === 'transfer_atm' && (
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Nomor Rekening Tujuan & Bank Penerima
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={targetAccountOrPhone}
-                    onChange={(e) => setTargetAccountOrPhone(e.target.value)}
-                    placeholder="Contoh: 012901048821503 (BRI An. Sugeng)"
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Nomor Rekening Tujuan & Bank Penerima
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={targetAccountOrPhone}
+                  onChange={(e) => setTargetAccountOrPhone(e.target.value)}
+                  placeholder="Contoh: 012901048821503 (BRI An. Sugeng)"
+                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                />
+              </div>
             </div>
           )}
 
@@ -994,14 +1424,20 @@ export const AtmMiniView: React.FC = () => {
           >
             {activeMode === 'qris_atm' ? (
               <QrCode className="w-4 h-4 text-amber-300" />
-            ) : activeMode === 'mbanking_atm' ? (
+            ) : activeMode === 'tarik_tunai_atm' && tarikTunaiSource === 'ewallet' ? (
+              <Smartphone className="w-4 h-4 text-amber-300" />
+            ) : activeMode === 'mbanking_atm' || (activeMode === 'tarik_tunai_atm' && tarikTunaiSource === 'mbanking') ? (
               <ShieldCheck className="w-4 h-4 text-amber-300" />
             ) : (
               <CreditCard className="w-4 h-4 text-amber-300" />
             )}
             <span>
               {activeMode === 'tarik_tunai_atm'
-                ? 'Gesek Kartu & Proses Tarik Tunai'
+                ? tarikTunaiSource === 'kartu_debit'
+                  ? 'Gesek Kartu & Proses Tarik Tunai'
+                  : tarikTunaiSource === 'ewallet'
+                  ? `Proses Tarik Tunai E-Wallet (${ewalletProvider})`
+                  : `Proses Tarik Tunai M-Banking (${mbankingApp.split(' ')[0]})`
                 : activeMode === 'transfer_atm'
                 ? 'Gesek Kartu & Proses Transfer'
                 : activeMode === 'topup_ewallet_atm'
@@ -1142,6 +1578,8 @@ export const AtmMiniView: React.FC = () => {
                               ? 'bg-emerald-100 text-emerald-900'
                               : tx.type === 'mbanking_atm'
                               ? 'bg-purple-100 text-purple-900'
+                              : tx.type === 'ewallet_mbanking_atm'
+                              ? 'bg-indigo-100 text-indigo-900'
                               : 'bg-teal-100 text-teal-900'
                           }`}
                         >
@@ -1153,6 +1591,8 @@ export const AtmMiniView: React.FC = () => {
                             ? 'Top Up E-Wallet'
                             : tx.type === 'mbanking_atm'
                             ? 'M-Banking'
+                            : tx.type === 'ewallet_mbanking_atm'
+                            ? 'E-Wallet & M-Banking'
                             : 'Sistem QRIS'}
                         </span>
                       </td>
@@ -1249,7 +1689,7 @@ export const AtmMiniView: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-teal-700 text-white tracking-wider">
                     {activeMode === 'tarik_tunai_atm'
-                      ? 'Layanan Tarik Tunai'
+                      ? `Layanan Tarik Tunai (${tarikTunaiSource === 'kartu_debit' ? 'Kartu ATM' : tarikTunaiSource === 'ewallet' ? 'E-Wallet' : 'M-Banking'})`
                       : activeMode === 'transfer_atm'
                       ? 'Layanan Transfer EDC'
                       : activeMode === 'topup_ewallet_atm'
@@ -1267,7 +1707,13 @@ export const AtmMiniView: React.FC = () => {
                   <div>
                     <span className="text-[10px] text-slate-500 font-medium block">Kanal / Bank:</span>
                     <span className="font-extrabold text-slate-900">
-                      {activeMode === 'topup_ewallet_atm'
+                      {activeMode === 'tarik_tunai_atm'
+                        ? tarikTunaiSource === 'kartu_debit'
+                          ? `${bankName} (${cardType})`
+                          : tarikTunaiSource === 'ewallet'
+                          ? `E-Wallet: ${ewalletProvider}`
+                          : `M-Banking: ${mbankingApp}`
+                        : activeMode === 'topup_ewallet_atm'
                         ? ewalletProvider
                         : activeMode === 'mbanking_atm'
                         ? mbankingApp
@@ -1284,17 +1730,17 @@ export const AtmMiniView: React.FC = () => {
                   </div>
                 </div>
 
-                {(targetAccountOrPhone || activeMode === 'qris_atm') && (
+                {(targetAccountOrPhone || activeMode === 'qris_atm' || (activeMode === 'tarik_tunai_atm' && tarikTunaiSource !== 'kartu_debit')) && (
                   <div className="pt-1 border-t border-teal-200/60 text-xs">
                     <span className="text-[10px] text-slate-500 font-medium block">
-                      {activeMode === 'topup_ewallet_atm'
-                        ? 'No. Handphone E-Wallet:'
+                      {activeMode === 'topup_ewallet_atm' || (activeMode === 'tarik_tunai_atm' && tarikTunaiSource === 'ewallet')
+                        ? 'No. Handphone E-Wallet Nasabah:'
                         : activeMode === 'qris_atm'
                         ? 'RRN Referensi QRIS:'
-                        : 'No. Rekening / VA Tujuan:'}
+                        : 'No. Rekening / VA / Token Tujuan:'}
                     </span>
                     <span className="font-mono font-black text-teal-950 text-sm">
-                      {targetAccountOrPhone || qrisRrn}
+                      {targetAccountOrPhone || (activeMode === 'tarik_tunai_atm' ? cardNumberLast4 : '') || qrisRrn}
                     </span>
                   </div>
                 )}
@@ -1314,6 +1760,8 @@ export const AtmMiniView: React.FC = () => {
                       ? 'Biaya MDR / Sistem QRIS:'
                       : activeMode === 'mbanking_atm'
                       ? 'Biaya Admin Aplikasi:'
+                      : activeMode === 'ewallet_mbanking_atm'
+                      ? 'Biaya Admin Layanan:'
                       : 'Biaya Admin EDC / Bank:'}
                   </span>
                   <span className="font-mono font-semibold text-slate-700">
@@ -1334,6 +1782,8 @@ export const AtmMiniView: React.FC = () => {
                   <span className="text-xs font-black text-slate-900 uppercase">
                     {activeMode === 'qris_atm'
                       ? 'Total Bayar via QRIS:'
+                      : activeMode === 'ewallet_mbanking_atm'
+                      ? 'Total Diproses E-Wallet & M-Banking:'
                       : 'Total Didebet dari Kartu Nasabah:'}
                   </span>
                   <span className="text-xl font-black font-mono text-emerald-800 tabular-nums">
@@ -1587,7 +2037,19 @@ export const AtmMiniView: React.FC = () => {
               </div>
               <div className="flex justify-between pb-2 border-b border-slate-100">
                 <span className="text-slate-500">Layanan:</span>
-                <span className="font-bold text-teal-800 uppercase">{selectedTxDetail.type}</span>
+                <span className="font-bold text-teal-800 uppercase">
+                  {selectedTxDetail.type === 'tarik_tunai_atm'
+                    ? 'Tarik Tunai'
+                    : selectedTxDetail.type === 'transfer_atm'
+                    ? 'Transfer EDC'
+                    : selectedTxDetail.type === 'topup_ewallet_atm'
+                    ? 'Top Up E-Wallet'
+                    : selectedTxDetail.type === 'mbanking_atm'
+                    ? 'Mobile Banking'
+                    : selectedTxDetail.type === 'ewallet_mbanking_atm'
+                    ? 'E-Wallet & M-Banking'
+                    : 'Sistem QRIS'}
+                </span>
               </div>
               <div className="flex justify-between pb-2 border-b border-slate-100">
                 <span className="text-slate-500">Bank / Provider:</span>

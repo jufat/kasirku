@@ -194,6 +194,10 @@ export const ThermalReceiptModal: React.FC = () => {
                     ? '*** STRUK TRANSAKSI QRIS ***'
                     : atmTx.type === 'mbanking_atm'
                     ? '*** STRUK MOBILE BANKING ***'
+                    : atmTx.type === 'tarik_tunai_atm'
+                    ? '*** STRUK TARIK TUNAI ***'
+                    : atmTx.type === 'topup_ewallet_atm'
+                    ? '*** STRUK TOP UP E-WALLET ***'
                     : '*** STRUK EDC MINI ATM ***'}
                 </div>
                 <div className="flex justify-between pt-0.5">
@@ -213,11 +217,11 @@ export const ThermalReceiptModal: React.FC = () => {
                   <span>{atmTx.date}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>{atmTx.type === 'qris_atm' ? 'Penyedia  :' : atmTx.type === 'mbanking_atm' ? 'Aplikasi  :' : 'Bank/Kartu:'}</span>
+                  <span>{atmTx.type === 'qris_atm' ? 'Penyedia  :' : (atmTx.type === 'mbanking_atm' || atmTx.cardType === 'M-Banking') ? 'Kanal/Bank:' : 'Bank/Kartu:'}</span>
                   <span className="font-bold">{atmTx.bankName} ({atmTx.cardType})</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>{atmTx.type === 'qris_atm' ? 'NMID/Ref  :' : atmTx.type === 'mbanking_atm' ? 'Ref/Kode  :' : 'No Kartu  :'}</span>
+                  <span>{atmTx.type === 'qris_atm' ? 'NMID/Ref  :' : (atmTx.type === 'mbanking_atm' || atmTx.cardType === 'M-Banking') ? 'Akun/Ref  :' : 'No Kartu  :'}</span>
                   <span className="font-mono font-bold">{atmTx.cardNumberMasked}</span>
                 </div>
                 <div className="flex justify-between">

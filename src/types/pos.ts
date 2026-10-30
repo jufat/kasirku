@@ -71,6 +71,7 @@ export type AtmMiniType =
   | 'transfer_atm'
   | 'topup_ewallet_atm'
   | 'mbanking_atm'
+  | 'ewallet_mbanking_atm'
   | 'qris_atm'
   | 'cek_saldo_atm';
 
