@@ -64,7 +64,7 @@ const AppContent: React.FC = () => {
         {/* Dynamic Viewport with dynamic mobile bottom bar clearance (pb-0 when hidden for full visibility) */}
         <main
           className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-200 ${
-            isBottomNavVisible ? 'pb-16 md:pb-0' : 'pb-0 md:pb-0'
+            isBottomNavVisible ? 'pb-20 md:pb-0' : 'pb-0 md:pb-0'
           }`}
         >
           {renderActiveView()}

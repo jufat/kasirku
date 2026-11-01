@@ -32,8 +32,10 @@ import {
   Coins,
   Sliders,
   BookOpen,
+  Printer,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
+import { KasThermalReceiptModal } from '../modals/KasThermalReceiptModal';
 
 export const KasHarianView: React.FC = () => {
   const {
@@ -46,6 +48,7 @@ export const KasHarianView: React.FC = () => {
     adjustDrawerCash,
     debts,
     setActiveTab,
+    isBottomNavVisible,
   } = usePOS();
 
   // Ledger Sub-Tab: 'buku_kas' (Semua Arus Kas Masuk/Keluar) vs 'mutasi_laci' (Khusus Uang Tunai Fisik Laci)
@@ -55,6 +58,7 @@ export const KasHarianView: React.FC = () => {
   const [filterType, setFilterType] = useState<'all' | 'masuk' | 'keluar' | 'non_tunai'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [isThermalPrintModalOpen, setIsThermalPrintModalOpen] = useState(false);
 
   // Top & Table Scroll Synchronized References
   const pageContainerRef = useRef<HTMLDivElement>(null);
@@ -63,7 +67,12 @@ export const KasHarianView: React.FC = () => {
   const [tableWidth, setTableWidth] = useState(1050);
   const [scrollProgress, setScrollProgress] = useState(0); // 0% (Left) to 100% (Right)
   const [isScrolledDown, setIsScrolledDown] = useState(false);
-  const [showKpiCards, setShowKpiCards] = useState(true);
+  const [showKpiCards, setShowKpiCards] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
   const isSyncingTopRef = useRef(false);
   const isSyncingTableRef = useRef(false);
 
@@ -453,6 +462,17 @@ export const KasHarianView: React.FC = () => {
               <Download className="w-3.5 h-3.5 text-teal-600" />
               <span className="hidden md:inline">Unduh Excel</span>
             </button>
+
+            {/* Cetak Struk Termal Kas Harian */}
+            <button
+              type="button"
+              onClick={() => setIsThermalPrintModalOpen(true)}
+              className="px-3 py-2 text-xs font-bold bg-white hover:bg-teal-50 border border-teal-300 text-teal-800 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+              title="Cetak Laporan Kas & Mutasi Laci ke Printer Struk Termal (58mm / 80mm)"
+            >
+              <Printer className="w-3.5 h-3.5 text-teal-600" />
+              <span>Cetak Termal</span>
+            </button>
           </div>
         </div>
 
@@ -676,24 +696,30 @@ export const KasHarianView: React.FC = () => {
         </div>
       </div>
 
-      {/* Mutations Table Container with Synchronized Top & Bottom Scrollbars */}
-      <div id="buku-kas-table-section" className="flex-1 p-3 sm:p-4 overflow-hidden flex flex-col min-h-0">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col flex-1 min-h-0 overflow-hidden relative">
+      {/* Mutations Table Container taking full available screen height on mobile with bottom nav clearance */}
+      <div
+        id="buku-kas-table-section"
+        className={`flex-1 p-2 sm:p-4 flex flex-col min-h-[480px] sm:min-h-[550px] md:min-h-0 ${
+          isBottomNavVisible
+            ? 'h-[calc(100dvh-175px)] md:h-auto pb-24 md:pb-4'
+            : 'h-[calc(100dvh-120px)] md:h-auto pb-8 md:pb-4'
+        }`}
+      >
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col flex-1 h-full min-h-0 overflow-hidden relative">
           {/* 1. TOP SCROLLBAR HUB: Slider + Navigation Buttons + Column Chips */}
-          <div className="bg-slate-50 border-b border-slate-200 p-3 sm:px-4 space-y-2.5 shrink-0">
+          <div className="bg-slate-50 border-b border-slate-200 p-2 sm:p-3 sm:px-4 space-y-2 sm:space-y-2.5 shrink-0">
             {/* Row A: Title & Big Quick-Slide Buttons */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold shadow-xs">
-                  <Sliders className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Scroll Tabel Dari Atas</span>
-                </div>
-                <span className="text-xs text-slate-600 font-semibold hidden sm:inline">
-                  {scrollProgress <= 5
-                    ? '👁️ Menampilkan Kolom Kiri (Waktu & Keterangan)'
-                    : scrollProgress >= 88
-                    ? '👁️ Menampilkan Kolom Kanan (Nominal & Saldo Laci)'
-                    : `👁️ Posisi Horisontal: ${scrollProgress}%`}
+                <span className="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span>
+                    {scrollProgress <= 5
+                      ? '👁️ Kolom Kiri (Waktu & Keterangan)'
+                      : scrollProgress >= 88
+                      ? '👁️ Kolom Kanan (Nominal & Saldo Laci)'
+                      : `👁️ Posisi Kolom: ${scrollProgress}%`}
+                  </span>
                 </span>
               </div>
 
@@ -955,7 +981,9 @@ export const KasHarianView: React.FC = () => {
             <button
               type="button"
               onClick={scrollToTop}
-              className="fixed bottom-6 right-6 z-40 px-3.5 py-2.5 bg-slate-900/95 hover:bg-slate-900 text-white rounded-2xl shadow-2xl border border-amber-400/80 text-xs font-extrabold flex items-center gap-2 transition active:scale-95 animate-in fade-in slide-in-from-bottom duration-200 cursor-pointer"
+              className={`fixed ${
+                isBottomNavVisible ? 'bottom-24 md:bottom-6' : 'bottom-8 md:bottom-6'
+              } right-4 sm:right-6 z-40 px-3 py-2 sm:px-3.5 sm:py-2.5 bg-slate-900/95 hover:bg-slate-900 text-white rounded-2xl shadow-2xl border border-amber-400/80 text-xs font-extrabold flex items-center gap-2 transition active:scale-95 animate-in fade-in slide-in-from-bottom duration-200 cursor-pointer`}
               title="Kembali ke bagian paling atas halaman"
             >
               <ArrowUp className="w-4 h-4 text-amber-300" />
@@ -1187,6 +1215,17 @@ export const KasHarianView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Thermal Cash Receipt Modal */}
+      <KasThermalReceiptModal
+        isOpen={isThermalPrintModalOpen}
+        onClose={() => setIsThermalPrintModalOpen(false)}
+        filteredMutations={filteredMutations}
+        totalMasukTunai={totalMasukTunai}
+        totalKeluarTunai={totalKeluarTunai}
+        totalNonTunai={totalNonTunai}
+        totalKasbonAktif={totalKasbonAktif}
+      />
     </div>
   );
 };

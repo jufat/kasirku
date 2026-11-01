@@ -41,10 +41,15 @@ body {
     position: absolute;
     left: 0;
     top: 0;
-    width: 80mm;
     margin: 0;
-    padding: 8px;
+    padding: 4px;
     background: white;
     color: black;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  @page {
+    margin: 0;
+    size: auto;
   }
 }
