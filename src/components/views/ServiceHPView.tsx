@@ -79,7 +79,7 @@ export const ServiceHPView: React.FC = () => {
       return;
     }
 
-    addServiceTicket(
+    const newTicket = addServiceTicket(
       {
         customerName,
         customerPhone,
@@ -99,8 +99,11 @@ export const ServiceHPView: React.FC = () => {
       dpPaymentMethod === 'hutang' ? dpDueDate : undefined
     );
 
-    setToastMessage(`Tiket servis ${deviceModel} (${customerName}) berhasil dibuat!`);
+    setToastMessage(`Tiket servis ${deviceModel} (${customerName}) berhasil dibuat! Struk termal siap dicetak.`);
     setTimeout(() => setToastMessage(''), 4500);
+
+    // Auto open thermal receipt for customer (Tanda Terima Servis HP)
+    openReceipt(newTicket);
 
     // Reset form
     setCustomerName('');
@@ -122,6 +125,11 @@ export const ServiceHPView: React.FC = () => {
         `HP ${ticket.deviceModel} telah diserahkan ke ${ticket.customerName}. Garansi ${ticket.warrantyDays} hari aktif.`
       );
       setTimeout(() => setToastMessage(''), 4500);
+      openReceipt({
+        ...ticket,
+        status: 'diambil',
+        downPayment: ticket.totalCost,
+      });
       return;
     }
     setSettlingTicket(ticket);
@@ -144,7 +152,11 @@ export const ServiceHPView: React.FC = () => {
       settleNote
     );
 
-    const ticketCopy = settlingTicket;
+    const ticketCopy: ServiceTicket = {
+      ...settlingTicket,
+      status: 'diambil',
+      downPayment: settlingTicket.totalCost,
+    };
     setSettlingTicket(null);
 
     const methodLabel =
@@ -158,6 +170,9 @@ export const ServiceHPView: React.FC = () => {
       `Pelunasan service ${ticketCopy.id} (${ticketCopy.deviceModel}) via ${methodLabel} sukses diproses!`
     );
     setTimeout(() => setToastMessage(''), 5000);
+
+    // Auto open thermal receipt for customer (Struk Pelunasan Servis)
+    openReceipt(ticketCopy);
   };
 
   const getStatusBadge = (status: ServiceStatus) => {
@@ -340,11 +355,11 @@ export const ServiceHPView: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => openReceipt(ticket)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 transition cursor-pointer"
-                        title="Cetak Nota Servis"
+                        className="px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-teal-900 bg-slate-100 hover:bg-teal-50 border border-slate-200 hover:border-teal-300 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                        title="Cetak Struk Termal Servis (58mm / 80mm)"
                       >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Nota</span>
+                        <Printer className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Struk Termal</span>
                       </button>
 
                       <button

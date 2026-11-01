@@ -61,10 +61,10 @@ const AppContent: React.FC = () => {
         {/* Top Header Navigation */}
         <TopHeader />
 
-        {/* Dynamic Viewport with dynamic mobile bottom bar clearance (pb-0 when hidden for full visibility) */}
+        {/* Dynamic Viewport with dynamic mobile bottom bar clearance (pb-14 when hidden for floating pill clearance, pb-20 when visible) */}
         <main
           className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-200 ${
-            isBottomNavVisible ? 'pb-20 md:pb-0' : 'pb-0 md:pb-0'
+            isBottomNavVisible ? 'pb-20 md:pb-0' : 'pb-14 md:pb-0'
           }`}
         >
           {renderActiveView()}

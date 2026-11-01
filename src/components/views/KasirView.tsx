@@ -20,6 +20,8 @@ import {
   Barcode,
   ArrowLeft,
   ChevronRight,
+  Printer,
+  History,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { ProductCategory, PaymentMethod, Product } from '../../types/pos';
@@ -36,6 +38,8 @@ export const KasirView: React.FC = () => {
     cartSubtotal,
     cartTotalCount,
     checkoutPOS,
+    transactions,
+    openReceipt,
   } = usePOS();
 
   const allCategories: ProductCategory[] = ['Semua', ...categories];
@@ -43,6 +47,7 @@ export const KasirView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanFeedback, setScanFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -317,6 +322,17 @@ export const KasirView: React.FC = () => {
               </button>
             </div>
 
+            {/* Reprint Thermal Receipt Button */}
+            <button
+              type="button"
+              onClick={() => setIsHistoryModalOpen(true)}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-teal-50 hover:text-teal-900 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 hover:border-teal-300 transition cursor-pointer flex items-center gap-1.5 shrink-0"
+              title="Cetak Ulang Struk Penjualan Terakhir (58mm / 80mm)"
+            >
+              <Printer className="w-4 h-4 text-teal-600" />
+              <span className="hidden sm:inline">Cetak Ulang Struk</span>
+            </button>
+
             {/* Mobile Cart Trigger Button */}
             <button
               type="button"
@@ -560,15 +576,26 @@ export const KasirView: React.FC = () => {
             </div>
           </div>
 
-          {cart.length > 0 && (
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={clearCart}
-              className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1 cursor-pointer"
+              type="button"
+              onClick={() => setIsHistoryModalOpen(true)}
+              className="px-2 py-1 text-slate-600 hover:text-teal-900 hover:bg-teal-50 rounded-lg transition border border-slate-200 hover:border-teal-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
+              title="Riwayat & Cetak Ulang Struk Kasir"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Reset</span>
+              <History className="w-3.5 h-3.5 text-teal-600" />
+              <span>Struk</span>
             </button>
-          )}
+            {cart.length > 0 && (
+              <button
+                onClick={clearCart}
+                className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Customer input */}
@@ -1174,6 +1201,95 @@ export const KasirView: React.FC = () => {
             <span>Bayar Sekarang</span>
             <ChevronRight className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Modal Cetak Ulang Struk Kasir POS */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden my-auto flex flex-col max-h-[88vh]">
+            <div className="p-4 bg-gradient-to-r from-teal-700 to-emerald-700 text-white flex items-center justify-between shadow-sm shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-black shadow-sm">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Riwayat & Cetak Ulang Struk Kasir</h3>
+                  <p className="text-[11px] text-teal-100">Daftar struk transaksi penjualan POS Ju-Fat Cell</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2.5 flex-1 bg-slate-50">
+              {transactions.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 space-y-2">
+                  <Receipt className="w-10 h-10 mx-auto text-slate-300 stroke-[1.2]" />
+                  <p className="text-xs font-semibold">Belum ada riwayat transaksi penjualan kasir</p>
+                </div>
+              ) : (
+                transactions.slice(0, 30).map((tx) => (
+                  <div
+                    key={tx.id}
+                    className="p-3 bg-white border border-slate-200 rounded-xl hover:border-teal-400 transition shadow-2xs space-y-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-xs text-slate-900">{tx.invoiceNo}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                            {tx.paymentMethod}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {tx.date} • Kasir: {tx.cashier} • Pelanggan: <span className="font-semibold text-slate-700">{tx.customerName}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-mono font-black text-sm text-emerald-800">
+                          Rp {tx.total.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100 flex items-center justify-between">
+                      <span className="truncate max-w-[280px]">
+                        {tx.items.length} item: {tx.items.map((i) => `${i.product.name} (${i.quantity}x)`).join(', ')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsHistoryModalOpen(false);
+                          openReceipt(tx);
+                        }}
+                        className="ml-2 px-3 py-1.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer active:scale-95"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Cetak Struk</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-3 bg-white border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

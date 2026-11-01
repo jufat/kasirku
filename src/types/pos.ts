@@ -93,6 +93,7 @@ export interface AtmMiniTransaction {
   totalDebited: number;
   cashHandedOrReceived: number;
   paymentMethod?: 'tunai' | 'qris' | 'hutang';
+  adminDeductionType?: 'tambah_transfer' | 'potong_tunai';
   status: 'sukses' | 'gagal';
   note?: string;
 }

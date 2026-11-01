@@ -487,6 +487,12 @@ export const PercetakanView: React.FC = () => {
       setSettlePrintNote(`Pelunasan cetak ${order.id} - ${order.customerName}`);
     } else {
       updatePrintOrderStatus(order.id, 'diambil');
+      openReceipt({
+        ...order,
+        status: 'diambil',
+        remainingAmount: 0,
+        downPayment: order.totalAmount,
+      });
     }
   };
 
@@ -500,6 +506,13 @@ export const PercetakanView: React.FC = () => {
       settlePrintPhone || settlingPrintOrder.customerPhone,
       settlePrintNote
     );
+    const orderCopy: PrintOrder = {
+      ...settlingPrintOrder,
+      status: 'diambil',
+      remainingAmount: 0,
+      downPayment: settlingPrintOrder.totalAmount,
+      paymentMethod: settlePrintMethod,
+    };
     setSettlingPrintOrder(null);
     setSuccessToast(
       settlePrintMethod === 'hutang'
@@ -507,6 +520,9 @@ export const PercetakanView: React.FC = () => {
         : `Pesanan ${settlingPrintOrder.id} berhasil dilunasi (${settlePrintMethod.toUpperCase()}) & diserahkan!`
     );
     setTimeout(() => setSuccessToast(''), 4500);
+
+    // Auto open thermal receipt for customer (Struk Pelunasan Percetakan)
+    openReceipt(orderCopy);
   };
 
   // Fallback if no services exist
@@ -981,8 +997,8 @@ export const PercetakanView: React.FC = () => {
           </div>
         </div>
 
-        {/* Form Body */}
-        <div className="p-3.5 sm:p-5 space-y-4 flex-1">
+        {/* Form Body with generous mobile bottom clearance */}
+        <div className="p-3.5 sm:p-5 pb-40 sm:pb-12 space-y-4 flex-1">
           {successToast && (
             <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs rounded-xl flex items-center gap-2 font-bold animate-fade-in shadow-xs">
               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -1829,16 +1845,19 @@ export const PercetakanView: React.FC = () => {
               />
             </div>
 
-            {/* Add to order ticket button */}
+            {/* Add to order ticket button - Tampil menonjol, tinggi & mudah ditekan */}
             <button
               type="button"
               onClick={handleAddCalculatedToOrder}
-              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 via-teal-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-teal-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-black text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 ring-2 ring-indigo-400/40"
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <Plus className="w-5 h-5 stroke-[3]" />
               <span>+ Masukkan ke Daftar Tagihan</span>
             </button>
           </div>
+
+          {/* Spacer khusus agar konten paling bawah bisa digulir leluasa di layar mobile tanpa terhalang tombol navigasi */}
+          <div className="h-24 sm:h-6" aria-hidden="true" />
         </div>
 
         {/* Sticky Floating Pay Bar at bottom of Left Column (Selalu kelihatan & mudah ditekan saat scroll) */}
@@ -1958,7 +1977,7 @@ export const PercetakanView: React.FC = () => {
 
         {rightColumnTab === 'receipt_preview' || mobileTab === 'preview' ? (
           /* Dedicated Full Live Preview Panel */
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-900 flex flex-col items-center">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-36 sm:pb-12 bg-slate-900 flex flex-col items-center">
             <div className="w-full max-w-md mb-3 flex items-center justify-between text-xs text-slate-300">
               <div className="flex items-center gap-1.5 font-bold text-amber-400">
                 <Sparkles className="w-4 h-4" />
@@ -2065,7 +2084,7 @@ export const PercetakanView: React.FC = () => {
         </div>
 
         {/* Orders List Container */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 pb-36 sm:pb-12 space-y-3">
           {filteredOrders.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-slate-400 space-y-2">
               <Printer className="w-12 h-12 stroke-[1.5] text-slate-300" />
@@ -2236,10 +2255,11 @@ export const PercetakanView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => openReceipt(order)}
-                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
-                        title="Cetak Struk Thermal"
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-teal-50 hover:text-teal-900 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 hover:border-teal-300 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                        title="Cetak Struk Termal Percetakan (58mm / 80mm)"
                       >
-                        <Receipt className="w-4 h-4" />
+                        <Printer className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Struk Termal</span>
                       </button>
 
                       <button

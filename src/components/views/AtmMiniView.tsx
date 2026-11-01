@@ -142,6 +142,10 @@ export const AtmMiniView: React.FC = () => {
   const [atmMiniDueDate, setAtmMiniDueDate] = useState(() =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
   );
+  // Skema Admin Tarik Tunai:
+  // 'tambah_transfer': nasabah kirim 103.000, fisik diserahkan 100.000 (laci keluar 100.000)
+  // 'potong_tunai': nasabah kirim 100.000, fisik diserahkan 97.000 (laci keluar 97.000)
+  const [adminDeductionType, setAdminDeductionType] = useState<'tambah_transfer' | 'potong_tunai'>('tambah_transfer');
 
   // Switch mode defaults
   const handleModeChange = (mode: AtmMiniType) => {
@@ -174,7 +178,17 @@ export const AtmMiniView: React.FC = () => {
     }
   };
 
-  const totalDebited = nominal + adminEdcFee + counterFee;
+  const totalAdmin = adminEdcFee + counterFee;
+  const isTarikTunai =
+    activeMode === 'tarik_tunai_atm' ||
+    (activeMode === 'mbanking_atm' && mbankingType.includes('Tarik Tunai')) ||
+    (activeMode === 'qris_atm' && qrisType.includes('Tarik Tunai'));
+  const isPotongTunai = isTarikTunai && adminDeductionType === 'potong_tunai';
+
+  // Skenario 1 (tambah_transfer): Nasabah kirim 103.000, fisik diserahkan 100.000 (Laci keluar 100.000)
+  // Skenario 2 (potong_tunai): Nasabah kirim 100.000, fisik diserahkan 97.000 (Laci keluar 97.000)
+  const totalDebited = isPotongTunai ? nominal : nominal + totalAdmin;
+  const cashHandedOut = isPotongTunai ? Math.max(0, nominal - totalAdmin) : nominal;
 
   // Step 1: Open Payment & Confirmation Dialog
   const handleSubmit = (e: React.FormEvent) => {
@@ -271,7 +285,8 @@ export const AtmMiniView: React.FC = () => {
       note,
       atmMiniPaymentMethod,
       atmMiniCustomerPhone || targetAccountOrPhone,
-      atmMiniDueDate
+      atmMiniDueDate,
+      adminDeductionType
     );
 
     setIsPaymentModalOpen(false);
@@ -287,7 +302,12 @@ export const AtmMiniView: React.FC = () => {
         ? 'Mobile Banking'
         : 'Sistem QRIS';
 
-    setToastMessage(`Transaksi ${serviceName} berhasil diproses & dicatat ke kas laci!`);
+    const toastCashMsg =
+      activeMode === 'tarik_tunai_atm'
+        ? `Tarik Tunai ${tx.bankName}: Uang fisik laci berkurang -Rp ${tx.cashHandedOrReceived.toLocaleString('id-ID')} (${isPotongTunai ? 'potong admin' : 'nasabah kirim sekalian admin'}).`
+        : `Transaksi ${serviceName} berhasil diproses & uang tunai Rp ${tx.cashHandedOrReceived.toLocaleString('id-ID')} dicatat ke laci!`;
+
+    setToastMessage(toastCashMsg);
     setTimeout(() => setToastMessage(''), 4500);
 
     // Auto open receipt thermal modal
@@ -1375,14 +1395,83 @@ export const AtmMiniView: React.FC = () => {
               </div>
             </div>
 
+            {/* Opsi Skema Biaya Admin Khusus Tarik Tunai */}
+            {isTarikTunai && (
+              <div className="p-3 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 rounded-xl border border-amber-300 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Pilih Skema Biaya Admin Tarik Tunai:</span>
+                  </label>
+                  <span className="text-[10px] font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                    Total Admin: Rp {totalAdmin.toLocaleString('id-ID')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Option 1: Kirim Sekalian Admin */}
+                  <button
+                    type="button"
+                    onClick={() => setAdminDeductionType('tambah_transfer')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      adminDeductionType === 'tambah_transfer'
+                        ? 'bg-teal-50 border-teal-600 ring-2 ring-teal-500 shadow-xs'
+                        : 'bg-white border-amber-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-full ${adminDeductionType === 'tambah_transfer' ? 'bg-teal-600' : 'bg-slate-300'}`} />
+                        Kirim Sekalian Admin
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-tight">
+                      Nasabah transfer: <strong className="text-teal-900 font-mono">Rp {(nominal + totalAdmin).toLocaleString('id-ID')}</strong>
+                    </p>
+                    <div className="mt-1 text-[10px] font-bold text-teal-900 bg-white/90 p-1 rounded border border-teal-200">
+                      Diserahkan ke nasabah: <span className="font-mono text-slate-900">Rp {nominal.toLocaleString('id-ID')}</span>
+                      <div className="text-rose-600 font-black">Kas Laci: -Rp {nominal.toLocaleString('id-ID')}</div>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Potong dari Uang Tunai */}
+                  <button
+                    type="button"
+                    onClick={() => setAdminDeductionType('potong_tunai')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      adminDeductionType === 'potong_tunai'
+                        ? 'bg-amber-50 border-amber-600 ring-2 ring-amber-500 shadow-xs'
+                        : 'bg-white border-amber-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-full ${adminDeductionType === 'potong_tunai' ? 'bg-amber-600' : 'bg-slate-300'}`} />
+                        Potong dari Uang Tunai
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-tight">
+                      Nasabah transfer pas: <strong className="text-amber-900 font-mono">Rp {nominal.toLocaleString('id-ID')}</strong>
+                    </p>
+                    <div className="mt-1 text-[10px] font-bold text-amber-950 bg-white/90 p-1 rounded border border-amber-300">
+                      Diserahkan ke nasabah: <span className="font-mono text-amber-900">Rp {cashHandedOut.toLocaleString('id-ID')}</span>
+                      <div className="text-rose-600 font-black">Kas Laci: -Rp {cashHandedOut.toLocaleString('id-ID')}</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Breakdown regarding physical cash and debited card balance */}
-            <div className="pt-2 border-t border-slate-200 space-y-1">
+            <div className="pt-2 border-t border-slate-200 space-y-1.5">
               <div className="flex items-baseline justify-between">
                 <span className="font-bold text-slate-700">
                   {activeMode === 'qris_atm'
                     ? 'Total Dibayar via QRIS:'
                     : activeMode === 'mbanking_atm'
                     ? 'Total Didebet / Diproses M-Banking:'
+                    : isTarikTunai
+                    ? 'Total Ditransfer / Didebet Nasabah:'
                     : 'Total Didebet dari Kartu Nasabah:'}
                 </span>
                 <span className="text-base font-extrabold text-slate-900 font-mono tabular-nums">
@@ -1390,14 +1479,20 @@ export const AtmMiniView: React.FC = () => {
                 </span>
               </div>
 
-              {activeMode === 'tarik_tunai_atm' ||
-              (activeMode === 'mbanking_atm' && mbankingType.includes('Tarik Tunai')) ||
-              (activeMode === 'qris_atm' && qrisType.includes('Tarik Tunai')) ? (
-                <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-[11px] flex items-center justify-between font-medium">
-                  <span>Uang Fisik Diberikan dari Laci:</span>
-                  <span className="font-bold font-mono">
-                    Rp {nominal.toLocaleString('id-ID')}
-                  </span>
+              {isTarikTunai ? (
+                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 text-[11px] space-y-1">
+                  <div className="flex items-center justify-between font-bold">
+                    <span>Uang Fisik Diberikan dari Laci:</span>
+                    <span className="font-mono text-sm font-black text-amber-900">
+                      Rp {cashHandedOut.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-rose-700 font-bold pt-0.5 border-t border-amber-200">
+                    <span>Pengurangan Saldo Kas Laci:</span>
+                    <span className="font-mono font-black">
+                      -Rp {cashHandedOut.toLocaleString('id-ID')}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900 text-[11px] flex items-center justify-between font-medium">
@@ -1784,6 +1879,8 @@ export const AtmMiniView: React.FC = () => {
                       ? 'Total Bayar via QRIS:'
                       : activeMode === 'ewallet_mbanking_atm'
                       ? 'Total Diproses E-Wallet & M-Banking:'
+                      : isTarikTunai
+                      ? 'Total Ditransfer / Didebet Nasabah:'
                       : 'Total Didebet dari Kartu Nasabah:'}
                   </span>
                   <span className="text-xl font-black font-mono text-emerald-800 tabular-nums">
@@ -1883,35 +1980,67 @@ export const AtmMiniView: React.FC = () => {
               )}
 
               {atmMiniPaymentMethod === 'tunai' && (
-                activeMode === 'tarik_tunai_atm' ||
-                (activeMode === 'mbanking_atm' && mbankingType.includes('Tarik Tunai')) ||
-                (activeMode === 'qris_atm' && qrisType.includes('Tarik Tunai')) ? (
-                  <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-1 text-amber-950">
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <Banknote className="w-4 h-4 text-amber-600" />
-                      <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
-                    </div>
-                    <div className="flex items-baseline justify-between pt-1">
-                      <span className="text-xs">Uang Fisik Diberikan dari Laci:</span>
-                      <span className="text-lg font-black font-mono text-amber-900">
-                        Rp {nominal.toLocaleString('id-ID')}
+                isTarikTunai ? (
+                  <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <Banknote className="w-4 h-4 text-amber-600" />
+                        <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/90 text-amber-950 border border-amber-300">
+                        {isPotongTunai ? '✂️ Potong dari Tunai' : '📲 Kirim Sekalian Admin'}
                       </span>
                     </div>
-                    <p className="text-[10px] text-amber-800">
-                      💡 Saldo rekening bank agen Ju-Fat otomatis bertambah Rp {totalDebited.toLocaleString('id-ID')} (Nominal + Biaya Admin + Laba Jasa).
-                    </p>
+
+                    <div className="flex items-baseline justify-between pt-1 border-t border-amber-200">
+                      <span className="text-xs font-bold text-slate-800">Uang Fisik Diserahkan dari Laci:</span>
+                      <span className="text-xl font-black font-mono text-amber-950">
+                        Rp {cashHandedOut.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-white/80 rounded-lg text-[11px] leading-tight space-y-1 border border-amber-200">
+                      {isPotongTunai ? (
+                        <>
+                          <p className="text-slate-800">
+                            • Nasabah transfer pas: <strong className="font-mono">Rp {nominal.toLocaleString('id-ID')}</strong> (tidak sekalian admin).
+                          </p>
+                          <p className="text-slate-800">
+                            • Admin <strong className="font-mono">Rp {totalAdmin.toLocaleString('id-ID')}</strong> dipotong langsung dari uang tunai.
+                          </p>
+                          <p className="text-rose-700 font-bold">
+                            ⚡ Kas Laci Berkurang: <span className="font-mono font-black">-Rp {cashHandedOut.toLocaleString('id-ID')}</span>.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-slate-800">
+                            • Nasabah transfer sekalian admin: <strong className="font-mono">Rp {totalDebited.toLocaleString('id-ID')}</strong>.
+                          </p>
+                          <p className="text-slate-800">
+                            • Kasir menyerahkan nominal penuh: <strong className="font-mono">Rp {nominal.toLocaleString('id-ID')}</strong>.
+                          </p>
+                          <p className="text-rose-700 font-bold">
+                            ⚡ Kas Laci Berkurang: <span className="font-mono font-black">-Rp {nominal.toLocaleString('id-ID')}</span>.
+                          </p>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2 text-emerald-950">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 font-bold text-xs">
                         <Banknote className="w-4 h-4 text-emerald-700" />
-                        <span>Uang Fisik Diterima ke Laci Kasir</span>
+                        <span>Uang Fisik Diterima ke Laci Kasir (Dicatat Penuh)</span>
                       </div>
-                      <span className="text-[11px] font-mono font-bold text-emerald-900">
+                      <span className="text-[11px] font-mono font-black text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
                         Wajib: Rp {totalDebited.toLocaleString('id-ID')}
                       </span>
                     </div>
+                    <p className="text-[10px] text-emerald-800 leading-tight">
+                      ⚡ Kas laci akan otomatis bertambah <strong>Rp {totalDebited.toLocaleString('id-ID')}</strong> (Nominal Pokok + Admin Bank + Laba Jasa).
+                    </p>
 
                     {/* Cash Received Calculator for Cashier */}
                     <div className="space-y-1.5 pt-1 border-t border-emerald-200">
@@ -2082,9 +2211,20 @@ export const AtmMiniView: React.FC = () => {
                 <span className="font-mono font-bold text-emerald-800">+Rp {selectedTxDetail.counterFee.toLocaleString('id-ID')}</span>
               </div>
               <div className="flex justify-between pt-1 font-bold text-sm text-slate-900">
-                <span>Total Transaksi:</span>
+                <span>Total Ditransfer / Didebet:</span>
                 <span className="font-mono font-black text-emerald-800">Rp {selectedTxDetail.totalDebited.toLocaleString('id-ID')}</span>
               </div>
+              {selectedTxDetail.type === 'tarik_tunai_atm' && (
+                <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 mt-1">
+                  <span>Uang Fisik Diserahkan (Laci):</span>
+                  <span className="font-mono text-rose-700 font-black">
+                    -Rp {selectedTxDetail.cashHandedOrReceived.toLocaleString('id-ID')}
+                    {selectedTxDetail.adminDeductionType === 'potong_tunai' && (
+                      <span className="text-[10px] text-amber-800 font-normal ml-1">(Potong Admin)</span>
+                    )}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">

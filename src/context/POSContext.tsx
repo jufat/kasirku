@@ -106,7 +106,8 @@ interface POSContextType {
     note?: string,
     paymentMethod?: 'tunai' | 'qris' | 'hutang',
     customerPhone?: string,
-    dueDate?: string
+    dueDate?: string,
+    adminDeductionType?: 'tambah_transfer' | 'potong_tunai'
   ) => AtmMiniTransaction;
 
   // PPOB
@@ -349,7 +350,27 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [mutations, setMutations] = useState<CashMutation[]>(() => {
     const saved = localStorage.getItem('jufat_mutations');
-    return saved ? JSON.parse(saved) : INITIAL_MUTATIONS;
+    if (saved) {
+      try {
+        const parsed: CashMutation[] = JSON.parse(saved);
+        // Migrasi data warisan: pastikan uang transfer tunai dicatat penuh (pokok + admin) bukan hanya adminnya
+        const upgraded = parsed.map((m) => {
+          if (m.id === 'mut-003' && m.amount === 5000) {
+            return {
+              ...m,
+              description: 'Terima Tunai Transfer BRI [TRX-AG-8801] (Bpk. Sugeng) - Nominal Rp 1.500.000 + Admin/Jasa Rp 7.500',
+              amount: 1507500,
+              runningCashBalance: 2052500,
+            };
+          }
+          return m;
+        });
+        return upgraded;
+      } catch {
+        return INITIAL_MUTATIONS;
+      }
+    }
+    return INITIAL_MUTATIONS;
   });
 
   const [debts, setDebts] = useState<DebtRecord[]>(() => {
@@ -717,20 +738,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAgencyTransactions((prev) => [newAgTx, ...prev]);
 
-    // Auto-journal counter profit & physical cash in/out:
-    // When customer pays cash for transfer: counter gets cash (totalPaid), but bank balances are sent out.
-    // In physical cash drawer, the net cash retained is typically the counter fee + nominal (if physical cash received).
-    // Ju-Fat Cell auto-journal records:
-    // 1. Kas Masuk Fisik (Uang Tunai Diterima dari Pelanggan: Total Bayar)
-    // 2. Or simplified counter cash in: Jasa Konter / Laba Bersih
-    const newRunning = drawerCashBalance + counterFee;
+    // Uang masuk fisik ke laci kasir: catat seluruh nominal uang tunai yang diterima (pokok + admin/jasa)
+    const newRunning = drawerCashBalance + totalPaid;
     const mutation: CashMutation = {
       id: `mut-${Date.now()}`,
       timestamp: nowTime,
       type: 'masuk',
       category: 'jasa_transfer',
-      description: `Laba Jasa Agen ${type.replace('_', ' ').toUpperCase()} ${provider} [${refNo}] (${customerName})`,
-      amount: counterFee,
+      description: `Terima Tunai Agen ${type.replace('_', ' ').toUpperCase()} ${provider} [${refNo}] (${customerName}) - Nominal Rp ${nominal.toLocaleString('id-ID')} + Admin/Jasa Rp ${(bankAdminFee + counterFee).toLocaleString('id-ID')}`,
+      amount: totalPaid,
       paymentMethod: 'tunai',
       runningCashBalance: newRunning,
       recordedBy: shift.cashierName,
@@ -757,11 +773,23 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     note?: string,
     paymentMethod: 'tunai' | 'qris' | 'hutang' = 'tunai',
     customerPhone?: string,
-    dueDate?: string
+    dueDate?: string,
+    adminDeductionType: 'tambah_transfer' | 'potong_tunai' = 'tambah_transfer'
   ): AtmMiniTransaction => {
     const traceNo = Math.floor(100000 + Math.random() * 900000).toString();
     const approvalCode = `APPR-${Math.floor(100000 + Math.random() * 900000)}`;
-    const totalDebited = nominal + adminEdcFee + counterFee;
+    const totalAdmin = adminEdcFee + counterFee;
+    const isPotongTunai = type === 'tarik_tunai_atm' && adminDeductionType === 'potong_tunai';
+
+    // Perhitungan debet transfer & uang tunai diserahkan:
+    // Skenario 1 (tambah_transfer): Nasabah kirim 103.000, fisik diserahkan 100.000 -> Laci keluar 100.000
+    // Skenario 2 (potong_tunai): Nasabah kirim 100.000, fisik diserahkan 97.000 -> Laci keluar 97.000
+    const totalDebited = isPotongTunai ? nominal : nominal + totalAdmin;
+    const cashHandedOrReceived =
+      type === 'tarik_tunai_atm'
+        ? (isPotongTunai ? Math.max(0, nominal - totalAdmin) : nominal)
+        : totalDebited;
+
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     const newTx: AtmMiniTransaction = {
@@ -780,8 +808,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       adminEdcFee,
       counterFee,
       totalDebited,
-      cashHandedOrReceived: type === 'tarik_tunai_atm' ? nominal : totalDebited,
+      cashHandedOrReceived,
       paymentMethod,
+      adminDeductionType: type === 'tarik_tunai_atm' ? adminDeductionType : undefined,
       status: 'sukses',
       note,
     };
@@ -809,36 +838,39 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 2. Auto-Journaling Kas Laci:
     if (type === 'tarik_tunai_atm') {
-      // Kas Keluar: uang tunai diserahkan ke nasabah dari laci
+      // Uang fisik yang benar-benar keluar dari laci kasir:
+      // Jika tambah_transfer: keluar Rp 100.000 (nasabah kirim Rp 103.000)
+      // Jika potong_tunai: keluar Rp 97.000 (nasabah kirim Rp 100.000 pas)
+      const cashOutFromDrawer = cashHandedOrReceived;
       const mutationKeluar: CashMutation = {
         id: `mut-${Date.now()}-out`,
         timestamp: nowTime,
         type: 'keluar',
         category: 'jasa_transfer',
-        description: `Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName}) - Uang diserahkan`,
-        amount: nominal,
+        description: isPotongTunai
+          ? `Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName}) - Admin Rp ${totalAdmin.toLocaleString('id-ID')} dipotong tunai (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`
+          : `Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName}) - Nasabah kirim Rp ${totalDebited.toLocaleString('id-ID')} (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`,
+        amount: cashOutFromDrawer,
         paymentMethod: 'tunai',
-        runningCashBalance: drawerCashBalance - nominal,
+        runningCashBalance: drawerCashBalance - cashOutFromDrawer,
         recordedBy: shift.cashierName,
       };
 
-      // Kas Masuk: Jasa Konter Tarik Tunai (jika tunai) atau non_tunai (jika QRIS)
-      if (paymentMethod !== 'hutang') {
-        const mutationMasuk: CashMutation = {
-          id: `mut-${Date.now()}-in`,
-          timestamp: nowTime,
-          type: 'masuk',
-          category: 'jasa_transfer',
-          description: `Laba Jasa Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName})`,
-          amount: counterFee,
-          paymentMethod: paymentMethod === 'tunai' ? 'tunai' : 'non_tunai',
-          runningCashBalance: paymentMethod === 'tunai' ? drawerCashBalance - nominal + counterFee : drawerCashBalance - nominal,
-          recordedBy: shift.cashierName,
-        };
-        setMutations((prev) => [mutationMasuk, mutationKeluar, ...prev]);
-      } else {
-        setMutations((prev) => [mutationKeluar, ...prev]);
-      }
+      // Catat mutasi laba jasa secara terpisah di jurnal non_tunai (karena dana diterima digital di rekening agen)
+      // agar tidak mendistorsi uang fisik laci kasir!
+      const mutationLaba: CashMutation = {
+        id: `mut-${Date.now()}-fee`,
+        timestamp: nowTime,
+        type: 'masuk',
+        category: 'jasa_transfer',
+        description: `Laba Jasa Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName})`,
+        amount: counterFee,
+        paymentMethod: 'non_tunai',
+        runningCashBalance: drawerCashBalance - cashOutFromDrawer,
+        recordedBy: shift.cashierName,
+      };
+
+      setMutations((prev) => [mutationKeluar, mutationLaba, ...prev]);
     } else {
       const serviceName =
         type === 'transfer_atm'
@@ -852,15 +884,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : 'Layanan EDC';
 
       if (paymentMethod === 'tunai') {
+        // Uang masuk fisik ke laci kasir: catat seluruh nominal uang tunai yang diterima (pokok transfer/topup + admin EDC + jasa konter)
+        const fullCashReceived = totalDebited;
+        const newRunning = drawerCashBalance + fullCashReceived;
         const mutation: CashMutation = {
           id: `mut-${Date.now()}`,
           timestamp: nowTime,
           type: 'masuk',
           category: 'jasa_transfer',
-          description: `Laba Jasa Mini ATM ${serviceName} ${bankName} [${traceNo}] (${customerName})`,
-          amount: counterFee,
+          description: `Terima Tunai ${serviceName} ${bankName} [${traceNo}] (${customerName}) - Nominal Rp ${nominal.toLocaleString('id-ID')} + Admin/Jasa Rp ${(adminEdcFee + counterFee).toLocaleString('id-ID')}`,
+          amount: fullCashReceived,
           paymentMethod: 'tunai',
-          runningCashBalance: drawerCashBalance + counterFee,
+          runningCashBalance: newRunning,
           recordedBy: shift.cashierName,
         };
         setMutations((prev) => [mutation, ...prev]);
