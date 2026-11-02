@@ -25,6 +25,10 @@ import {
   X,
   ChevronDown,
   Sparkles,
+  Scale,
+  Smartphone,
+  Building2,
+  ArrowRightLeft,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -36,6 +40,9 @@ import {
   Legend,
   CartesianGrid,
   ReferenceLine,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import { usePOS } from '../../context/POSContext';
 
@@ -79,6 +86,27 @@ export const DashboardView: React.FC = () => {
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [tempTargetInput, setTempTargetInput] = useState<string>(revenueTarget.toString());
   const [targetToast, setTargetToast] = useState('');
+
+  // Saldo Digital Operasional Counter (Bank, EDC Agen & E-Wallet)
+  const [baseDigitalBalance, setBaseDigitalBalance] = useState<number>(() => {
+    const saved = localStorage.getItem('jufat_digital_operational_balance');
+    return saved ? Number(saved) : 8750000;
+  });
+  const [isEditingDigitalBalance, setIsEditingDigitalBalance] = useState(false);
+  const [tempDigitalInput, setTempDigitalInput] = useState<string>(baseDigitalBalance.toString());
+  const [digitalToast, setDigitalToast] = useState('');
+
+  const handleSaveDigitalBalance = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = Number(tempDigitalInput.replace(/\D/g, ''));
+    if (!isNaN(val) && val >= 0) {
+      setBaseDigitalBalance(val);
+      localStorage.setItem('jufat_digital_operational_balance', val.toString());
+      setIsEditingDigitalBalance(false);
+      setDigitalToast('Saldo digital operasional (bank & e-wallet) berhasil diperbarui!');
+      setTimeout(() => setDigitalToast(''), 3000);
+    }
+  };
 
   // Close date picker when clicking outside
   useEffect(() => {
@@ -455,6 +483,52 @@ export const DashboardView: React.FC = () => {
               <span className="font-bold">Rp {dataPoint.target.toLocaleString('id-ID')}</span>
             </div>
           )}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Asset Distribution Calculations (Kas Tunai Laci vs Saldo Digital Bank/E-Wallet)
+  const currentCash = Math.max(0, drawerCashBalance);
+  const currentDigital = Math.max(0, baseDigitalBalance);
+  const totalOperationalAssets = currentCash + currentDigital;
+  const cashPercentage = totalOperationalAssets > 0 ? Math.round((currentCash / totalOperationalAssets) * 100) : 50;
+  const digitalPercentage = totalOperationalAssets > 0 ? 100 - cashPercentage : 50;
+
+  const operationalAssetData = [
+    {
+      name: 'Kas Tunai (Laci)',
+      value: currentCash,
+      color: '#10b981', // Emerald 500
+      percentage: cashPercentage,
+      desc: 'Uang fisik di laci kasir',
+    },
+    {
+      name: 'Saldo Digital (Bank & E-Wallet)',
+      value: currentDigital,
+      color: '#0284c7', // Sky 600
+      percentage: digitalPercentage,
+      desc: 'Rekening Bank, EDC & Saldo PPOB',
+    },
+  ];
+
+  // Custom Tooltip for Operational Asset Ratio Donut Chart
+  const AssetRatioTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0];
+      return (
+        <div className="bg-slate-900/95 backdrop-blur-md text-white p-3 rounded-xl shadow-xl border border-slate-700 text-xs space-y-1 select-none z-50">
+          <div className="flex items-center gap-1.5 font-bold" style={{ color: data.payload.color }}>
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: data.payload.color }} />
+            <span>{data.name}</span>
+          </div>
+          <div className="text-base font-extrabold font-mono text-white">
+            Rp {Number(data.value).toLocaleString('id-ID')}
+          </div>
+          <div className="text-[11px] text-slate-300 font-mono">
+            Porsi: <strong className="text-amber-300 font-bold">{data.payload.percentage}%</strong> dari total likuiditas
+          </div>
         </div>
       );
     }

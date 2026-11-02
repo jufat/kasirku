@@ -26,6 +26,8 @@ import {
   ShoppingCart,
   DollarSign,
   Wallet,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { usePOS } from '../../context/POSContext';
@@ -51,6 +53,7 @@ export const StokKategoriView: React.FC = () => {
   const [selectedCat, setSelectedCat] = useState<string>('Semua');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'needs_restock' | 'out_of_stock' | 'low_stock' | 'safe'>('all');
   const [search, setSearch] = useState('');
+  const [showSummaryCards, setShowSummaryCards] = useState<boolean>(true);
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -312,210 +315,205 @@ export const StokKategoriView: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-hidden">
-      {/* Top Header & Actions Bar */}
-      <div className="p-4 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center shadow-sm">
-            <Package className="w-5 h-5 stroke-[2.5]" />
+      {/* Top Header & Actions Bar (Compact & Sleek) */}
+      <div className="px-3 py-2 sm:px-4 sm:py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-xs shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+            <Package className="w-4 h-4 stroke-[2.5]" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 leading-tight truncate">
                 Manajemen Stok & Peringatan Restok
               </h3>
               {criticalProducts.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white animate-pulse">
-                  {criticalProducts.length} Perlu Restok
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white animate-pulse shrink-0">
+                  {criticalProducts.length} Kritis
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-[10px] text-slate-500 hidden sm:block">
               Katalog persediaan, batas minimum stok (low stock alert), nilai aset modal & impor Excel
             </p>
           </div>
         </div>
 
         {/* Action Buttons: Tambah Produk, Tambah via Excel, Ekspor Excel, Kelola Kategori */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setShowSummaryCards(!showSummaryCards)}
+            className="px-2 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer"
+            title={showSummaryCards ? 'Sembunyikan Kotak Ringkasan' : 'Tampilkan Kotak Ringkasan'}
+          >
+            {showSummaryCards ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
+            <span className="hidden sm:inline">{showSummaryCards ? 'Tutup Ringkasan' : 'Lihat Ringkasan'}</span>
+          </button>
+
           <button
             onClick={() => setIsCategoryModalOpen(true)}
-            className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-300 flex items-center gap-1.5 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer"
             title="Kelola & Buat Kategori Baru"
           >
-            <FolderPlus className="w-3.5 h-3.5 text-slate-600" />
-            <span>Kelola Kategori</span>
+            <FolderPlus className="w-3 h-3 text-slate-600" />
+            <span>Kategori</span>
           </button>
 
           <button
             onClick={() => setIsExcelModalOpen(true)}
-            className="px-3 py-1.5 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 flex items-center gap-1.5 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-300 flex items-center gap-1 transition cursor-pointer"
             title="Tambah Banyak Produk dengan File Excel / CSV"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
-            <span>Import Excel</span>
+            <FileSpreadsheet className="w-3 h-3 text-emerald-700" />
+            <span>Impor</span>
           </button>
 
           <button
             onClick={exportProductsToExcel}
-            className="px-3 py-1.5 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-300 flex items-center gap-1.5 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer"
             title="Ekspor Seluruh Katalog Produk ke File Excel .xlsx"
           >
-            <Download className="w-3.5 h-3.5 text-slate-600" />
-            <span>Ekspor Excel</span>
+            <Download className="w-3 h-3 text-slate-600" />
+            <span>Ekspor</span>
           </button>
 
           <button
             onClick={handleOpenAdd}
-            className="px-3.5 py-1.5 text-xs font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl shadow-sm shadow-teal-900/20 flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+            className="px-2.5 py-1 text-[11px] font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer active:scale-95"
           >
-            <Plus className="w-4 h-4 text-amber-300 stroke-[2.5]" />
-            <span>Tambah Produk</span>
+            <Plus className="w-3.5 h-3.5 text-amber-300 stroke-[2.5]" />
+            <span>+ Produk</span>
           </button>
         </div>
       </div>
 
-      {/* Top 4 Summary Cards (Stock Health & Asset Valuation) */}
-      <div className="p-4 bg-slate-50/70 border-b border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
-        {/* Card 1: Total Aset Modal HPP */}
-        <div className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Nilai Aset Stok (HPP)
-            </span>
-            <span className="text-base font-extrabold text-slate-900 font-mono tabular-nums block mt-0.5">
-              Rp {totalAssetHpp.toLocaleString('id-ID')}
-            </span>
-            <span className="text-[10px] text-teal-700 font-medium">
-              {totalStockUnits} total unit barang
-            </span>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0">
-            <Package className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Card 2: Potensi Omzet & Profit */}
-        <div className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Potensi Omzet Penjualan
-            </span>
-            <span className="text-base font-extrabold text-emerald-700 font-mono tabular-nums block mt-0.5">
-              Rp {totalPotentialRevenue.toLocaleString('id-ID')}
-            </span>
-            <span className="text-[10px] text-emerald-600 font-bold">
-              Potensi Profit: +Rp {totalPotentialProfit.toLocaleString('id-ID')}
-            </span>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Card 3: Peringatan Stok Kritis (Habis & Menipis) */}
-        <div
-          onClick={() => setStockStatusFilter('needs_restock')}
-          className={`p-3 rounded-xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
-            criticalProducts.length > 0
-              ? 'bg-rose-50/80 border-rose-300 hover:bg-rose-100/80'
-              : 'bg-white border-slate-200 hover:bg-slate-50'
-          }`}
-          title="Klik untuk memfilter daftar barang yang perlu direstok"
-        >
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-extrabold text-rose-800 uppercase tracking-wider block">
-                Perlu Restok Segera
+      {/* Top 4 Summary Cards (Diperkecil / Micro-Cards agar layar lega untuk tabel) */}
+      {showSummaryCards && (
+        <div className="px-2.5 py-1.5 sm:px-4 sm:py-2 bg-slate-50/90 border-b border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-1.5 sm:gap-2 shrink-0">
+          {/* Card 1: Total Aset Modal HPP */}
+          <div className="bg-white px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200/90 shadow-2xs flex items-center justify-between gap-1.5 hover:border-teal-300 transition">
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block truncate">
+                Nilai Aset (HPP)
               </span>
-              {criticalProducts.length > 0 && (
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
-              )}
-            </div>
-            <span className="text-base font-extrabold text-rose-900 font-mono tabular-nums block mt-0.5">
-              {criticalProducts.length} Produk Kritis
-            </span>
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] font-extrabold text-rose-700 bg-rose-100 px-1.5 py-0.2 rounded">
-                {outOfStockProducts.length} Habis
+              <span className="text-xs sm:text-sm font-extrabold text-slate-900 font-mono tabular-nums block leading-tight">
+                Rp {totalAssetHpp.toLocaleString('id-ID')}
               </span>
-              <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">
-                {lowStockProducts.length} Menipis
+              <span className="text-[9px] text-teal-700 font-semibold truncate block">
+                {totalStockUnits.toLocaleString('id-ID')} unit barang
               </span>
             </div>
+            <div className="w-6 h-6 rounded-md bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0">
+              <Package className="w-3.5 h-3.5" />
+            </div>
           </div>
+
+          {/* Card 2: Potensi Omzet & Profit */}
+          <div className="bg-white px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200/90 shadow-2xs flex items-center justify-between gap-1.5 hover:border-emerald-300 transition">
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block truncate">
+                Potensi Omzet
+              </span>
+              <span className="text-xs sm:text-sm font-extrabold text-emerald-700 font-mono tabular-nums block leading-tight">
+                Rp {totalPotentialRevenue.toLocaleString('id-ID')}
+              </span>
+              <span className="text-[9px] text-emerald-600 font-bold truncate block">
+                Laba: +Rp {totalPotentialProfit.toLocaleString('id-ID')}
+              </span>
+            </div>
+            <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
+            </div>
+          </div>
+
+          {/* Card 3: Peringatan Stok Kritis (Habis & Menipis) */}
           <div
-            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+            onClick={() => setStockStatusFilter('needs_restock')}
+            className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg border shadow-2xs flex items-center justify-between gap-1.5 cursor-pointer transition ${
               criticalProducts.length > 0
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-500'
+                ? 'bg-rose-50/90 border-rose-300 hover:bg-rose-100/90'
+                : 'bg-white border-slate-200 hover:bg-slate-50'
             }`}
+            title="Klik untuk memfilter daftar barang yang perlu direstok"
           >
-            <AlertTriangle className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Card 4: Stok Aman */}
-        <div
-          onClick={() => setStockStatusFilter('safe')}
-          className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-xs flex items-center justify-between cursor-pointer hover:bg-slate-50 transition"
-          title="Klik untuk melihat produk stok aman"
-        >
-          <div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Stok Aman Terpenuhi
-            </span>
-            <span className="text-base font-extrabold text-emerald-900 font-mono tabular-nums block mt-0.5">
-              {safeProducts.length} Produk
-            </span>
-            <span className="text-[10px] text-slate-500 font-medium">
-              Di atas batas minimum restok
-            </span>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
-            <CheckCircle className="w-4 h-4" />
-          </div>
-        </div>
-      </div>
-
-      {/* Prominent Low Stock Alert Banner (When critical items exist) */}
-      {criticalProducts.length > 0 && stockStatusFilter !== 'safe' && (
-        <div className="mx-4 mt-3 p-3.5 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-600 text-white rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white text-rose-600 flex items-center justify-center font-bold shadow-xs shrink-0">
-              <ShieldAlert className="w-5 h-5 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs md:text-sm font-extrabold tracking-tight">
-                  Peringatan Low Stock Alert: {criticalProducts.length} Barang Perlu Segera Direstok!
-                </h4>
-                <span className="text-[10px] bg-white/20 font-mono px-2 py-0.2 rounded-full font-bold">
-                  Batas Min Aktif
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-extrabold text-rose-800 uppercase tracking-tight block truncate">
+                  Perlu Restok
                 </span>
+                {criticalProducts.length > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block shrink-0" />
+                )}
               </div>
-              <p className="text-[11px] text-white/90 mt-0.5">
-                Stok barang di bawah telah menyentuh batas kritis atau habis (0 pcs). Segera pesan ke supplier agar kasir tidak kehabisan barang.
-              </p>
+              <span className="text-xs sm:text-sm font-extrabold text-rose-900 font-mono tabular-nums block leading-tight">
+                {criticalProducts.length} Kritis
+              </span>
+              <div className="flex items-center gap-1 text-[9px] font-extrabold truncate">
+                <span className="text-rose-700">{outOfStockProducts.length} Habis</span>
+                <span className="text-slate-300">•</span>
+                <span className="text-amber-700">{lowStockProducts.length} Menipis</span>
+              </div>
+            </div>
+            <div
+              className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
+                criticalProducts.length > 0
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+          {/* Card 4: Stok Aman */}
+          <div
+            onClick={() => setStockStatusFilter('safe')}
+            className="bg-white px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200/90 shadow-2xs flex items-center justify-between gap-1.5 cursor-pointer hover:bg-slate-50 transition"
+            title="Klik untuk melihat produk stok aman"
+          >
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block truncate">
+                Stok Aman
+              </span>
+              <span className="text-xs sm:text-sm font-extrabold text-emerald-900 font-mono tabular-nums block leading-tight">
+                {safeProducts.length} Produk
+              </span>
+              <span className="text-[9px] text-slate-500 font-medium truncate block">
+                Di atas batas min
+              </span>
+            </div>
+            <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+              <CheckCircle className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prominent Low Stock Alert Banner (Compact & Non-intrusive) */}
+      {criticalProducts.length > 0 && stockStatusFilter !== 'safe' && (
+        <div className="mx-2.5 my-1 px-3 py-1.5 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-600 text-white rounded-xl shadow-xs flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldAlert className="w-4 h-4 text-white shrink-0" />
+            <span className="font-extrabold truncate text-[11px] sm:text-xs">
+              Alert: {criticalProducts.length} Barang Perlu Direstok!
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => setStockStatusFilter('needs_restock')}
-              className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition cursor-pointer shadow-xs ${
+              className={`px-2 py-0.5 text-[10px] font-bold rounded-lg cursor-pointer ${
                 stockStatusFilter === 'needs_restock'
-                  ? 'bg-white text-slate-950 ring-2 ring-white/60'
+                  ? 'bg-white text-slate-950 font-extrabold'
                   : 'bg-white/20 hover:bg-white text-white hover:text-slate-900'
               }`}
             >
-              Filter Barang Menipis
+              Filter Kritis
             </button>
             {criticalProducts[0] && (
               <button
                 onClick={() => handleOpenRestock(criticalProducts[0])}
-                className="px-3 py-1.5 text-xs font-extrabold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+                className="px-2 py-0.5 text-[10px] font-bold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-lg cursor-pointer flex items-center gap-1"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3 h-3" />
                 <span>Restok Cepat</span>
               </button>
             )}
@@ -523,33 +521,33 @@ export const StokKategoriView: React.FC = () => {
         </div>
       )}
 
-      {/* Filter Bar: Search, Stock Status Filter & Category Tabs */}
-      <div className="p-4 bg-white border-b border-slate-200 space-y-3">
+      {/* Filter Bar: Search, Stock Status Filter & Category Tabs (Compact) */}
+      <div className="px-2.5 py-1.5 sm:px-4 sm:py-2 bg-white border-b border-slate-200 space-y-1.5 shrink-0">
         {/* Row 1: Search & Stock Status Toggle Pills */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="relative flex-1 min-w-[260px] max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari nama barang, kode SKU, atau barcode..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white transition"
+              className="w-full pl-8 pr-7 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white transition"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             )}
           </div>
 
           {/* Status Filter Buttons */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
             {[
-              { id: 'all', label: 'Semua Status', count: products.length, color: 'slate' },
+              { id: 'all', label: 'Semua', count: products.length, color: 'slate' },
               {
                 id: 'needs_restock',
                 label: '⚠️ Perlu Restok',
@@ -557,16 +555,16 @@ export const StokKategoriView: React.FC = () => {
                 color: 'rose',
                 urgent: criticalProducts.length > 0,
               },
-              { id: 'out_of_stock', label: 'Stok Habis (0)', count: outOfStockProducts.length, color: 'red' },
-              { id: 'low_stock', label: 'Stok Menipis', count: lowStockProducts.length, color: 'amber' },
-              { id: 'safe', label: 'Stok Aman', count: safeProducts.length, color: 'emerald' },
+              { id: 'out_of_stock', label: 'Habis (0)', count: outOfStockProducts.length, color: 'red' },
+              { id: 'low_stock', label: 'Menipis', count: lowStockProducts.length, color: 'amber' },
+              { id: 'safe', label: 'Aman', count: safeProducts.length, color: 'emerald' },
             ].map((tab) => {
               const active = stockStatusFilter === tab.id;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setStockStatusFilter(tab.id as any)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition cursor-pointer shrink-0 flex items-center gap-1 ${
                     active
                       ? tab.id === 'needs_restock'
                         ? 'bg-rose-600 text-white shadow-xs'
@@ -576,7 +574,7 @@ export const StokKategoriView: React.FC = () => {
                 >
                   <span>{tab.label}</span>
                   <span
-                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    className={`text-[9px] font-mono px-1 py-0.1 rounded-full ${
                       active
                         ? 'bg-white/20 text-white'
                         : tab.urgent
@@ -592,58 +590,64 @@ export const StokKategoriView: React.FC = () => {
           </div>
         </div>
 
-        {/* Row 2: Category Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-            Kategori:
-          </span>
-          {allCategories.map((cat) => {
-            const active = selectedCat === cat;
-            const count =
-              cat === 'Semua'
-                ? products.length
-                : products.filter((p) => p.category === cat).length;
+        {/* Row 2: Category Tabs & Result Counter */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 max-w-full scrollbar-none">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+              Kategori:
+            </span>
+            {allCategories.map((cat) => {
+              const active = selectedCat === cat;
+              const count =
+                cat === 'Semua'
+                  ? products.length
+                  : products.filter((p) => p.category === cat).length;
 
-            return (
-              <button
-                key={cat}
-                onClick={() => setSelectedCat(cat)}
-                className={`px-3 py-1 text-xs font-bold rounded-xl transition shrink-0 flex items-center gap-1.5 cursor-pointer ${
-                  active
-                    ? 'bg-slate-800 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                <span>{cat}</span>
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                    active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCat(cat)}
+                  className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition shrink-0 flex items-center gap-1 cursor-pointer ${
+                    active
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+                  <span>{cat}</span>
+                  <span
+                    className={`text-[9px] font-mono px-1 py-0.1 rounded-full ${
+                      active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="hidden sm:block text-[10px] font-semibold text-slate-500 shrink-0">
+            {filteredProducts.length} barang cocok
+          </div>
         </div>
       </div>
 
-      {/* Product Catalog Table */}
-      <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Product Catalog Table (Panjang & Lega dengan Bottom Padding Ekstra) */}
+      <div className="flex-1 overflow-y-auto p-2 sm:p-4 pb-48 sm:pb-24">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[780px] text-left border-collapse text-xs">
+            <table className="w-full min-w-[760px] text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                <th className="py-2.5 px-3">Kode SKU / Barcode</th>
-                <th className="py-2.5 px-3">Nama Produk</th>
-                <th className="py-2.5 px-3">Kategori</th>
-                <th className="py-2.5 px-3 text-right">HPP (Modal)</th>
-                <th className="py-2.5 px-3 text-right">Harga Jual</th>
-                <th className="py-2.5 px-3 text-right">Laba Satuan</th>
-                <th className="py-2.5 px-3 text-center">Status & Sisa Stok</th>
-                <th className="py-2.5 px-3 text-center">Batas Min</th>
-                <th className="py-2.5 px-3 text-center">Aksi & Restok</th>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                <th className="py-2 px-2.5">Kode SKU / Barcode</th>
+                <th className="py-2 px-2.5">Nama Produk</th>
+                <th className="py-2 px-2.5">Kategori</th>
+                <th className="py-2 px-2.5 text-right">HPP (Modal)</th>
+                <th className="py-2 px-2.5 text-right">Harga Jual</th>
+                <th className="py-2 px-2.5 text-right">Laba Satuan</th>
+                <th className="py-2 px-2.5 text-center">Status & Sisa Stok</th>
+                <th className="py-2 px-2.5 text-center">Batas Min</th>
+                <th className="py-2 px-2.5 text-center">Aksi & Restok</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -685,46 +689,46 @@ export const StokKategoriView: React.FC = () => {
                           : 'hover:bg-slate-50/80'
                       }`}
                     >
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
-                        <div className="flex items-center gap-1.5">
-                          {isOutOfStock && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />}
-                          {isLow && <span className="w-2 h-2 rounded-full bg-amber-500" />}
-                          <span>{p.sku}</span>
+                      <td className="py-1.5 px-2.5 font-mono font-bold text-slate-700">
+                        <div className="flex items-center gap-1">
+                          {isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />}
+                          {isLow && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                          <span className="text-[11px]">{p.sku}</span>
                         </div>
                         {p.barcode && (
-                          <div className="text-[10px] text-slate-400 font-normal">
+                          <div className="text-[9px] text-slate-400 font-normal">
                             BC: {p.barcode}
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-3">
-                        <div className="font-bold text-slate-900 line-clamp-1">{p.name}</div>
+                      <td className="py-1.5 px-2.5">
+                        <div className="font-bold text-slate-900 line-clamp-1 text-xs">{p.name}</div>
                       </td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-700">
+                      <td className="py-1.5 px-2.5">
+                        <span className="px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-slate-100 text-slate-700">
                           {p.category}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-600 tabular-nums">
+                      <td className="py-1.5 px-2.5 text-right font-mono font-medium text-slate-600 tabular-nums text-xs">
                         Rp {p.hpp.toLocaleString('id-ID')}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 tabular-nums">
+                      <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 tabular-nums text-xs">
                         Rp {p.price.toLocaleString('id-ID')}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono tabular-nums">
-                        <span className="font-bold text-teal-800 block">
+                      <td className="py-1.5 px-2.5 text-right font-mono tabular-nums">
+                        <span className="font-bold text-teal-800 block text-xs">
                           +Rp {profit.toLocaleString('id-ID')}
                         </span>
-                        <span className="text-[10px] text-teal-600 font-semibold">
+                        <span className="text-[9px] text-teal-600 font-semibold">
                           ({marginPct}%)
                         </span>
                       </td>
 
                       {/* Stock Level with Visual Bar & Badge */}
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-1.5 px-2.5 text-center">
                         <div className="inline-flex flex-col items-center">
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase font-mono ${
+                            className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase font-mono ${
                               isOutOfStock
                                 ? 'bg-rose-500 text-white ring-1 ring-rose-400'
                                 : isLow
@@ -735,12 +739,12 @@ export const StokKategoriView: React.FC = () => {
                             {isOutOfStock
                               ? '0 Habis'
                               : isLow
-                              ? `${p.stock} ${p.unit} (Menipis)`
-                              : `${p.stock} ${p.unit} (Aman)`}
+                              ? `${p.stock} ${p.unit}`
+                              : `${p.stock} ${p.unit}`}
                           </span>
 
                           {/* Progress indicator */}
-                          <div className="w-20 bg-slate-200 h-1 rounded-full mt-1.5 overflow-hidden">
+                          <div className="w-16 bg-slate-200 h-1 rounded-full mt-1 overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-300 ${
                                 isOutOfStock
@@ -756,12 +760,12 @@ export const StokKategoriView: React.FC = () => {
                       </td>
 
                       {/* Min Stock Threshold */}
-                      <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-500 tabular-nums">
+                      <td className="py-1.5 px-2.5 text-center font-mono font-semibold text-slate-500 tabular-nums text-xs">
                         {p.minStock} {p.unit}
                       </td>
 
                       {/* Actions & Restock Button */}
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-1.5 px-2.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           {/* Dedicated Restock Button */}
                           <button
@@ -817,6 +821,8 @@ export const StokKategoriView: React.FC = () => {
           </table>
           </div>
         </div>
+        {/* Spacer agar baris terbawah dapat discroll sepenuhnya melewati floating menu & nav bar mobile */}
+        <div className="h-28 sm:h-12 shrink-0" aria-hidden="true" />
       </div>
 
       {/* QUICK RESTOCK MODAL (Fitur Restok Cepat dengan Pengingat Kas Laci) */}
