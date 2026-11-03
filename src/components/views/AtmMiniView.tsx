@@ -104,6 +104,8 @@ export const AtmMiniView: React.FC = () => {
     openReceipt,
     setActiveTab,
     setIsMobileSidebarOpen,
+    drawerCashBalance,
+    digitalBalance,
   } = usePOS();
 
   // Mode Selection
@@ -513,6 +515,34 @@ export const AtmMiniView: React.FC = () => {
 
         {/* Transaction Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-5 pb-12 sm:pb-8 space-y-4 flex-1">
+          {/* Real-Time Live Synced Balances Status Bar */}
+          <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-emerald-50/90 to-sky-50/90 border border-emerald-200/80 rounded-xl text-xs gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+              </span>
+              <div className="min-w-0">
+                <span className="text-[10px] text-slate-500 font-semibold block">Kas Fisik Laci:</span>
+                <span className="font-mono font-black text-emerald-900 text-xs truncate block">
+                  Rp {drawerCashBalance.toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 shrink-0" />
+
+            <div className="flex items-center gap-1.5 min-w-0 text-right">
+              <div className="min-w-0">
+                <span className="text-[10px] text-slate-500 font-semibold block">Saldo Rekening EDC:</span>
+                <span className="font-mono font-black text-sky-900 text-xs truncate block">
+                  Rp {digitalBalance.toLocaleString('id-ID')}
+                </span>
+              </div>
+              <Building2 className="w-3.5 h-3.5 text-sky-600 shrink-0 hidden sm:block" />
+            </div>
+          </div>
+
           {toastMessage && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 font-bold animate-fade-in">
               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />

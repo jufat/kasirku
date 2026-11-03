@@ -18,6 +18,9 @@ import {
   PrintOrder,
   PrintOrderStatus,
   PrintServiceItem,
+  SyncTransactionEvent,
+  CashierSlot,
+  CashierProfile,
 } from '../types/pos';
 import * as XLSX from 'xlsx';
 import {
@@ -34,6 +37,7 @@ import {
   INITIAL_STORE_PROFILE,
   INITIAL_PRINT_ORDERS,
   PRINT_PRICE_LIST,
+  DEFAULT_CASHIER_PROFILES,
 } from '../data/initialData';
 
 interface POSContextType {
@@ -42,6 +46,9 @@ interface POSContextType {
   setActiveTab: (tab: string) => void;
   shift: ShiftState;
   setShift: React.Dispatch<React.SetStateAction<ShiftState>>;
+  cashierProfiles: Record<CashierSlot, CashierProfile>;
+  updateCashierProfile: (slot: CashierSlot, name: string) => void;
+  switchCashierRole: (slot: CashierSlot, customName?: string, isSwapped?: boolean) => void;
   toggleRole: () => void;
 
   // Store Profile, Logo & Production / Demo Mode
@@ -180,6 +187,12 @@ interface POSContextType {
   updateStartingCash: (amount: number) => void;
   adjustDrawerCash: (targetBalance: number, note?: string) => void;
   exportCashMutationCSV: () => void;
+
+  // Digital Operational Balance (Bank & E-Wallet) & Real-Time Sync Event
+  digitalBalance: number;
+  updateDigitalBalance: (amount: number) => void;
+  lastSyncEvent: SyncTransactionEvent | null;
+  clearLastSyncEvent: () => void;
 
   // Debts & Returns
   debts: DebtRecord[];
@@ -537,6 +550,51 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return acc;
   }, 0);
 
+  // Digital Operational Balance (Bank & E-Wallet)
+  const [digitalBalance, setDigitalBalance] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_digital_operational_balance');
+      return saved ? Number(saved) : 8750000;
+    } catch {
+      return 8750000;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_digital_operational_balance', digitalBalance.toString());
+    } catch (e) {
+      console.error(e);
+    }
+  }, [digitalBalance]);
+
+  const updateDigitalBalance = (newAmount: number) => {
+    const valid = Math.max(0, newAmount);
+    setDigitalBalance(valid);
+  };
+
+  // Inter-Module Real-Time Sync Event State
+  const [lastSyncEvent, setLastSyncEvent] = useState<SyncTransactionEvent | null>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_last_sync_event');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (lastSyncEvent) {
+      try {
+        localStorage.setItem('jufat_last_sync_event', JSON.stringify(lastSyncEvent));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [lastSyncEvent]);
+
+  const clearLastSyncEvent = () => setLastSyncEvent(null);
+
   // Cart helper calculations
   const cartSubtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
   const cartTotalCount = cart.reduce((acc, item) => acc + item.quantity, 0);
@@ -643,7 +701,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // 2. Auto-journal to Cash Ledger if Tunai
+    // 2. Auto-journal to Cash Ledger & Real-Time Sync
     if (paymentMethod === 'tunai') {
       const newRunning = drawerCashBalance + finalTotal;
       const newMutation: CashMutation = {
@@ -660,6 +718,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recordedBy: shift.cashierName,
       };
       setMutations((prev) => [newMutation, ...prev]);
+
+      // Broadcast inter-module real-time sync event
+      setLastSyncEvent({
+        id: `sync-${Date.now()}`,
+        timestamp: nowTime,
+        source: 'kasir',
+        actionTitle: `Penjualan Kasir (${cart.length} item)`,
+        customerName: customerName.trim() || 'Pelanggan Umum',
+        drawerCashDelta: finalTotal,
+        digitalBalanceDelta: 0,
+        note: `Struk ${invoiceNo} · Masuk Kas Fisik Laci +Rp ${finalTotal.toLocaleString('id-ID')}`,
+      });
     } else if (paymentMethod === 'qris') {
       const newMutation: CashMutation = {
         id: `mut-${Date.now()}`,
@@ -673,6 +743,21 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recordedBy: shift.cashierName,
       };
       setMutations((prev) => [newMutation, ...prev]);
+
+      // QRIS payment instantly enters digital bank account
+      setDigitalBalance((prev) => prev + finalTotal);
+
+      // Broadcast inter-module real-time sync event
+      setLastSyncEvent({
+        id: `sync-${Date.now()}`,
+        timestamp: nowTime,
+        source: 'kasir',
+        actionTitle: `Penjualan QRIS Kasir (${cart.length} item)`,
+        customerName: customerName.trim() || 'Pelanggan Umum',
+        drawerCashDelta: 0,
+        digitalBalanceDelta: finalTotal,
+        note: `Struk ${invoiceNo} · Masuk Saldo Digital Bank/QRIS +Rp ${finalTotal.toLocaleString('id-ID')}`,
+      });
     }
 
     // 3. If Hutang/Kasbon, record directly into Debt Ledger
@@ -691,6 +776,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         note: note?.trim() || `Kasbon Penjualan Kasir ${invoiceNo}`,
       };
       setDebts((prev) => [newDebt, ...prev]);
+
+      setLastSyncEvent({
+        id: `sync-${Date.now()}`,
+        timestamp: nowTime,
+        source: 'kasir',
+        actionTitle: `Kasbon Kasir (${cart.length} item)`,
+        customerName: customerName.trim() || 'Pelanggan Kasbon',
+        drawerCashDelta: 0,
+        digitalBalanceDelta: 0,
+        note: `Struk ${invoiceNo} · Kasbon Rp ${finalTotal.toLocaleString('id-ID')} dicatat ke Buku Piutang`,
+      });
     }
 
     // 4. Save transaction
@@ -752,6 +848,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       recordedBy: shift.cashierName,
     };
     setMutations((prev) => [mutation, ...prev]);
+
+    // Real-Time Inter-Module Sync for Agency Transaction
+    const digitalOut = nominal + bankAdminFee;
+    setDigitalBalance((prev) => Math.max(0, prev - digitalOut));
+    setLastSyncEvent({
+      id: `sync-${Date.now()}`,
+      timestamp: nowTime,
+      source: 'atm_mini',
+      actionTitle: `Agen ${type.replace('_', ' ').toUpperCase()} ${provider}`,
+      customerName: customerName.trim() || 'Pelanggan Agen',
+      drawerCashDelta: totalPaid,
+      digitalBalanceDelta: -digitalOut,
+      note: `Ref: ${refNo} · Terima Fisik Kas: +Rp ${totalPaid.toLocaleString('id-ID')} | Saldo Bank Berkurang: -Rp ${digitalOut.toLocaleString('id-ID')}`,
+    });
 
     setReceiptData(newAgTx);
     setIsReceiptModalOpen(true);
@@ -836,7 +946,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDebts((prev) => [newDebt, ...prev]);
     }
 
-    // 2. Auto-Journaling Kas Laci:
+    // 2. Auto-Journaling Kas Laci & Inter-Module Synchronization:
     if (type === 'tarik_tunai_atm') {
       // Uang fisik yang benar-benar keluar dari laci kasir:
       // Jika tambah_transfer: keluar Rp 100.000 (nasabah kirim Rp 103.000)
@@ -871,6 +981,21 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       setMutations((prev) => [mutationKeluar, mutationLaba, ...prev]);
+
+      // Saldo digital di rekening penampung agen bertambah dari debet kartu / transfer nasabah
+      setDigitalBalance((prev) => prev + totalDebited);
+
+      // Real-Time Inter-Module Sync Event
+      setLastSyncEvent({
+        id: `sync-${Date.now()}`,
+        timestamp: nowTime,
+        source: 'atm_mini',
+        actionTitle: `Tarik Tunai EDC ${bankName}`,
+        customerName: customerName.trim() || 'Nasabah EDC',
+        drawerCashDelta: -cashOutFromDrawer,
+        digitalBalanceDelta: totalDebited,
+        note: `Ref: ${traceNo} · Kas Laci: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} | Saldo Digital Bank: +Rp ${totalDebited.toLocaleString('id-ID')}`,
+      });
     } else {
       const serviceName =
         type === 'transfer_atm'
@@ -899,6 +1024,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           recordedBy: shift.cashierName,
         };
         setMutations((prev) => [mutation, ...prev]);
+
+        // Saldo digital rekening agen berkurang sebesar uang yang dikirim keluar (nominal + admin EDC)
+        const digitalOut = nominal + adminEdcFee;
+        setDigitalBalance((prev) => Math.max(0, prev - digitalOut));
+
+        // Real-Time Inter-Module Sync Event
+        setLastSyncEvent({
+          id: `sync-${Date.now()}`,
+          timestamp: nowTime,
+          source: 'atm_mini',
+          actionTitle: `${serviceName} ${bankName}`,
+          customerName: customerName.trim() || 'Nasabah EDC',
+          drawerCashDelta: fullCashReceived,
+          digitalBalanceDelta: -digitalOut,
+          note: `Ref: ${traceNo} · Terima Tunai Laci: +Rp ${fullCashReceived.toLocaleString('id-ID')} | Saldo Bank Berkurang: -Rp ${digitalOut.toLocaleString('id-ID')}`,
+        });
       } else if (paymentMethod === 'qris') {
         const mutation: CashMutation = {
           id: `mut-${Date.now()}`,
@@ -912,6 +1053,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           recordedBy: shift.cashierName,
         };
         setMutations((prev) => [mutation, ...prev]);
+
+        // Fee non-tunai langsung menambah saldo digital agen
+        setDigitalBalance((prev) => prev + counterFee);
+
+        setLastSyncEvent({
+          id: `sync-${Date.now()}`,
+          timestamp: nowTime,
+          source: 'atm_mini',
+          actionTitle: `${serviceName} ${bankName} (QRIS)`,
+          customerName: customerName.trim() || 'Nasabah EDC',
+          drawerCashDelta: 0,
+          digitalBalanceDelta: counterFee,
+          note: `Ref: ${traceNo} · Laba Jasa Non-Tunai Masuk Digital +Rp ${counterFee.toLocaleString('id-ID')}`,
+        });
       }
     }
 
@@ -1402,6 +1557,32 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       recordedBy: shift.cashierName,
     };
     setMutations((prev) => [newMutation, ...prev]);
+
+    // Closed-loop accounting for Bank Deposits / Cash injection
+    if (category === 'setor_bank' && type === 'keluar') {
+      setDigitalBalance((prev) => prev + amount);
+      setLastSyncEvent({
+        id: `sync-${Date.now()}`,
+        timestamp: nowTime,
+        source: 'manual',
+        actionTitle: 'Setor Kas Laci ke Rekening Bank',
+        customerName: shift.cashierName,
+        drawerCashDelta: -amount,
+        digitalBalanceDelta: amount,
+        note: `Setor Bank: Kas fisik keluar -Rp ${amount.toLocaleString('id-ID')} | Saldo rekening bertambah +Rp ${amount.toLocaleString('id-ID')}`,
+      });
+    } else {
+      setLastSyncEvent({
+        id: `sync-${Date.now()}`,
+        timestamp: nowTime,
+        source: 'manual',
+        actionTitle: `Mutasi Kas ${type === 'masuk' ? 'Masuk (+)' : 'Keluar (-)'}`,
+        customerName: shift.cashierName,
+        drawerCashDelta: type === 'masuk' ? amount : -amount,
+        digitalBalanceDelta: 0,
+        note: description || `Mutasi kas laci: ${type === 'masuk' ? '+' : '-'}Rp ${amount.toLocaleString('id-ID')}`,
+      });
+    }
   };
 
   // Update Starting Cash dynamically (Modal Awal Laci)
@@ -2264,6 +2445,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateStartingCash,
         adjustDrawerCash,
         exportCashMutationCSV,
+        digitalBalance,
+        updateDigitalBalance,
+        lastSyncEvent,
+        clearLastSyncEvent,
         debts,
         payDebt,
         addDebt,

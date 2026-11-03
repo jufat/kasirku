@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { PlusCircle, MinusCircle, X, Wallet, CheckCircle, RotateCcw, Coins } from 'lucide-react';
+import {
+  PlusCircle,
+  MinusCircle,
+  X,
+  Wallet,
+  CheckCircle,
+  Coins,
+  ArrowRightLeft,
+  Building2,
+  ShoppingCart,
+  CreditCard,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { CashMutationCategory } from '../../types/pos';
 
@@ -9,12 +23,16 @@ export const CashMutationModal: React.FC = () => {
     setIsCashMutationModalOpen,
     addCashMutation,
     drawerCashBalance,
+    digitalBalance,
+    lastSyncEvent,
+    mutations,
   } = usePOS();
 
   const [type, setType] = useState<'masuk' | 'keluar'>('keluar');
   const [category, setCategory] = useState<CashMutationCategory>('operasional_keluar');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState<number>(25000);
+  const [showAutoSyncHistory, setShowAutoSyncHistory] = useState(true);
 
   if (!isCashMutationModalOpen) return null;
 
@@ -28,12 +46,24 @@ export const CashMutationModal: React.FC = () => {
     setIsCashMutationModalOpen(false);
   };
 
-  const simulatedNextBalance =
+  const simulatedNextDrawerBalance =
     type === 'masuk' ? drawerCashBalance + (amount || 0) : drawerCashBalance - (amount || 0);
 
+  // Filter 4 latest auto-journaled mutations from Kasir & ATM Mini / Perbankan
+  const recentAutoSyncedMutations = mutations
+    .filter(
+      (m) =>
+        m.category === 'penjualan_pos' ||
+        m.category === 'jasa_transfer' ||
+        m.category === 'pulsa_ppob' ||
+        m.category === 'service_hp' ||
+        m.category === 'percetakan'
+    )
+    .slice(0, 4);
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150 my-auto">
         {/* Header */}
         <div
           className={`p-4 text-white flex items-center justify-between ${
@@ -43,28 +73,74 @@ export const CashMutationModal: React.FC = () => {
           }`}
         >
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shrink-0">
               <Wallet className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-sm font-extrabold leading-tight">
                 {type === 'masuk' ? 'Catat Kas Masuk (+)' : 'Catat Kas Keluar (-)'}
               </h3>
-              <p className="text-[11px] text-white/80">
-                Saldo Laci: Rp {drawerCashBalance.toLocaleString('id-ID')}
+              <p className="text-[11px] text-white/90 font-mono mt-0.5">
+                Kas Laci: <strong>Rp {drawerCashBalance.toLocaleString('id-ID')}</strong> · Bank:{' '}
+                <strong>Rp {digitalBalance.toLocaleString('id-ID')}</strong>
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setIsCashMutationModalOpen(false)}
-            className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition cursor-pointer"
+            className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs">
+        {/* Real-Time Auto-Sync Notification & Live Pulse Badge */}
+        <div className="bg-emerald-50/90 border-b border-emerald-200 px-3.5 py-2 flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+            </span>
+            <span className="font-bold text-emerald-950 text-[11px] truncate">
+              Auto-Sync Aktif: Terhubung langsung ke Kasir POS & ATM Mini
+            </span>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-emerald-800 bg-white/80 px-2 py-0.5 rounded border border-emerald-300 shrink-0">
+            Real-Time
+          </span>
+        </div>
+
+        {/* Flash Event Banner if last transaction synced recently */}
+        {lastSyncEvent && (
+          <div className="bg-sky-50 border-b border-sky-200 px-3.5 py-2 text-[11px] text-sky-950 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 truncate">
+              <ArrowRightLeft className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+              <span className="truncate">
+                <strong>{lastSyncEvent.source === 'atm_mini' ? 'ATM Mini' : lastSyncEvent.source === 'kasir' ? 'Kasir POS' : 'Mutasi'}:</strong>{' '}
+                {lastSyncEvent.actionTitle} ({lastSyncEvent.customerName})
+              </span>
+            </div>
+            <span
+              className={`font-mono font-bold shrink-0 ${
+                lastSyncEvent.drawerCashDelta > 0
+                  ? 'text-emerald-700'
+                  : lastSyncEvent.drawerCashDelta < 0
+                  ? 'text-rose-700'
+                  : 'text-slate-600'
+              }`}
+            >
+              {lastSyncEvent.drawerCashDelta !== 0 && (
+                <>
+                  {lastSyncEvent.drawerCashDelta > 0 ? '+' : ''}
+                  Rp {lastSyncEvent.drawerCashDelta.toLocaleString('id-ID')}
+                </>
+              )}
+            </span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs max-h-[75vh] overflow-y-auto">
           {/* Type Selector (Masuk / Keluar) */}
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -113,7 +189,7 @@ export const CashMutationModal: React.FC = () => {
                   <option value="belanja_stok">Belanja / Restok Barang Dagangan</option>
                   <option value="operasional_keluar">Perlengkapan Toko (Lakban, Thermal, Plastik)</option>
                   <option value="operasional_keluar">Listrik / Wifi Toko</option>
-                  <option value="setor_bank">Setor Tunai ke Bank</option>
+                  <option value="setor_bank">Setor Tunai Laci ke Bank (Kas Laci - / Saldo Bank +)</option>
                   <option value="lain_lain">Lain-lain / Keperluan Darurat (Non-Bulat)</option>
                 </>
               ) : (
@@ -240,8 +316,8 @@ export const CashMutationModal: React.FC = () => {
           {/* Simulation Preview Card */}
           <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
             <div className="flex justify-between items-center text-slate-500 text-[11px]">
-              <span>Saldo Laci Sekarang:</span>
-              <span className="font-mono">Rp {drawerCashBalance.toLocaleString('id-ID')}</span>
+              <span>Saldo Laci Saat Ini (Live):</span>
+              <span className="font-mono font-bold text-slate-800">Rp {drawerCashBalance.toLocaleString('id-ID')}</span>
             </div>
             <div className="flex justify-between items-center text-slate-700 text-[11px]">
               <span>Mutasi {type === 'masuk' ? '(+)' : '(-)'}:</span>
@@ -254,11 +330,83 @@ export const CashMutationModal: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between items-center font-bold text-slate-900 border-t border-slate-200 pt-1 text-xs">
-              <span>Estimasi Saldo Baru:</span>
+              <span>Estimasi Saldo Laci Baru:</span>
               <span className="font-mono text-emerald-800 font-black">
-                Rp {simulatedNextBalance.toLocaleString('id-ID')}
+                Rp {simulatedNextDrawerBalance.toLocaleString('id-ID')}
               </span>
             </div>
+            {category === 'setor_bank' && type === 'keluar' && (
+              <div className="flex justify-between items-center text-sky-800 pt-0.5 text-[11px] border-t border-dashed border-slate-200">
+                <span>Saldo Rekening Bank Bertambah:</span>
+                <span className="font-mono font-extrabold text-sky-700">
+                  Rp {(digitalBalance + (amount || 0)).toLocaleString('id-ID')}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Mutasi Otomatis Terbaru dari Kasir & ATM Mini (Live Feed) */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <button
+              type="button"
+              onClick={() => setShowAutoSyncHistory(!showAutoSyncHistory)}
+              className="w-full px-3 py-2 bg-slate-50 hover:bg-slate-100 flex items-center justify-between transition cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px]">
+                <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                <span>Mutasi Otomatis Terbaru (Kasir & ATM Mini)</span>
+              </div>
+              <div className="flex items-center gap-1 text-slate-400">
+                <span className="text-[10px] font-mono">Live Sync</span>
+                {showAutoSyncHistory ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+            </button>
+
+            {showAutoSyncHistory && (
+              <div className="p-2.5 divide-y divide-slate-100 text-[11px]">
+                {recentAutoSyncedMutations.length === 0 ? (
+                  <p className="text-center text-slate-400 py-2">Belum ada mutasi otomatis</p>
+                ) : (
+                  recentAutoSyncedMutations.map((m) => (
+                    <div key={m.id} className="py-1.5 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                              m.category === 'penjualan_pos'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : m.category === 'jasa_transfer'
+                                ? 'bg-pink-100 text-pink-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {m.category === 'penjualan_pos' ? 'Kasir' : 'ATM Mini'}
+                          </span>
+                          <span className="font-semibold text-slate-800 truncate text-[11px]">
+                            {m.description.slice(0, 36)}...
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400 font-mono">
+                          {m.timestamp} · Saldo Laci: Rp {m.runningCashBalance.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <span
+                        className={`font-mono font-bold shrink-0 text-xs ${
+                          m.paymentMethod === 'non_tunai'
+                            ? 'text-sky-700'
+                            : m.type === 'masuk'
+                            ? 'text-emerald-700'
+                            : 'text-rose-600'
+                        }`}
+                      >
+                        {m.paymentMethod === 'non_tunai' ? '[Digital] ' : ''}
+                        {m.type === 'masuk' ? '+' : '-'}Rp {m.amount.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer buttons */}
@@ -268,7 +416,7 @@ export const CashMutationModal: React.FC = () => {
               onClick={() => setIsCashMutationModalOpen(false)}
               className="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition cursor-pointer"
             >
-              Batal
+              Tutup
             </button>
             <button
               type="submit"
@@ -287,3 +435,4 @@ export const CashMutationModal: React.FC = () => {
     </div>
   );
 };
+

@@ -40,6 +40,7 @@ export const KasirView: React.FC = () => {
     checkoutPOS,
     transactions,
     openReceipt,
+    drawerCashBalance,
   } = usePOS();
 
   const allCategories: ProductCategory[] = ['Semua', ...categories];
@@ -570,9 +571,16 @@ export const KasirView: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900 leading-tight">Keranjang Belanja</h3>
-              <p className="text-[11px] text-slate-500 font-mono tabular-nums">
-                {cartTotalCount} item terpilih
-              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-[11px] text-slate-500 font-mono tabular-nums">
+                  {cartTotalCount} item terpilih
+                </p>
+                <span className="text-slate-300">·</span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Kas: Rp {drawerCashBalance.toLocaleString('id-ID')}
+                </span>
+              </div>
             </div>
           </div>
 

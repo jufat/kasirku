@@ -54,11 +54,17 @@ export const DashboardView: React.FC = () => {
     products,
     transactions,
     agencyTransactions,
+    atmMiniTransactions,
     ppobTransactions,
     services,
+    printOrders,
     mutations,
     debts,
     drawerCashBalance,
+    digitalBalance,
+    updateDigitalBalance,
+    lastSyncEvent,
+    clearLastSyncEvent,
     setActiveTab,
     setIsCashMutationModalOpen,
     restockProduct,
@@ -87,21 +93,23 @@ export const DashboardView: React.FC = () => {
   const [tempTargetInput, setTempTargetInput] = useState<string>(revenueTarget.toString());
   const [targetToast, setTargetToast] = useState('');
 
-  // Saldo Digital Operasional Counter (Bank, EDC Agen & E-Wallet)
-  const [baseDigitalBalance, setBaseDigitalBalance] = useState<number>(() => {
-    const saved = localStorage.getItem('jufat_digital_operational_balance');
-    return saved ? Number(saved) : 8750000;
-  });
+  // Saldo Digital Operasional Counter (Bank, EDC Agen & E-Wallet) terpusat di POSContext
   const [isEditingDigitalBalance, setIsEditingDigitalBalance] = useState(false);
-  const [tempDigitalInput, setTempDigitalInput] = useState<string>(baseDigitalBalance.toString());
+  const [tempDigitalInput, setTempDigitalInput] = useState<string>(digitalBalance.toString());
   const [digitalToast, setDigitalToast] = useState('');
+
+  // Sync temp input when digitalBalance updates from ATM Mini or Kasir transactions
+  useEffect(() => {
+    if (!isEditingDigitalBalance) {
+      setTempDigitalInput(digitalBalance.toString());
+    }
+  }, [digitalBalance, isEditingDigitalBalance]);
 
   const handleSaveDigitalBalance = (e: React.FormEvent) => {
     e.preventDefault();
     const val = Number(tempDigitalInput.replace(/\D/g, ''));
     if (!isNaN(val) && val >= 0) {
-      setBaseDigitalBalance(val);
-      localStorage.setItem('jufat_digital_operational_balance', val.toString());
+      updateDigitalBalance(val);
       setIsEditingDigitalBalance(false);
       setDigitalToast('Saldo digital operasional (bank & e-wallet) berhasil diperbarui!');
       setTimeout(() => setDigitalToast(''), 3000);
@@ -171,24 +179,37 @@ export const DashboardView: React.FC = () => {
 
   // Metrics calculation
   const totalSalesPOS = transactions.reduce((acc: number, t) => acc + t.total, 0);
-  const totalAgencyProfit = agencyTransactions.reduce((acc: number, a) => acc + a.counterFee, 0);
+
+  // Laba & Transaksi Perbankan (Gabungan Agency Transfer & Mini ATM / EDC)
+  const agencyFee = (agencyTransactions || []).reduce((acc: number, a) => acc + a.counterFee, 0);
+  const atmMiniFee = (atmMiniTransactions || []).reduce((acc: number, a) => acc + a.counterFee, 0);
+  const totalAgencyProfit = agencyFee + atmMiniFee;
+  const totalBankingTransactionsCount = (agencyTransactions?.length || 0) + (atmMiniTransactions?.length || 0);
+
   const totalPPOBProfit = ppobTransactions.reduce((acc: number, p) => acc + p.profit, 0);
   const totalServiceRevenue = services.reduce(
     (acc: number, s) => acc + (s.status === 'diambil' ? s.totalCost : s.downPayment),
     0
   );
+  const totalPrintRevenue = (printOrders || []).reduce(
+    (acc: number, p) => acc + (p.status === 'selesai' || p.status === 'diambil' ? p.totalAmount : p.downPayment),
+    0
+  );
 
   const totalOmsetAll =
     totalSalesPOS +
-    agencyTransactions.reduce((a: number, b) => a + b.nominal + b.counterFee, 0) +
+    (agencyTransactions || []).reduce((a: number, b) => a + b.nominal + b.counterFee, 0) +
+    (atmMiniTransactions || []).reduce((a: number, b) => a + b.nominal + b.counterFee, 0) +
     ppobTransactions.reduce((a: number, b) => a + b.sellingPrice, 0) +
-    totalServiceRevenue;
+    totalServiceRevenue +
+    totalPrintRevenue;
 
   const totalLabaSemua =
     (totalSalesPOS > 0 ? Math.round(totalSalesPOS * 0.28) : 0) +
     totalAgencyProfit +
     totalPPOBProfit +
-    services.reduce((acc: number, s) => acc + s.laborFee, 0);
+    services.reduce((acc: number, s) => acc + s.laborFee, 0) +
+    Math.round(totalPrintRevenue * 0.45);
 
   const activeServicesCount = services.filter(
     (s) => s.status === 'antrean' || s.status === 'proses'
@@ -224,8 +245,12 @@ export const DashboardView: React.FC = () => {
   const todayPPOBTx = ppobTransactions.filter((p) => isDateToday(p.date));
   const todayPPOBSales = todayPPOBTx.reduce((acc, p) => acc + p.sellingPrice, 0);
 
-  const todayAgencyTx = agencyTransactions.filter((a) => isDateToday(a.date));
-  const todayAgencySales = todayAgencyTx.reduce((acc, a) => acc + a.nominal + a.counterFee, 0);
+  const todayAgencyTx = (agencyTransactions || []).filter((a) => isDateToday(a.date));
+  const todayAtmMiniTx = (atmMiniTransactions || []).filter((a) => isDateToday(a.date));
+  const todayBankingTxCount = todayAgencyTx.length + todayAtmMiniTx.length;
+  const todayAgencySales =
+    todayAgencyTx.reduce((acc, a) => acc + a.nominal + a.counterFee, 0) +
+    todayAtmMiniTx.reduce((acc, a) => acc + a.nominal + a.counterFee, 0);
 
   const todayServiceTx = services.filter((s) => isDateToday(s.dateIn) || isDateToday(s.dateCompleted));
   const todayServiceSales = todayServiceTx.reduce(
@@ -233,11 +258,17 @@ export const DashboardView: React.FC = () => {
     0
   );
 
-  const rawTodaySales = todayPOSSales + todayPPOBSales + todayAgencySales + todayServiceSales;
+  const todayPrintTx = (printOrders || []).filter((p) => isDateToday(p.date));
+  const todayPrintSales = todayPrintTx.reduce(
+    (acc, p) => acc + (p.status === 'selesai' || p.status === 'diambil' ? p.totalAmount : p.downPayment),
+    0
+  );
+
+  const rawTodaySales = todayPOSSales + todayPPOBSales + todayAgencySales + todayServiceSales + todayPrintSales;
   const todayTotalTxCount =
     rawTodaySales > 0
-      ? todayPOSTx.length + todayPPOBTx.length + todayAgencyTx.length + todayServiceTx.length
-      : Math.max(48, transactions.length + ppobTransactions.length);
+      ? todayPOSTx.length + todayPPOBTx.length + todayBankingTxCount + todayServiceTx.length + todayPrintTx.length
+      : Math.max(48, transactions.length + ppobTransactions.length + totalBankingTransactionsCount);
 
   const totalTodaySales =
     rawTodaySales > 0 ? rawTodaySales : Math.max(3450000, totalOmsetAll);
@@ -491,7 +522,7 @@ export const DashboardView: React.FC = () => {
 
   // Asset Distribution Calculations (Kas Tunai Laci vs Saldo Digital Bank/E-Wallet)
   const currentCash = Math.max(0, drawerCashBalance);
-  const currentDigital = Math.max(0, baseDigitalBalance);
+  const currentDigital = Math.max(0, digitalBalance);
   const totalOperationalAssets = currentCash + currentDigital;
   const cashPercentage = totalOperationalAssets > 0 ? Math.round((currentCash / totalOperationalAssets) * 100) : 50;
   const digitalPercentage = totalOperationalAssets > 0 ? 100 - cashPercentage : 50;
@@ -537,6 +568,50 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 bg-[#f8fafc] space-y-3.5 sm:space-y-5 md:space-y-6">
+      {/* Real-Time Auto-Sync Flash Banner when transactions are processed in Kasir or ATM Mini */}
+      {lastSyncEvent && (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-300 rounded-2xl p-3 shadow-xs flex items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse">
+              <ArrowRightLeft className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                  ⚡ Sinkronisasi Instan
+                </span>
+                <span className="text-xs font-bold text-slate-900 truncate">
+                  {lastSyncEvent.actionTitle} ({lastSyncEvent.customerName})
+                </span>
+                <span className="text-[11px] font-mono text-slate-500">
+                  {lastSyncEvent.timestamp}
+                </span>
+              </div>
+              <p className="text-[11px] text-emerald-900 mt-0.5 truncate font-medium">
+                {lastSyncEvent.note} · <strong>Saldo kas & digital otomatis terupdate secara instan.</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsCashMutationModalOpen(true)}
+              className="px-2.5 py-1 text-[11px] font-bold bg-white text-emerald-800 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+            >
+              Lihat Kas Laci
+            </button>
+            <button
+              type="button"
+              onClick={clearLastSyncEvent}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-md transition cursor-pointer"
+              title="Tutup Notifikasi"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Small Summary Widget: Total Today Sales & Remaining Cash on Hand */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {/* Widget 1: Total Today Sales */}
@@ -736,6 +811,258 @@ export const DashboardView: React.FC = () => {
             <p className="text-[10px] sm:text-[11px] text-purple-700 mt-0.5 truncate">
               {debts.filter((d) => d.status !== 'lunas').length} pelanggan tempo
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: RASIO SALDO KAS TUNAI VS SALDO DIGITAL (DISTRIBUSI ASET OPERASIONAL) */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs space-y-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-sky-600 text-white flex items-center justify-center shadow-xs">
+              <Scale className="w-4 h-4 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 leading-tight flex items-center gap-2 flex-wrap">
+                <span>Distribusi Aset Operasional: Kas Tunai vs Saldo Digital</span>
+                <span className="text-[10px] font-mono font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                  Real-Time Rasio
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                Visualisasi proporsi likuiditas uang fisik di laci kasir dan saldo digital operasional perbankan / e-wallet
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Action: Sesuaikan Saldo Digital */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setTempDigitalInput(digitalBalance.toString());
+                setIsEditingDigitalBalance(!isEditingDigitalBalance);
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+              title="Perbarui Saldo Digital Bank & E-Wallet Real Anda"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-sky-700" />
+              <span>Sesuaikan Saldo Digital</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Digital Balance Editor Popover Form */}
+        {isEditingDigitalBalance && (
+          <form
+            onSubmit={handleSaveDigitalBalance}
+            className="p-3.5 bg-sky-50/80 border border-sky-200 rounded-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in duration-150 text-xs"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-bold text-slate-900 block">
+                  Input Saldo Digital Operasional Counter (Bank / EDC / E-Wallet)
+                </span>
+                <span className="text-[11px] text-slate-500 block">
+                  Total saldo rekening operasional penampung transfer, tarik tunai, dan saldo pulsa server
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-48">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono font-bold text-slate-400 text-xs">
+                  Rp
+                </span>
+                <input
+                  type="number"
+                  step="50000"
+                  value={tempDigitalInput}
+                  onChange={(e) => setTempDigitalInput(e.target.value)}
+                  placeholder="Contoh: 8750000"
+                  className="w-full pl-8 pr-2.5 py-1.5 text-xs font-mono font-bold bg-white border border-sky-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  autoFocus
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Simpan</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditingDigitalBalance(false)}
+                className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </form>
+        )}
+
+        {digitalToast && (
+          <div className="py-1.5 px-3 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
+            <CheckCircle className="w-4 h-4 text-emerald-600" />
+            <span>{digitalToast}</span>
+          </div>
+        )}
+
+        {/* Chart & Distribution Analysis Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+          {/* Left Column: Donut Chart with Centered Total Likuiditas */}
+          <div className="lg:col-span-5 flex flex-col items-center justify-center p-3 bg-slate-50/70 rounded-2xl border border-slate-100 relative min-h-[220px]">
+            <div className="w-full h-52 relative flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip content={<AssetRatioTooltip />} />
+                  <Pie
+                    data={operationalAssetData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={86}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {operationalAssetData.map((entry, index) => (
+                      <Cell key={`asset-cell-${index}`} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+
+              {/* Center Donut Label */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center px-4">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Total Aset Operasional
+                </span>
+                <span className="text-sm sm:text-base font-black text-slate-900 font-mono tabular-nums leading-tight mt-0.5">
+                  Rp {totalOperationalAssets.toLocaleString('id-ID')}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium mt-0.5">
+                  Kas Laci + Digital Bank
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Chart Legend */}
+            <div className="flex items-center justify-center gap-4 text-xs font-bold mt-1">
+              <div className="flex items-center gap-1.5 text-emerald-800">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                <span>Kas Tunai: {cashPercentage}%</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-sky-800">
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-600 inline-block" />
+                <span>Saldo Digital: {digitalPercentage}%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Visual Ratio Bar, Cards, and Operational Insight */}
+          <div className="lg:col-span-7 space-y-3">
+            {/* Visual Ratio Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="text-emerald-700 flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Kas Tunai ({cashPercentage}%)</span>
+                </span>
+                <span className="text-sky-700 flex items-center gap-1">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Saldo Digital ({digitalPercentage}%)</span>
+                </span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-slate-200 overflow-hidden flex shadow-inner">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${cashPercentage}%` }}
+                  title={`Kas Tunai: ${cashPercentage}%`}
+                />
+                <div
+                  className="h-full bg-sky-600 transition-all duration-500"
+                  style={{ width: `${digitalPercentage}%` }}
+                  title={`Saldo Digital: ${digitalPercentage}%`}
+                />
+              </div>
+            </div>
+
+            {/* Two Detail Cards: Kas Tunai vs Saldo Digital */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Card 1: Kas Tunai */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase text-emerald-900 flex items-center gap-1">
+                    <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Kas Fisik di Laci</span>
+                  </span>
+                  <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900">
+                    {cashPercentage}% Likuid
+                  </span>
+                </div>
+                <div className="text-base font-black text-emerald-950 font-mono tabular-nums">
+                  Rp {currentCash.toLocaleString('id-ID')}
+                </div>
+                <p className="text-[10px] text-emerald-800">
+                  Uang tunai siap pakai untuk transaksi tarik tunai dan kembalian
+                </p>
+              </div>
+
+              {/* Card 2: Saldo Digital */}
+              <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase text-sky-900 flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Saldo Digital Bank</span>
+                  </span>
+                  <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-sky-200 text-sky-900">
+                    {digitalPercentage}% Likuid
+                  </span>
+                </div>
+                <div className="text-base font-black text-sky-950 font-mono tabular-nums">
+                  Rp {currentDigital.toLocaleString('id-ID')}
+                </div>
+                <p className="text-[10px] text-sky-800">
+                  Rekening BRI, Mandiri, BCA, EDC & e-wallet untuk transfer / PPOB
+                </p>
+              </div>
+            </div>
+
+            {/* Rekomendasi Likuiditas Operasional Pemilik Counter */}
+            <div className="p-2.5 rounded-xl border text-xs flex items-start gap-2.5 bg-slate-50 border-slate-200">
+              <div className="mt-0.5 shrink-0">
+                {cashPercentage > 65 ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                ) : cashPercentage < 25 ? (
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <span className="font-extrabold block text-slate-900 text-[11px]">
+                  {cashPercentage > 65
+                    ? 'Peringatan: Uang Fisik Terlalu Dominan (>65%)'
+                    : cashPercentage < 25
+                    ? 'Peringatan: Kas Fisik Laci Menipis (<25%)'
+                    : 'Kondisi Likuiditas Ideal & Seimbang (25% - 65%)'}
+                </span>
+                <p className="text-[10px] text-slate-600 leading-relaxed mt-0.5">
+                  {cashPercentage > 65
+                    ? 'Uang fisik di laci sangat banyak sementara saldo digital menipis. Segera lakukan setor tunai ke rekening bank counter agar tetap bisa memproses transfer keluar & top up e-wallet.'
+                    : cashPercentage < 25
+                    ? 'Uang tunai di laci terbatas untuk melayani transaksi Tarik Tunai nasabah. Disarankan mengambil uang tunai di ATM menggunakan saldo rekening operasional counter.'
+                    : 'Proporsi kas fisik dan saldo digital siap melayani dua arah: tarik tunai (uang laci keluar, saldo bank bertambah) maupun kirim uang/top-up (uang laci masuk, saldo digital terpotong).'}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1246,16 +1573,23 @@ export const DashboardView: React.FC = () => {
           </div>
 
           {/* Stream 2 */}
-          <div className="p-3 sm:p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700 mb-1">
-              <Send className="w-3.5 h-3.5 text-pink-600" />
-              <span>Laba ATM & Transfer</span>
+          <div
+            onClick={() => setActiveTab('atm_mini')}
+            className="p-3 sm:p-3.5 bg-slate-50 hover:bg-pink-50/50 rounded-xl border border-slate-200 hover:border-pink-300 transition cursor-pointer group"
+            title="Buka ATM Mini & Transfer"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700">
+                <Send className="w-3.5 h-3.5 text-pink-600" />
+                <span>Laba ATM & Transfer</span>
+              </div>
+              <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-pink-600 transition" />
             </div>
             <div className="text-sm sm:text-base font-extrabold text-pink-800 font-mono truncate">
               +Rp {totalAgencyProfit.toLocaleString('id-ID')}
             </div>
             <div className="text-[10px] text-slate-500 mt-1 truncate">
-              {agencyTransactions.length} transaksi perbankan
+              {totalBankingTransactionsCount} transaksi perbankan
             </div>
           </div>
 

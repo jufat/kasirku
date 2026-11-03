@@ -14,6 +14,8 @@ import {
   PrintOrder,
   PrintServiceItem,
   PrintPriceTier,
+  CashierSlot,
+  CashierProfile,
 } from '../types/pos';
 
 export const INITIAL_STORE_PROFILE: StoreProfile = {
@@ -162,12 +164,38 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
 ];
 
+export const DEFAULT_CASHIER_PROFILES: Record<CashierSlot, CashierProfile> = {
+  owner: {
+    slot: 'owner',
+    name: 'Miftah (Owner)',
+    defaultShiftName: 'Shift Fleksibel (Owner)',
+    role: 'owner',
+    email: 'miftah2020new@gmail.com',
+  },
+  kasir_1: {
+    slot: 'kasir_1',
+    name: 'Rina (Kasir 1)',
+    defaultShiftName: 'Shift 1 (Pagi)',
+    role: 'kasir',
+    email: 'kasir1.pagi@jufat.com',
+  },
+  kasir_2: {
+    slot: 'kasir_2',
+    name: 'Siti (Kasir 2)',
+    defaultShiftName: 'Shift 2 (Sore)',
+    role: 'kasir',
+    email: 'kasir2.sore@jufat.com',
+  },
+};
+
 export const INITIAL_SHIFT: ShiftState = {
   shiftNumber: 1,
-  shiftName: 'Shift 1 Pagi',
-  cashierName: 'Miftah (Kasir Pagi)',
-  cashierEmail: 'miftah2020new@gmail.com',
-  role: 'owner',
+  shiftName: 'Shift 1 (Pagi)',
+  cashierName: 'Rina (Kasir 1)',
+  cashierEmail: 'kasir1.pagi@jufat.com',
+  role: 'kasir',
+  cashierSlot: 'kasir_1',
+  isSwappedShift: false,
   startTime: '08:00 WIB',
   startingCash: 500000, // Rp 500.000 modal awal laci
   isOpen: true,

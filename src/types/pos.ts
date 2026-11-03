@@ -199,12 +199,25 @@ export interface ReturnRecord {
   status: 'menunggu_supplier' | 'diganti_unit' | 'refund_dana';
 }
 
+export type CashierSlot = 'owner' | 'kasir_1' | 'kasir_2';
+
+export interface CashierProfile {
+  slot: CashierSlot;
+  name: string;
+  defaultShiftName: string;
+  role: 'owner' | 'kasir';
+  email: string;
+}
+
 export interface ShiftState {
   shiftNumber: number;
   shiftName: string;
   cashierName: string;
   cashierEmail: string;
   role: 'owner' | 'kasir';
+  cashierSlot: CashierSlot;
+  isSwappedShift?: boolean;
+  originalCashierName?: string;
   startTime: string;
   startingCash: number; // Kas Awal di Laci
   isOpen: boolean;
@@ -276,5 +289,17 @@ export interface PrintOrder {
   deadline?: string;
   fileOrNote?: string;
 }
+
+export interface SyncTransactionEvent {
+  id: string;
+  timestamp: string;
+  source: 'kasir' | 'atm_mini' | 'manual';
+  actionTitle: string;
+  customerName: string;
+  drawerCashDelta: number;
+  digitalBalanceDelta: number;
+  note?: string;
+}
+
 
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -48,7 +49,7 @@ function persistSyncDatabase() {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use('/api', express.json({ limit: '50mb' }));
   app.use('/api', express.urlencoded({ extended: true, limit: '50mb' }));
@@ -185,7 +186,10 @@ async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -197,9 +201,19 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Ju-Fat POS Server running on http://0.0.0.0:${PORT}`);
+  const server = http.createServer(app);
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n  VITE v6.1.1  ready in 200 ms\n\n  ➜  Local:   http://localhost:${PORT}/\n  ➜  Network: http://0.0.0.0:${PORT}/\n`);
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {
