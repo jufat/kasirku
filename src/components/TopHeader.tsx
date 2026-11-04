@@ -177,6 +177,36 @@ export const TopHeader: React.FC = () => {
 
       {/* Zone 3: Actions & Drawer Cash balance */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {/* Active Cashier Pill (Kasir 1 / Kasir 2 / Owner) */}
+        <button
+          onClick={toggleRole}
+          className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 ${
+            shift.cashierSlot === 'owner'
+              ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-950'
+              : shift.cashierSlot === 'kasir_1'
+              ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-950'
+              : 'bg-teal-50 hover:bg-teal-100 border-teal-300 text-teal-950'
+          }`}
+          title="Klik untuk ganti petugas aktif: Kasir 1 / Kasir 2 / Owner"
+        >
+          <span className="text-[11px]">
+            {shift.cashierSlot === 'owner' ? '👑' : '👤'}
+          </span>
+          <div className="text-left leading-tight">
+            <span className="hidden sm:block text-[9px] text-slate-500 font-bold uppercase">
+              {shift.cashierSlot === 'owner' ? 'Owner' : shift.cashierSlot === 'kasir_1' ? 'Shift 1' : 'Shift 2'}
+            </span>
+            <span className="text-[11px] sm:text-xs font-black truncate max-w-[85px] sm:max-w-[120px] block">
+              {shift.cashierName}
+            </span>
+          </div>
+          {shift.isSwappedShift && (
+            <span className="text-[8px] bg-amber-400 text-amber-950 px-1 py-0.2 rounded font-extrabold uppercase">
+              Tukar
+            </span>
+          )}
+        </button>
+
         {/* Physical Cash Drawer Pill */}
         <button
           onClick={() => setActiveTab('kas_harian')}

@@ -246,13 +246,31 @@ interface POSContextType {
   setIsBottomNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
   toggleBottomNav: () => void;
 
-  // Shift Drawer Closing
-  closeShiftDrawer: (actualCash: number, note?: string) => {
+  // Shift Drawer Closing & Standard Drawer Cash Setting
+  standardDrawerCash: number;
+  setStandardDrawerCash: (amount: number) => void;
+  closeShiftDrawer: (
+    actualCash: number,
+    note?: string,
+    depositOptions?: {
+      depositAmount: number;
+      depositRecipient: string;
+      remainingCashForDrawer: number;
+    }
+  ) => {
     systemCash: number;
     actualCash: number;
     difference: number;
+    depositAmount?: number;
+    remainingCash?: number;
   };
-  openNewShift: (startingCash: number, cashierName: string) => void;
+  openNewShift: (
+    startingCash: number,
+    cashierName: string,
+    slot?: CashierSlot,
+    shiftTitle?: string,
+    isSwapped?: boolean
+  ) => void;
 
   // System Database
   exportBackupJSON: () => void;
@@ -396,10 +414,65 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_RETURNS;
   });
 
-  const [shift, setShift] = useState<ShiftState>(() => {
-    const saved = localStorage.getItem('jufat_shift');
-    return saved ? JSON.parse(saved) : INITIAL_SHIFT;
+  const [cashierProfiles, setCashierProfiles] = useState<Record<CashierSlot, CashierProfile>>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_cashier_profiles');
+      if (saved) {
+        return { ...DEFAULT_CASHIER_PROFILES, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return DEFAULT_CASHIER_PROFILES;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_cashier_profiles', JSON.stringify(cashierProfiles));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [cashierProfiles]);
+
+  const [shift, setShift] = useState<ShiftState>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_shift');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.cashierSlot) {
+          parsed.cashierSlot = parsed.role === 'owner' ? 'owner' : 'kasir_1';
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return INITIAL_SHIFT;
+  });
+
+  // Uang Laci yang Telah Ditentukan (Standard Drawer Cash - Default Rp 500.000)
+  const [standardDrawerCash, setStandardDrawerCashState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_standard_drawer_cash');
+      if (saved) {
+        const val = Number(saved);
+        if (!isNaN(val) && val >= 0) return val;
+      }
+    } catch {
+      // ignore
+    }
+    return 500000;
+  });
+
+  const setStandardDrawerCash = (amount: number) => {
+    const val = Math.max(0, amount);
+    setStandardDrawerCashState(val);
+    try {
+      localStorage.setItem('jufat_standard_drawer_cash', val.toString());
+    } catch {
+      // ignore
+    }
+  };
 
   const [storeProfile, setStoreProfile] = useState<StoreProfile>(() => {
     try {
@@ -1836,14 +1909,60 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     XLSX.writeFile(workbook, 'Template_Tambah_Produk_JuFatCell.xlsx');
   };
 
-  // Toggle role between Owner and Staff
-  const toggleRole = () => {
+  // Manage Cashier Profiles (2 Kasir & 1 Owner)
+  const updateCashierProfile = (slot: CashierSlot, name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    setCashierProfiles((prev) => ({
+      ...prev,
+      [slot]: {
+        ...prev[slot],
+        name: cleanName,
+      },
+    }));
+    setShift((prev) => {
+      if (prev.cashierSlot === slot && !prev.isSwappedShift) {
+        return { ...prev, cashierName: cleanName };
+      }
+      return prev;
+    });
+  };
+
+  const switchCashierRole = (slot: CashierSlot, customName?: string, isSwapped: boolean = false) => {
+    const profile = cashierProfiles[slot] || DEFAULT_CASHIER_PROFILES[slot];
+    const finalName = customName?.trim() || profile.name;
     setShift((prev) => ({
       ...prev,
-      role: prev.role === 'owner' ? 'kasir' : 'owner',
-      cashierName: prev.role === 'owner' ? 'Siti (Kasir Shift 1)' : 'Miftah (Owner)',
-      cashierEmail: prev.role === 'owner' ? 'kasir.shift1@jufat.com' : 'miftah2020new@gmail.com',
+      role: profile.role,
+      cashierSlot: slot,
+      cashierName: finalName,
+      cashierEmail: profile.email,
+      isSwappedShift: isSwapped,
+      originalCashierName: profile.name,
+      shiftName: prev.shiftName || profile.defaultShiftName,
     }));
+  };
+
+  // Toggle role between Kasir 1, Kasir 2, and Owner
+  const toggleRole = () => {
+    setShift((prev) => {
+      const nextSlot: CashierSlot =
+        prev.cashierSlot === 'kasir_1'
+          ? 'kasir_2'
+          : prev.cashierSlot === 'kasir_2'
+          ? 'owner'
+          : 'kasir_1';
+      const profile = cashierProfiles[nextSlot] || DEFAULT_CASHIER_PROFILES[nextSlot];
+      return {
+        ...prev,
+        role: profile.role,
+        cashierSlot: nextSlot,
+        cashierName: profile.name,
+        cashierEmail: profile.email,
+        isSwappedShift: false,
+        originalCashierName: undefined,
+      };
+    });
   };
 
   // Receipt Modal actions
@@ -1865,28 +1984,55 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsReceiptModalOpen(false);
   };
 
-  // Shift Drawer Closing & Reconciliation
-  const closeShiftDrawer = (actualCash: number, note?: string) => {
+  // Shift Drawer Closing & Reconciliation (Dukungan Setoran Kasir)
+  const closeShiftDrawer = (
+    actualCash: number,
+    note?: string,
+    depositOptions?: {
+      depositAmount: number;
+      depositRecipient: string;
+      remainingCashForDrawer: number;
+    }
+  ) => {
     const diff = actualCash - drawerCashBalance;
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-    // Record closing mutation
-    const mutation: CashMutation = {
-      id: `mut-${Date.now()}`,
-      timestamp: nowTime,
-      type: diff >= 0 ? 'masuk' : 'keluar',
-      category: 'modal_shift',
-      description: `Tutup Shift ${shift.shiftName} - Kas Terhitung Rp ${actualCash.toLocaleString(
-        'id-ID'
-      )} (Selisih: Rp ${diff.toLocaleString('id-ID')}) ${note ? `[${note}]` : ''}`,
-      amount: Math.abs(diff),
-      paymentMethod: 'tunai',
-      runningCashBalance: actualCash,
-      recordedBy: shift.cashierName,
-    };
-
+    // 1. Catat rekonsiliasi selisih kas fisik jika ada selisih
     if (diff !== 0) {
+      const mutation: CashMutation = {
+        id: `mut-${Date.now()}`,
+        timestamp: nowTime,
+        type: diff >= 0 ? 'masuk' : 'keluar',
+        category: 'modal_shift',
+        description: `Rekonsiliasi Tutup Shift ${shift.shiftName} (${shift.cashierName}) - Kas Fisik Rp ${actualCash.toLocaleString(
+          'id-ID'
+        )} (Selisih: Rp ${diff.toLocaleString('id-ID')}) ${note ? `[${note}]` : ''}`,
+        amount: Math.abs(diff),
+        paymentMethod: 'tunai',
+        runningCashBalance: actualCash,
+        recordedBy: shift.cashierName,
+      };
       setMutations((prev) => [mutation, ...prev]);
+    }
+
+    // 2. Jika ada opsi setoran (misal Shift 2 closing akhir hari atau Shift 1 diserahkan ke Owner)
+    let finalRemainingCash = actualCash;
+    if (depositOptions && depositOptions.depositAmount > 0) {
+      finalRemainingCash = depositOptions.remainingCashForDrawer;
+      const depositMutation: CashMutation = {
+        id: `mut-dep-${Date.now()}`,
+        timestamp: nowTime,
+        type: 'keluar',
+        category: 'setor_bank',
+        description: `Setoran Kas Tutup ${shift.shiftName} (${shift.cashierName}) ke ${depositOptions.depositRecipient}: Rp ${depositOptions.depositAmount.toLocaleString(
+          'id-ID'
+        )} · Sisa Modal Laci Tetap: Rp ${depositOptions.remainingCashForDrawer.toLocaleString('id-ID')}`,
+        amount: depositOptions.depositAmount,
+        paymentMethod: 'tunai',
+        runningCashBalance: finalRemainingCash,
+        recordedBy: shift.cashierName,
+      };
+      setMutations((prev) => [depositMutation, ...prev]);
     }
 
     setShift((prev) => ({
@@ -1898,19 +2044,39 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       systemCash: drawerCashBalance,
       actualCash,
       difference: diff,
+      depositAmount: depositOptions?.depositAmount,
+      remainingCash: finalRemainingCash,
     };
   };
 
-  const openNewShift = (startingCash: number, cashierName: string) => {
+  const openNewShift = (
+    startingCash: number,
+    cashierName: string,
+    slot: CashierSlot = 'kasir_1',
+    shiftTitle?: string,
+    isSwapped: boolean = false
+  ) => {
     const nextShiftNum = shift.shiftNumber + 1;
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const profile = cashierProfiles[slot] || DEFAULT_CASHIER_PROFILES[slot];
+    const finalName = cashierName.trim() || profile.name;
+
+    const defaultTitle =
+      slot === 'owner'
+        ? `Shift ${nextShiftNum} (Owner)`
+        : slot === 'kasir_1'
+        ? `Shift ${nextShiftNum} (Pagi)`
+        : `Shift ${nextShiftNum} (Sore)`;
 
     const newShiftState: ShiftState = {
       shiftNumber: nextShiftNum,
-      shiftName: `Shift ${nextShiftNum} (${nextShiftNum % 2 === 1 ? 'Pagi' : 'Sore'})`,
-      cashierName,
-      cashierEmail: shift.cashierEmail,
-      role: shift.role,
+      shiftName: shiftTitle?.trim() || defaultTitle,
+      cashierName: finalName,
+      cashierEmail: profile.email,
+      role: profile.role,
+      cashierSlot: slot,
+      isSwappedShift: isSwapped,
+      originalCashierName: profile.name,
       startTime: `${nowTime} WIB`,
       startingCash,
       isOpen: true,
@@ -1924,11 +2090,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: nowTime,
       type: 'masuk',
       category: 'modal_shift',
-      description: `Buka Kas Awal Laci ${newShiftState.shiftName}`,
+      description: `Buka Kas Awal Laci ${newShiftState.shiftName} (${finalName}${isSwapped ? ' - Tukar Shift' : ''})`,
       amount: startingCash,
       paymentMethod: 'tunai',
       runningCashBalance: startingCash,
-      recordedBy: cashierName,
+      recordedBy: finalName,
     };
     setMutations((prev) => [mutation, ...prev]);
   };
@@ -2388,6 +2554,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTab,
         shift,
         setShift,
+        cashierProfiles,
+        updateCashierProfile,
+        switchCashierRole,
         toggleRole,
         storeProfile,
         updateStoreProfile,
@@ -2472,6 +2641,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isBottomNavVisible,
         setIsBottomNavVisible,
         toggleBottomNav,
+        standardDrawerCash,
+        setStandardDrawerCash,
         closeShiftDrawer,
         openNewShift,
         exportBackupJSON,

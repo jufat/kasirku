@@ -1,5 +1,18 @@
-import React, { useState } from 'react';
-import { Printer, X, Copy, Check, Sparkles, Smartphone, Receipt, CreditCard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Printer,
+  X,
+  Copy,
+  Check,
+  Sparkles,
+  Smartphone,
+  Receipt,
+  CreditCard,
+  Bluetooth,
+  RefreshCw,
+  AlertTriangle,
+  Share2,
+} from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import {
   POSTransaction,
@@ -9,6 +22,14 @@ import {
   PPOBTransaction,
   PrintOrder,
 } from '../../types/pos';
+import {
+  isWebBluetoothSupported,
+  printViaWebBluetooth,
+  printViaRawBT,
+  shareReceiptText,
+  getSavedBluetoothDeviceName,
+  forgetBluetoothDevice,
+} from '../../utils/thermalPrinter';
 
 export const ThermalReceiptModal: React.FC = () => {
   const { isReceiptModalOpen, closeReceipt, receiptData, storeProfile } = usePOS();
@@ -20,6 +41,18 @@ export const ThermalReceiptModal: React.FC = () => {
     }
   });
   const [copied, setCopied] = useState(false);
+  const [isPrintingBT, setIsPrintingBT] = useState(false);
+  const [btStatus, setBtStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [btMessage, setBtMessage] = useState('');
+  const [savedBtDevice, setSavedBtDevice] = useState<string>(getSavedBluetoothDeviceName());
+
+  useEffect(() => {
+    if (isReceiptModalOpen) {
+      setSavedBtDevice(getSavedBluetoothDeviceName());
+      setBtStatus('idle');
+      setBtMessage('');
+    }
+  }, [isReceiptModalOpen]);
 
   if (!isReceiptModalOpen || !receiptData) return null;
 
@@ -104,8 +137,8 @@ export const ThermalReceiptModal: React.FC = () => {
       ? '================================'
       : '================================================';
 
-  // Plain-text generator for WhatsApp or Bluetooth thermal printer apps
-  const handleCopyTextReceipt = () => {
+  // Plain-text generator for Bluetooth, RawBT, WhatsApp, or clipboard
+  const generateReceiptText = (): string => {
     let lines: string[] = [];
     lines.push(storeProfile.name || 'JU-FAT CELL');
     if (storeProfile.subtitle) lines.push(storeProfile.subtitle);
@@ -209,12 +242,62 @@ export const ThermalReceiptModal: React.FC = () => {
     lines.push(divider);
     lines.push(storeProfile.receiptFooter || 'TERIMA KASIH ATAS KUNJUNGAN ANDA!');
     lines.push('Simpan struk ini sebagai bukti pembayaran yang sah');
+    return lines.join('\n');
+  };
 
-    const fullText = lines.join('\n');
+  const handleCopyTextReceipt = () => {
+    const fullText = generateReceiptText();
     navigator.clipboard.writeText(fullText).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     });
+  };
+
+  const handlePrintBluetooth = async () => {
+    setIsPrintingBT(true);
+    setBtStatus('idle');
+    setBtMessage('Mencari & menghubungkan ke printer Bluetooth...');
+
+    try {
+      const fullText = generateReceiptText();
+      const res = await printViaWebBluetooth(fullText, paperWidth);
+      setIsPrintingBT(false);
+      if (res.success) {
+        setBtStatus('success');
+        setBtMessage(res.message);
+        if (res.deviceName) setSavedBtDevice(res.deviceName);
+      } else {
+        setBtStatus('error');
+        setBtMessage(res.message);
+      }
+    } catch (err: any) {
+      setIsPrintingBT(false);
+      setBtStatus('error');
+      setBtMessage(err.message || 'Gagal mengirim data ke printer Bluetooth.');
+    }
+  };
+
+  const handlePrintRawBT = () => {
+    const fullText = generateReceiptText();
+    const success = printViaRawBT(fullText, paperWidth);
+    if (!success) {
+      handleCopyTextReceipt();
+    }
+  };
+
+  const handleShareReceipt = async () => {
+    const fullText = generateReceiptText();
+    const didShare = await shareReceiptText(storeProfile.name || 'Struk Transaksi', fullText);
+    if (!didShare) {
+      handleCopyTextReceipt();
+    }
+  };
+
+  const handleForgetBT = () => {
+    forgetBluetoothDevice();
+    setSavedBtDevice('');
+    setBtStatus('idle');
+    setBtMessage('Perangkat Bluetooth dilepas. Anda dapat memilih printer baru saat mencetak.');
   };
 
   return (
@@ -249,7 +332,7 @@ export const ThermalReceiptModal: React.FC = () => {
         </div>
 
         {/* Paper Size Selector & Quick Actions */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 flex items-center justify-between gap-2 shrink-0 text-xs">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-2 flex flex-wrap items-center justify-between gap-2 shrink-0 text-xs">
           <div className="flex items-center gap-1.5">
             <span className="font-bold text-slate-600 text-[11px]">Lebar Kertas:</span>
             <div className="flex bg-slate-200/80 p-0.5 rounded-lg">
@@ -278,25 +361,78 @@ export const ThermalReceiptModal: React.FC = () => {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleCopyTextReceipt}
-            className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:text-teal-900 bg-white hover:bg-teal-50 border border-slate-300 hover:border-teal-400 rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
-            title="Salin teks struk untuk dikirim via WhatsApp"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-emerald-700 font-bold">Tersalin!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 text-slate-500" />
-                <span>Salin WA</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {savedBtDevice ? (
+              <div className="flex items-center gap-1 bg-teal-100 text-teal-900 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                <Bluetooth className="w-3 h-3 text-teal-700" />
+                <span className="max-w-[100px] truncate">{savedBtDevice}</span>
+                <button
+                  type="button"
+                  onClick={handleForgetBT}
+                  className="text-teal-700 hover:text-red-600 underline ml-1 cursor-pointer text-[9.5px]"
+                  title="Putus & ganti printer Bluetooth"
+                >
+                  Ganti
+                </button>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleCopyTextReceipt}
+              className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:text-teal-900 bg-white hover:bg-teal-50 border border-slate-300 hover:border-teal-400 rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
+              title="Salin teks struk untuk dikirim via WhatsApp"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-700 font-bold">Tersalin!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Salin Teks</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Bluetooth Alert / Feedback Banner */}
+        {btMessage && (
+          <div
+            className={`p-2 rounded-xl mb-2 text-xs flex items-start gap-2 shrink-0 border ${
+              btStatus === 'success'
+                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                : btStatus === 'error'
+                ? 'bg-amber-50 text-amber-900 border-amber-300'
+                : 'bg-blue-50 text-blue-900 border-blue-300'
+            }`}
+          >
+            {btStatus === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            ) : btStatus === 'error' ? (
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            ) : (
+              <RefreshCw className="w-4 h-4 text-blue-600 animate-spin shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 text-[11px] leading-tight">
+              <p className="font-semibold">{btMessage}</p>
+              {btStatus === 'error' && (
+                <p className="text-[10px] text-amber-800 mt-0.5">
+                  💡 Tips HP: Jika printer Anda tipe Bluetooth Classic (bukan BLE), gunakan tombol <strong>"Cetak via RawBT"</strong> di bawah untuk langsung print dari HP tanpa pairing browser!
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setBtMessage('')}
+              className="text-slate-400 hover:text-slate-600 text-[10px] font-bold cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Printable Thermal Receipt Container */}
         <div className="flex-1 overflow-y-auto flex justify-center bg-slate-100 p-2 sm:p-3 rounded-xl border border-slate-200">
@@ -962,22 +1098,70 @@ export const ThermalReceiptModal: React.FC = () => {
         </div>
 
         {/* Modal Action Buttons */}
-        <div className="flex items-center gap-2 pt-3 mt-2 border-t border-slate-100 shrink-0">
-          <button
-            type="button"
-            onClick={closeReceipt}
-            className="flex-1 py-2 px-3 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
-          >
-            Tutup
-          </button>
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="flex-1 py-2 px-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm shadow-teal-900/20 cursor-pointer active:scale-95"
-          >
-            <Printer className="w-3.5 h-3.5 text-amber-300" />
-            <span>Cetak Struk Termal</span>
-          </button>
+        <div className="pt-2.5 mt-2 border-t border-slate-100 shrink-0 space-y-2">
+          {/* Row 1: Direct Mobile & Bluetooth Thermal Print */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handlePrintBluetooth}
+              disabled={isPrintingBT}
+              className="py-2.5 px-3 bg-gradient-to-r from-teal-700 via-teal-600 to-emerald-600 hover:from-teal-600 hover:to-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-teal-900/20 cursor-pointer active:scale-95 disabled:opacity-50"
+              title="Sambungkan dan cetak langsung via Bluetooth browser (BLE POS Printer)"
+            >
+              {isPrintingBT ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-cyan-200" />
+                  <span>Menghubungkan Printer...</span>
+                </>
+              ) : (
+                <>
+                  <Bluetooth className="w-4 h-4 text-cyan-300" />
+                  <span>Cetak ke Printer Bluetooth</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintRawBT}
+              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+              title="Cetak lewat aplikasi RawBT Android (Sangat cocok untuk printer Bluetooth HP)"
+            >
+              <Smartphone className="w-4 h-4 text-emerald-400" />
+              <span>Cetak via RawBT (Android)</span>
+            </button>
+          </div>
+
+          {/* Row 2: Secondary / Fallback Print & Share & Close */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={closeReceipt}
+              className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+            >
+              Tutup
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShareReceipt}
+              className="flex-1 py-2 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-800 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              title="Kirim struk ke WhatsApp pelanggan atau bagikan via HP"
+            >
+              <Share2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Kirim Struk (WA)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex-1 py-2 px-2.5 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              title="Gunakan dialog print sistem standar (USB / Windows / Mac)"
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-500" />
+              <span>Print USB / PC</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

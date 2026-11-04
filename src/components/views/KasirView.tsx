@@ -63,6 +63,7 @@ export const KasirView: React.FC = () => {
   const [cashTendered, setCashTendered] = useState<number>(0);
   const [checkoutNote, setCheckoutNote] = useState('');
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   // Audio beep feedback for barcode scanner
   const playBeep = () => {
@@ -158,25 +159,40 @@ export const KasirView: React.FC = () => {
   // Handle Quick Payment preset
   const setQuickCash = (amount: number) => {
     setCashTendered(amount);
+    setCheckoutError(null);
   };
 
   const handleCheckout = (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0) return;
+    setCheckoutError(null);
+
     if (paymentMethod === 'tunai' && cashTendered < finalTotal) {
-      alert(`Nominal pembayaran uang tunai kurang! Minimal Rp ${finalTotal.toLocaleString('id-ID')}`);
+      setCheckoutError(`Nominal pembayaran uang tunai kurang! Minimal Rp ${finalTotal.toLocaleString('id-ID')}`);
       return;
     }
 
-    if (paymentMethod === 'hutang' && (!customerName.trim() || customerName.trim() === 'Pelanggan Umum')) {
-      alert('Untuk pembayaran Kasbon / Hutang, mohon isi Nama Pelanggan yang jelas!');
-      return;
+    // Validasi Kasbon / Hutang
+    let resolvedCustomerName = customerName.trim();
+    if (paymentMethod === 'hutang') {
+      // Jika nama masih default 'Pelanggan Umum' atau kosong, tetapi user pernah mengetik di No HP/Catatan (misal "Kk erni"), gunakan itu!
+      if ((!resolvedCustomerName || resolvedCustomerName.toLowerCase() === 'pelanggan umum') && customerPhone.trim()) {
+        resolvedCustomerName = customerPhone.trim();
+        setCustomerName(resolvedCustomerName);
+      }
+
+      if (!resolvedCustomerName || resolvedCustomerName.toLowerCase() === 'pelanggan umum') {
+        setCheckoutError('Untuk Kasbon, silakan ketik Nama Pelanggan pada kolom yang tersedia!');
+        return;
+      }
     }
+
+    const finalName = resolvedCustomerName || 'Pelanggan Umum';
 
     checkoutPOS(
       paymentMethod,
       cashTendered,
-      customerName,
+      finalName,
       discountAmount,
       taxPercent,
       checkoutNote,
@@ -185,11 +201,13 @@ export const KasirView: React.FC = () => {
     );
 
     // Reset checkout form
+    setCustomerName('Pelanggan Umum');
     setDiscountAmount(0);
     setTaxPercent(0);
     setCashTendered(0);
     setCheckoutNote('');
     setCustomerPhone('');
+    setCheckoutError(null);
     setIsMobileCartOpen(false);
   };
 
@@ -740,6 +758,12 @@ export const KasirView: React.FC = () => {
                       if (m.id === 'tunai' && cashTendered === 0) {
                         setCashTendered(finalTotal);
                       }
+                      if (m.id === 'hutang') {
+                        if (customerName === 'Pelanggan Umum') {
+                          setCustomerName('');
+                        }
+                      }
+                      setCheckoutError(null);
                     }}
                     className={`py-1.5 px-2 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
                       active
@@ -775,39 +799,77 @@ export const KasirView: React.FC = () => {
 
           {/* Kasbon / Hutang Direct Input Fields */}
           {paymentMethod === 'hutang' && (
-            <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950 animate-in fade-in duration-150">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                <Receipt className="w-4 h-4 text-amber-600" />
-                <span>Rincian Kasbon Pelanggan (Masuk Data Hutang)</span>
+            <div className="p-3 bg-amber-50/90 border-2 border-amber-300 rounded-xl space-y-2.5 text-amber-950 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between text-xs font-bold text-amber-900 border-b border-amber-200/80 pb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Receipt className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="font-extrabold">Data Kasbon Pelanggan</span>
+                </div>
+                <span className="text-[10px] bg-amber-200 text-amber-950 px-2 py-0.5 rounded font-extrabold uppercase">
+                  Masuk Buku Hutang
+                </span>
               </div>
+
+              {/* Kolom Nama Pelanggan Kasbon (Wajib) */}
+              <div>
+                <label className="text-[11px] font-extrabold text-amber-950 flex items-center justify-between mb-1">
+                  <span>Nama Pelanggan yang Berhutang / Kasbon *</span>
+                  <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                    Wajib Diisi
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customerName === 'Pelanggan Umum' ? '' : customerName}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    if (checkoutError) setCheckoutError(null);
+                  }}
+                  placeholder="Ketik nama pelanggan di sini (cth: Kk Erni, Pak RT, Mas Danang)..."
+                  className={`w-full px-3 py-2 text-xs bg-white border-2 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs ${
+                    checkoutError && (!customerName.trim() || customerName.trim() === 'Pelanggan Umum')
+                      ? 'border-rose-500 bg-rose-50/40 animate-pulse'
+                      : 'border-amber-400'
+                  }`}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                    No. WA / HP:
-                  </label>
-                  <input
-                    type="text"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="08..."
-                    className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                    Jatuh Tempo:
+                    Jatuh Tempo Kasbon:
                   </label>
                   <input
                     type="date"
                     value={debtDueDate}
                     onChange={(e) => setDebtDueDate(e.target.value)}
-                    className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                    Catatan / No. HP (Opsional):
+                  </label>
+                  <input
+                    type="text"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="Boleh dikosongkan..."
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
               </div>
-              <p className="text-[10px] text-amber-800">
-                ⚡ Total <span className="font-bold">Rp {finalTotal.toLocaleString('id-ID')}</span> akan langsung tercatat di menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline">{customerName}</span>.
-              </p>
+
+              <div className="p-2 bg-amber-100/80 rounded-lg text-[11px] text-amber-950 font-medium border border-amber-200 flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>
+                  Dicatat sebesar <strong className="font-mono">Rp {finalTotal.toLocaleString('id-ID')}</strong> atas nama:{' '}
+                  <strong className="text-amber-950 underline font-bold">
+                    {customerName.trim() && customerName.trim() !== 'Pelanggan Umum' ? customerName.trim() : (customerPhone.trim() ? customerPhone.trim() : '(Ketik nama di atas)')}
+                  </strong>
+                </span>
+              </div>
             </div>
           )}
 
@@ -868,6 +930,23 @@ export const KasirView: React.FC = () => {
                     : changeAmount.toLocaleString('id-ID')}
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Validation Error Banner */}
+          {checkoutError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold flex items-center justify-between animate-in fade-in">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{checkoutError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCheckoutError(null)}
+                className="text-rose-500 hover:text-rose-700 ml-1 text-xs cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
           )}
 
@@ -1040,6 +1119,12 @@ export const KasirView: React.FC = () => {
                     onClick={() => {
                       setPaymentMethod(m.id as PaymentMethod);
                       if (m.id === 'tunai' && cashTendered === 0) setCashTendered(finalTotal);
+                      if (m.id === 'hutang') {
+                        if (customerName === 'Pelanggan Umum') {
+                          setCustomerName('');
+                        }
+                      }
+                      setCheckoutError(null);
                     }}
                     className={`py-1.5 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
                       active
@@ -1074,39 +1159,77 @@ export const KasirView: React.FC = () => {
 
             {/* Kasbon / Hutang Direct Input Fields Mobile */}
             {paymentMethod === 'hutang' && (
-              <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                  <Receipt className="w-4 h-4 text-amber-600" />
-                  <span>Rincian Kasbon (Masuk Buku Hutang)</span>
+              <div className="p-3 bg-amber-50/95 border-2 border-amber-300 rounded-xl space-y-2.5 text-amber-950 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-900 border-b border-amber-200/80 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Receipt className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="font-extrabold">Data Kasbon Pelanggan</span>
+                  </div>
+                  <span className="text-[10px] bg-amber-200 text-amber-950 px-2 py-0.5 rounded font-extrabold uppercase">
+                    Masuk Buku Hutang
+                  </span>
                 </div>
+
+                {/* Kolom Nama Pelanggan Kasbon (Wajib) */}
+                <div>
+                  <label className="text-[11px] font-extrabold text-amber-950 flex items-center justify-between mb-1">
+                    <span>Nama Pelanggan yang Kasbon *</span>
+                    <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                      Wajib Diisi
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customerName === 'Pelanggan Umum' ? '' : customerName}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      if (checkoutError) setCheckoutError(null);
+                    }}
+                    placeholder="Ketik Nama Pelanggan (cth: Kk Erni, Mas Danang, Bu RT)..."
+                    className={`w-full px-3 py-2 text-xs bg-white border-2 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs ${
+                      checkoutError && (!customerName.trim() || customerName.trim() === 'Pelanggan Umum')
+                        ? 'border-rose-500 bg-rose-50/40 animate-pulse'
+                        : 'border-amber-400'
+                    }`}
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
                     <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                      No. WA / HP:
-                    </label>
-                    <input
-                      type="text"
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="08..."
-                      className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                      Jatuh Tempo:
+                      Jatuh Tempo Kasbon:
                     </label>
                     <input
                       type="date"
                       value={debtDueDate}
                       onChange={(e) => setDebtDueDate(e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                      Catatan / No. HP (Opsional):
+                    </label>
+                    <input
+                      type="text"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="Boleh dikosongkan..."
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
                 </div>
-                <p className="text-[10px] text-amber-800">
-                  ⚡ Total <span className="font-bold">Rp {finalTotal.toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline">{customerName}</span>.
-                </p>
+
+                <div className="p-2 bg-amber-100/80 rounded-lg text-[11px] text-amber-950 font-medium border border-amber-200 flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span>
+                    Dicatat sebesar <strong className="font-mono">Rp {finalTotal.toLocaleString('id-ID')}</strong> atas nama:{' '}
+                    <strong className="text-amber-950 underline font-bold">
+                      {customerName.trim() && customerName.trim() !== 'Pelanggan Umum' ? customerName.trim() : (customerPhone.trim() ? customerPhone.trim() : '(Ketik nama di atas)')}
+                    </strong>
+                  </span>
+                </div>
               </div>
             )}
 
@@ -1165,6 +1288,23 @@ export const KasirView: React.FC = () => {
                       : changeAmount.toLocaleString('id-ID')}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Validation Error Banner Mobile */}
+            {checkoutError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold flex items-center justify-between animate-in fade-in">
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{checkoutError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCheckoutError(null)}
+                  className="text-rose-500 hover:text-rose-700 ml-1 text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
             )}
 

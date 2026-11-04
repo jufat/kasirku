@@ -246,10 +246,10 @@ export const Sidebar: React.FC = () => {
             <span>Manajemen & Owner</span>
             <button
               onClick={toggleRole}
-              title="Ganti Mode Akses Kasir/Owner"
+              title="Ganti Mode Akses (Kasir 1 / Kasir 2 / Owner)"
               className="text-[10px] text-amber-300 hover:text-amber-200 underline cursor-pointer font-bold"
             >
-              Mode: {shift.role === 'owner' ? 'Owner' : 'Kasir'}
+              Akses: {shift.cashierSlot === 'owner' ? '👑 Owner' : shift.cashierSlot === 'kasir_1' ? '👤 Shift 1' : '👤 Shift 2'}
             </button>
           </div>
           <nav className="space-y-1.5">
@@ -361,9 +361,16 @@ export const Sidebar: React.FC = () => {
               <User className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate leading-tight">
-                {shift.cashierName}
-              </p>
+              <div className="flex items-center gap-1">
+                <p className="text-xs font-bold text-white truncate leading-tight">
+                  {shift.cashierName}
+                </p>
+                {shift.isSwappedShift && (
+                  <span className="text-[8px] bg-amber-400 text-amber-950 px-1 rounded font-extrabold shrink-0 uppercase">
+                    Tukar
+                  </span>
+                )}
+              </div>
               <p className="text-[10px] text-teal-200 font-mono truncate">
                 {shift.cashierEmail}
               </p>
@@ -371,10 +378,20 @@ export const Sidebar: React.FC = () => {
           </div>
           <button
             onClick={toggleRole}
-            className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 hover:bg-amber-300 transition cursor-pointer shrink-0 shadow-xs"
-            title="Klik untuk ganti hak akses"
+            className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md transition cursor-pointer shrink-0 shadow-xs uppercase font-mono ${
+              shift.cashierSlot === 'owner'
+                ? 'bg-amber-400 text-amber-950 hover:bg-amber-300'
+                : shift.cashierSlot === 'kasir_1'
+                ? 'bg-emerald-300 text-emerald-950 hover:bg-emerald-200'
+                : 'bg-teal-200 text-teal-950 hover:bg-teal-100'
+            }`}
+            title="Klik untuk ganti hak akses (Kasir 1 / Kasir 2 / Owner)"
           >
-            {shift.role.toUpperCase()}
+            {shift.cashierSlot === 'owner'
+              ? '👑 OWNER'
+              : shift.cashierSlot === 'kasir_1'
+              ? '👤 SHIFT 1'
+              : '👤 SHIFT 2'}
           </button>
         </div>
 
