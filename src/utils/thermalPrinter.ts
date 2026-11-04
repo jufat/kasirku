@@ -5,21 +5,36 @@ export interface BluetoothPrinterDevice {
   name: string;
 }
 
-// Common GATT Services for BLE Thermal Printers (Panda, Iware, Goojprt, MPT-II, PT-210, POS-58, etc.)
+// Common GATT Services for BLE Thermal Printers (Panda, Iware, Goojprt, MPT-II, PT-210, POS-58, BellaV, Zjiang, etc.)
 const THERMAL_PRINTER_SERVICE_UUIDS = [
   '000018f0-0000-1000-8000-00805f9b34fb', // Standard Printer Service
-  '0000ffe0-0000-1000-8000-00805f9b34fb', // Common Chinese POS BLE Service
-  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // Chinese POS BLE Service (Goojprt, Panda, PT-210)
+  '0000ff00-0000-1000-8000-00805f9b34fb', // RPP02N, POS-58, ZJ-58
   '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent UART
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+  '0000fff0-0000-1000-8000-00805f9b34fb', // BellaV, Iware, EP-58
+  '0000fee7-0000-1000-8000-00805f9b34fb', // Tencent / WeChat POS BLE
+  '0000ae30-0000-1000-8000-00805f9b34fb',
+  '0000ae00-0000-1000-8000-00805f9b34fb',
+  '0000af30-0000-1000-8000-00805f9b34fb',
+  '0000e7b0-0000-1000-8000-00805f9b34fb',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic Semiconductor UART
 ];
 
 const THERMAL_PRINTER_CHAR_UUIDS = [
   '00002af1-0000-1000-8000-00805f9b34fb',
   '0000ffe1-0000-1000-8000-00805f9b34fb',
   '0000ff01-0000-1000-8000-00805f9b34fb',
+  '0000ff02-0000-1000-8000-00805f9b34fb',
+  '0000fff1-0000-1000-8000-00805f9b34fb',
+  '0000fff2-0000-1000-8000-00805f9b34fb',
+  '0000fee8-0000-1000-8000-00805f9b34fb',
+  '0000ae01-0000-1000-8000-00805f9b34fb',
+  '0000ae31-0000-1000-8000-00805f9b34fb',
+  '0000ae32-0000-1000-8000-00805f9b34fb',
   '49535343-1e4d-4bd9-ba61-23c647249616',
   'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f',
+  '6e400002-b5a3-f393-e0a9-e50e24dcca9e',
 ];
 
 let cachedDevice: any = null;
@@ -266,11 +281,16 @@ export const printViaRawBT = (receiptText: string, paperWidth: '58mm' | '80mm' =
     }
     const base64Data = window.btoa(binary);
 
-    // RawBT URL scheme
-    const rawBtUrl = `rawbt:data:application/octet-stream;base64,${base64Data}`;
+    // Standard Android Intent for RawBT with Play Store fallback if not yet installed
+    const rawBtIntent = `intent:data:application/octet-stream;base64,${base64Data}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dru.a402d.rawbtprinter;end;`;
+    const rawBtDirect = `rawbt:data:application/octet-stream;base64,${base64Data}`;
 
-    // Try navigating to rawbt URL
-    window.location.href = rawBtUrl;
+    const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
+    if (isAndroid) {
+      window.location.href = rawBtIntent;
+    } else {
+      window.location.href = rawBtDirect;
+    }
     return true;
   } catch (e) {
     console.error('Error invoking RawBT:', e);
