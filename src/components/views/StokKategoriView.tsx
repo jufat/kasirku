@@ -927,7 +927,7 @@ export const StokKategoriView: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    step="500"
+                    step="any"
                     min="0"
                     value={restockNewHpp}
                     onChange={(e) => setRestockNewHpp(Number(e.target.value) || 0)}
@@ -1285,7 +1285,8 @@ export const StokKategoriView: React.FC = () => {
                     </label>
                     <input
                       type="number"
-                      step="500"
+                      step="any"
+                      min="0"
                       value={hpp}
                       onChange={(e) => setHpp(Number(e.target.value) || 0)}
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-semibold"
@@ -1295,7 +1296,8 @@ export const StokKategoriView: React.FC = () => {
                     <label className="font-bold text-slate-700 block mb-1">Harga Jual (Rp)</label>
                     <input
                       type="number"
-                      step="500"
+                      step="any"
+                      min="0"
                       value={price}
                       onChange={(e) => setPrice(Number(e.target.value) || 0)}
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-bold text-emerald-800"

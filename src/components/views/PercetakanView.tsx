@@ -1134,7 +1134,7 @@ export const PercetakanView: React.FC = () => {
                     <input
                       type="number"
                       min="0"
-                      step="500"
+                      step="any"
                       value={cashTendered || ''}
                       onChange={(e) => setCashTendered(Number(e.target.value) || 0)}
                       placeholder={totalOrderAmount > 0 ? String(totalOrderAmount) : '0'}
@@ -1752,7 +1752,7 @@ export const PercetakanView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    step="50"
+                    step="any"
                     value={effectiveUnitPrice || ''}
                     onChange={(e) => {
                       const val = Number(e.target.value);
@@ -2689,8 +2689,8 @@ export const PercetakanView: React.FC = () => {
                     <input
                       type="number"
                       required
-                      min="50"
-                      step="50"
+                      min="0"
+                      step="any"
                       value={formPrice || ''}
                       onChange={(e) => setFormPrice(Math.max(0, Number(e.target.value) || 0))}
                       placeholder="1000"
@@ -2815,7 +2815,7 @@ export const PercetakanView: React.FC = () => {
                             <input
                               type="number"
                               min="0"
-                              step="50"
+                              step="any"
                               value={tier.price}
                               onChange={(e) =>
                                 handleUpdateTierRow(idx, 'price', Number(e.target.value) || 0)
@@ -2990,7 +2990,7 @@ export const PercetakanView: React.FC = () => {
                   <input
                     type="number"
                     min={settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)}
-                    step="1000"
+                    step="any"
                     value={settlePrintCashReceived || ''}
                     onChange={(e) => setSettlePrintCashReceived(Number(e.target.value) || 0)}
                     className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl font-mono font-black text-sm text-right text-emerald-950 focus:ring-2 focus:ring-emerald-500 focus:outline-none"

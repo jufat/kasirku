@@ -512,7 +512,8 @@ export const ServiceHPView: React.FC = () => {
                     <label className="font-bold text-slate-700 block mb-1">Estimasi Sparepart (Rp)</label>
                     <input
                       type="number"
-                      step="5000"
+                      step="any"
+                      min="0"
                       value={sparepartCost}
                       onChange={(e) => setSparepartCost(Number(e.target.value) || 0)}
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-semibold"
@@ -522,7 +523,8 @@ export const ServiceHPView: React.FC = () => {
                     <label className="font-bold text-slate-700 block mb-1">Ongkos Jasa Teknisi (Rp)</label>
                     <input
                       type="number"
-                      step="5000"
+                      step="any"
+                      min="0"
                       value={laborFee}
                       onChange={(e) => setLaborFee(Number(e.target.value) || 0)}
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-semibold text-emerald-800"
@@ -537,7 +539,8 @@ export const ServiceHPView: React.FC = () => {
                     </label>
                     <input
                       type="number"
-                      step="5000"
+                      step="any"
+                      min="0"
                       value={downPayment}
                       onChange={(e) => setDownPayment(Number(e.target.value) || 0)}
                       placeholder="0 jika belum bayar"

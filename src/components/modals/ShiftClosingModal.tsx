@@ -480,7 +480,7 @@ export const ShiftClosingModal: React.FC = () => {
                         <span className="text-[10px] text-slate-600 font-bold shrink-0">Set Nominal:</span>
                         <input
                           type="number"
-                          step="10000"
+                          step="any"
                           min="0"
                           value={tempStandardCash}
                           onChange={(e) => setTempStandardCash(Number(e.target.value) || 0)}

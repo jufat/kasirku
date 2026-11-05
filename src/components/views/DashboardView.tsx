@@ -882,7 +882,8 @@ export const DashboardView: React.FC = () => {
                 </span>
                 <input
                   type="number"
-                  step="50000"
+                  step="any"
+                  min="0"
                   value={tempDigitalInput}
                   onChange={(e) => setTempDigitalInput(e.target.value)}
                   placeholder="Contoh: 8750000"
@@ -1253,7 +1254,8 @@ export const DashboardView: React.FC = () => {
                   <form onSubmit={handleSaveTarget} className="flex items-center gap-1.5">
                     <input
                       type="number"
-                      step="500000"
+                      step="any"
+                      min="0"
                       value={tempTargetInput}
                       onChange={(e) => setTempTargetInput(e.target.value)}
                       className="w-32 px-2 py-0.5 text-xs font-mono font-bold bg-white border border-teal-400 rounded-md text-slate-900 focus:outline-none"

@@ -1053,7 +1053,8 @@ export const PPOBView: React.FC = () => {
                   <input
                     type="number"
                     required
-                    step="100"
+                    step="any"
+                    min="0"
                     value={pkgHpp}
                     onChange={(e) => setPkgHpp(Number(e.target.value) || 0)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-semibold focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
@@ -1065,7 +1066,8 @@ export const PPOBView: React.FC = () => {
                   <input
                     type="number"
                     required
-                    step="100"
+                    step="any"
+                    min="0"
                     value={pkgPrice}
                     onChange={(e) => setPkgPrice(Number(e.target.value) || 0)}
                     className="w-full px-3 py-2 bg-slate-50 border border-emerald-300 rounded-lg font-mono text-right font-bold text-emerald-800 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"

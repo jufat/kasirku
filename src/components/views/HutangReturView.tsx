@@ -415,9 +415,9 @@ export const HutangReturView: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  step="5000"
+                  step="any"
                   max={payingDebt.remainingAmount}
-                  min="5000"
+                  min="1"
                   value={payAmount || ''}
                   onChange={(e) => setPayAmount(Number(e.target.value) || 0)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-purple-600 focus:outline-none"
@@ -489,7 +489,8 @@ export const HutangReturView: React.FC = () => {
                 <label className="font-bold text-slate-700 block mb-1">Total Kasbon (Rp) *</label>
                 <input
                   type="number"
-                  step="5000"
+                  step="any"
+                  min="0"
                   required
                   value={debtAmount || ''}
                   onChange={(e) => setDebtAmount(Number(e.target.value) || 0)}

@@ -718,7 +718,7 @@ export const KasirView: React.FC = () => {
               <input
                 type="number"
                 min="0"
-                step="500"
+                step="any"
                 value={discountAmount || ''}
                 onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
                 placeholder="0"
@@ -1087,7 +1087,7 @@ export const KasirView: React.FC = () => {
                 <input
                   type="number"
                   min="0"
-                  step="500"
+                  step="any"
                   value={discountAmount || ''}
                   onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
                   placeholder="0"
