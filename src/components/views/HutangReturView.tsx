@@ -124,28 +124,42 @@ export const HutangReturView: React.FC = () => {
         </div>
 
         {/* Sub-tab pills */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
           <button
             onClick={() => setActiveSubTab('hutang')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 active:scale-95 ${
               activeSubTab === 'hutang'
-                ? 'bg-purple-700 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-purple-700 text-white shadow-sm font-extrabold ring-1 ring-purple-600'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
             }`}
           >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Piutang / Kasbon</span>
+            <BookOpen className="w-4 h-4" />
+            <span>Piutang / Kasbon Pelanggan</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                activeSubTab === 'hutang' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
+              }`}
+            >
+              {debts.filter((d) => d.status !== 'lunas').length}
+            </span>
           </button>
           <button
             onClick={() => setActiveSubTab('retur')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 active:scale-95 ${
               activeSubTab === 'retur'
-                ? 'bg-purple-700 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-purple-700 text-white shadow-sm font-extrabold ring-1 ring-purple-600'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
             }`}
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-4 h-4" />
             <span>Barang Retur Supplier</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                activeSubTab === 'retur' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {returns.length}
+            </span>
           </button>
         </div>
       </div>

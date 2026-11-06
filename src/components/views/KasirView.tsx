@@ -376,17 +376,28 @@ export const KasirView: React.FC = () => {
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
             {allCategories.map((cat) => {
               const active = selectedCat === cat;
+              const count =
+                cat === 'Semua'
+                  ? products.length
+                  : products.filter((p) => p.category === cat).length;
               return (
                 <button
                   key={cat}
                   onClick={() => setSelectedCat(cat)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shrink-0 cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shrink-0 cursor-pointer flex items-center gap-1.5 active:scale-95 ${
                     active
-                      ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-900'
+                      ? 'bg-gradient-to-r from-teal-700 to-emerald-700 text-white shadow-sm ring-1 ring-teal-600 font-extrabold'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200/60 font-semibold'
                   }`}
                 >
-                  {cat}
+                  <span>{cat}</span>
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                      active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {count}
+                  </span>
                 </button>
               );
             })}
@@ -740,12 +751,12 @@ export const KasirView: React.FC = () => {
             <label className="text-[11px] font-semibold text-slate-500 block mb-1.5 uppercase">
               Metode Pembayaran
             </label>
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-4 gap-1.5">
               {[
-                { id: 'tunai', label: 'Tunai', icon: Banknote },
-                { id: 'qris', label: 'QRIS', icon: QrCode },
-                { id: 'hutang', label: 'Kasbon', icon: Receipt },
-                { id: 'transfer', label: 'Transfer', icon: CreditCard },
+                { id: 'tunai', label: 'Tunai', icon: Banknote, activeStyle: 'bg-emerald-600 text-white border-emerald-500 shadow-sm' },
+                { id: 'qris', label: 'QRIS', icon: QrCode, activeStyle: 'bg-sky-600 text-white border-sky-500 shadow-sm' },
+                { id: 'transfer', label: 'Transfer', icon: CreditCard, activeStyle: 'bg-indigo-600 text-white border-indigo-500 shadow-sm' },
+                { id: 'hutang', label: 'Kasbon', icon: Receipt, activeStyle: 'bg-amber-600 text-white border-amber-500 shadow-sm' },
               ].map((m) => {
                 const Icon = m.icon;
                 const active = paymentMethod === m.id;
@@ -765,13 +776,13 @@ export const KasirView: React.FC = () => {
                       }
                       setCheckoutError(null);
                     }}
-                    className={`py-1.5 px-2 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
+                    className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border active:scale-95 ${
                       active
-                        ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-xs'
-                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                        ? m.activeStyle
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 font-semibold'
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    <Icon className="w-4 h-4" />
                     <span>{m.label}</span>
                   </button>
                 );
@@ -894,11 +905,11 @@ export const KasirView: React.FC = () => {
               </div>
 
               {/* Quick Preset Buttons */}
-              <div className="grid grid-cols-4 gap-1 text-[11px] font-mono">
+              <div className="grid grid-cols-4 gap-1.5 text-xs font-mono font-bold">
                 <button
                   type="button"
                   onClick={() => setQuickCash(finalTotal)}
-                  className="py-1 bg-emerald-100/70 hover:bg-emerald-100 text-emerald-800 font-bold rounded border border-emerald-200 cursor-pointer"
+                  className="py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-2xs cursor-pointer active:scale-95 text-center font-bold"
                 >
                   Uang Pas
                 </button>
@@ -907,9 +918,9 @@ export const KasirView: React.FC = () => {
                     key={amt}
                     type="button"
                     onClick={() => setQuickCash(amt)}
-                    className="py-1 bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-200 cursor-pointer"
+                    className="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg border border-slate-200/80 cursor-pointer active:scale-95 text-center font-bold"
                   >
-                    {amt >= 1000 ? `${amt / 1000}k` : amt}
+                    {amt >= 1000 ? `${amt / 1000}rb` : amt}
                   </button>
                 ))}
               </div>
@@ -1103,12 +1114,12 @@ export const KasirView: React.FC = () => {
             </div>
 
             {/* Payment Method Selector */}
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-4 gap-1.5">
               {[
-                { id: 'tunai', label: 'Tunai', icon: Banknote },
-                { id: 'qris', label: 'QRIS', icon: QrCode },
-                { id: 'transfer', label: 'Transfer', icon: CreditCard },
-                { id: 'hutang', label: 'Kasbon', icon: Receipt },
+                { id: 'tunai', label: 'Tunai', icon: Banknote, activeStyle: 'bg-emerald-600 text-white border-emerald-500 shadow-sm' },
+                { id: 'qris', label: 'QRIS', icon: QrCode, activeStyle: 'bg-sky-600 text-white border-sky-500 shadow-sm' },
+                { id: 'transfer', label: 'Transfer', icon: CreditCard, activeStyle: 'bg-indigo-600 text-white border-indigo-500 shadow-sm' },
+                { id: 'hutang', label: 'Kasbon', icon: Receipt, activeStyle: 'bg-amber-600 text-white border-amber-500 shadow-sm' },
               ].map((m) => {
                 const Icon = m.icon;
                 const active = paymentMethod === m.id;
@@ -1126,13 +1137,13 @@ export const KasirView: React.FC = () => {
                       }
                       setCheckoutError(null);
                     }}
-                    className={`py-1.5 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
+                    className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border active:scale-95 ${
                       active
-                        ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-xs'
-                        : 'bg-white border border-slate-200 text-slate-700'
+                        ? m.activeStyle
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 font-semibold'
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    <Icon className="w-4 h-4" />
                     <span>{m.label}</span>
                   </button>
                 );
@@ -1253,11 +1264,11 @@ export const KasirView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-1 text-[11px] font-mono">
+                <div className="grid grid-cols-4 gap-1.5 text-xs font-mono font-bold">
                   <button
                     type="button"
                     onClick={() => setQuickCash(finalTotal)}
-                    className="py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg border border-emerald-200"
+                    className="py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-2xs active:scale-95 text-center cursor-pointer"
                   >
                     Uang Pas
                   </button>
@@ -1266,9 +1277,9 @@ export const KasirView: React.FC = () => {
                       key={amt}
                       type="button"
                       onClick={() => setQuickCash(amt)}
-                      className="py-1 bg-white text-slate-700 rounded-lg border border-slate-200"
+                      className="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg border border-slate-200/80 active:scale-95 text-center cursor-pointer"
                     >
-                      {amt >= 1000 ? `${amt / 1000}k` : amt}
+                      {amt >= 1000 ? `${amt / 1000}rb` : amt}
                     </button>
                   ))}
                 </div>

@@ -921,14 +921,14 @@ export const PercetakanView: React.FC = () => {
           <button
             type="button"
             onClick={() => setMobileTab('create')}
-            className={`py-2 px-1 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+            className={`py-2 px-1 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
               mobileTab === 'create'
-                ? 'bg-white text-emerald-900 shadow-xs font-black'
+                ? 'bg-white text-emerald-950 shadow-sm font-black ring-1 ring-slate-200'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Banknote className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="truncate">Kasir</span>
+            <span className="truncate">Kasir Cetak</span>
           </button>
           <button
             type="button"
@@ -936,28 +936,28 @@ export const PercetakanView: React.FC = () => {
               setMobileTab('preview');
               setShowLiveReceiptPreview(true);
             }}
-            className={`py-2 px-1 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+            className={`py-2 px-1 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
               mobileTab === 'preview'
-                ? 'bg-white text-amber-950 shadow-xs font-black ring-1 ring-amber-300'
+                ? 'bg-white text-amber-950 shadow-sm font-black ring-1 ring-amber-300'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Eye className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span className="truncate">Live Struk</span>
             {orderItems.length > 0 && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
             )}
           </button>
           <button
             type="button"
             onClick={() => setMobileTab('queue')}
-            className={`py-2 px-1 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+            className={`py-2 px-1 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
               mobileTab === 'queue'
-                ? 'bg-white text-teal-900 shadow-xs font-black'
+                ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Receipt className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <Receipt className="w-3.5 h-3.5 text-teal-600 shrink-0" />
             <span className="truncate">Riwayat ({printOrders.length})</span>
           </button>
         </div>

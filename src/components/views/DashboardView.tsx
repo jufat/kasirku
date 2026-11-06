@@ -1206,7 +1206,7 @@ export const DashboardView: React.FC = () => {
             </div>
 
             {/* 2. Granularity Timeframe Selector Tabs (Harian, Mingguan, Bulanan, Tahunan) */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60">
               {[
                 { id: 'harian', label: 'Harian' },
                 { id: 'mingguan', label: 'Mingguan' },
@@ -1225,10 +1225,10 @@ export const DashboardView: React.FC = () => {
                       if (t.id === 'bulanan') setSelectedPreset('bulan_ini');
                       if (t.id === 'tahunan') setSelectedPreset('tahun_ini');
                     }}
-                    className={`px-2.5 sm:px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer active:scale-95 ${
                       active
-                        ? 'bg-white text-teal-900 shadow-xs font-extrabold'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
+                        : 'text-slate-600 hover:text-slate-900 font-semibold'
                     }`}
                   >
                     {t.label}

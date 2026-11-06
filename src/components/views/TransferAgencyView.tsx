@@ -31,13 +31,13 @@ const BANK_PROVIDERS = [
 
 const EWALLET_PROVIDERS = [
   'DANA',
-  'GoPay Customer',
-  'GoPay Driver',
+  'GoPay',
   'OVO',
+  'i.Saku',
   'ShopeePay',
   'LinkAja',
   'Maxim Driver',
-  'DANA Bisnis',
+  'AstraPay',
 ];
 
 const VA_PROVIDERS = [

@@ -180,7 +180,7 @@ export const TopHeader: React.FC = () => {
         {/* Active Cashier Pill (Kasir 1 / Kasir 2 / Owner) */}
         <button
           onClick={toggleRole}
-          className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 ${
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-2xs active:scale-95 ${
             shift.cashierSlot === 'owner'
               ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-950'
               : shift.cashierSlot === 'kasir_1'
@@ -189,14 +189,17 @@ export const TopHeader: React.FC = () => {
           }`}
           title="Klik untuk ganti petugas aktif: Kasir 1 / Kasir 2 / Owner"
         >
-          <span className="text-[11px]">
+          <span className="text-xs">
             {shift.cashierSlot === 'owner' ? '👑' : '👤'}
           </span>
           <div className="text-left leading-tight">
-            <span className="hidden sm:block text-[9px] text-slate-500 font-bold uppercase">
-              {shift.cashierSlot === 'owner' ? 'Owner' : shift.cashierSlot === 'kasir_1' ? 'Shift 1' : 'Shift 2'}
-            </span>
-            <span className="text-[11px] sm:text-xs font-black truncate max-w-[85px] sm:max-w-[120px] block">
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                {shift.cashierSlot === 'owner' ? 'Owner' : shift.cashierSlot === 'kasir_1' ? 'Shift 1' : 'Shift 2'}
+              </span>
+              <span className="hidden sm:inline text-[9px] text-teal-700 underline font-semibold">(Ganti)</span>
+            </div>
+            <span className="text-xs font-black truncate max-w-[90px] sm:max-w-[130px] block text-slate-900">
               {shift.cashierName}
             </span>
           </div>
@@ -210,15 +213,15 @@ export const TopHeader: React.FC = () => {
         {/* Physical Cash Drawer Pill */}
         <button
           onClick={() => setActiveTab('kas_harian')}
-          className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 hover:from-teal-100 hover:to-emerald-100 border border-teal-200/90 rounded-xl text-teal-950 transition cursor-pointer shadow-xs active:scale-95"
-          title="Klik untuk membuka buku arus kas"
+          className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 hover:from-teal-100 hover:to-emerald-100 border border-teal-200/90 rounded-xl text-teal-950 transition cursor-pointer shadow-2xs active:scale-95"
+          title="Klik untuk membuka buku arus kas harian & saldo laci"
         >
-          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+          <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Wallet className="w-3.5 h-3.5" />
           </div>
           <div className="text-left leading-tight">
-            <span className="hidden sm:block text-[9px] text-teal-700 font-semibold">Kas Laci</span>
-            <span className="text-[11px] sm:text-xs font-black text-teal-950 font-mono tabular-nums">
+            <span className="text-[9px] text-teal-700 font-bold uppercase tracking-wide block">Kas Laci</span>
+            <span className="text-xs font-black text-teal-950 font-mono tabular-nums">
               Rp {drawerCashBalance >= 10000000
                 ? `${(drawerCashBalance / 1000000).toFixed(1)}Jt`
                 : drawerCashBalance.toLocaleString('id-ID')}
@@ -229,7 +232,7 @@ export const TopHeader: React.FC = () => {
         {/* Quick Cash Mutation Modal Trigger */}
         <button
           onClick={() => setIsCashMutationModalOpen(true)}
-          className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl transition shadow-sm shadow-teal-700/20 cursor-pointer active:scale-95"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl transition shadow-sm shadow-teal-700/20 cursor-pointer active:scale-95"
           title="Catat pengeluaran operasional atau uang kas masuk"
         >
           <PlusCircle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
@@ -239,7 +242,7 @@ export const TopHeader: React.FC = () => {
         {/* Sync PC & HP Modal Button */}
         <button
           onClick={() => setIsSyncModalOpen(true)}
-          className={`flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 ${
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer shadow-2xs active:scale-95 ${
             syncCode
               ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
               : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-900'
@@ -260,27 +263,24 @@ export const TopHeader: React.FC = () => {
             }`}
           />
           <span className="hidden sm:inline">
-            {syncCode ? `Sync: ${syncCode}` : 'Sync'}
+            {syncCode ? `Sync: ${syncCode}` : 'Sync HP'}
           </span>
           <span className="sm:hidden text-[10px] font-mono font-extrabold">
             {syncCode ? syncCode : 'Sync'}
           </span>
-          {syncCode && (
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          )}
         </button>
 
         {/* Mobile Toggle Hilang Timbul Menu Bawah */}
         <button
           type="button"
           onClick={toggleBottomNav}
-          className="md:hidden flex items-center justify-center p-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition cursor-pointer active:scale-95 shadow-xs"
+          className="md:hidden flex items-center justify-center p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition cursor-pointer active:scale-95 shadow-2xs"
           title={isBottomNavVisible ? 'Sembunyikan Menu Bawah (Layar Penuh)' : 'Tampilkan Menu Bawah'}
         >
           {isBottomNavVisible ? (
-            <PanelBottomClose className="w-3.5 h-3.5 text-teal-700" />
+            <PanelBottomClose className="w-4 h-4 text-teal-700" />
           ) : (
-            <PanelBottomOpen className="w-3.5 h-3.5 text-amber-600" />
+            <PanelBottomOpen className="w-4 h-4 text-amber-600" />
           )}
         </button>
       </div>

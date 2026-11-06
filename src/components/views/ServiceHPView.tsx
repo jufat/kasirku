@@ -219,26 +219,53 @@ export const ServiceHPView: React.FC = () => {
         </div>
 
         {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
           {[
-            { id: 'all', label: 'Semua Status' },
-            { id: 'antrean', label: 'Antrean Masuk' },
-            { id: 'proses', label: 'Proses Pengerjaan' },
-            { id: 'selesai', label: 'Selesai' },
-            { id: 'diambil', label: 'Sudah Diambil' },
+            { id: 'all', label: 'Semua', count: services.length },
+            {
+              id: 'antrean',
+              label: 'Antrean Masuk',
+              count: services.filter((s) => s.status === 'antrean').length,
+              badgeColor: 'bg-amber-100 text-amber-800',
+            },
+            {
+              id: 'proses',
+              label: 'Pengerjaan',
+              count: services.filter((s) => s.status === 'proses').length,
+              badgeColor: 'bg-blue-100 text-blue-800',
+            },
+            {
+              id: 'selesai',
+              label: 'Siap Ambil',
+              count: services.filter((s) => s.status === 'selesai').length,
+              badgeColor: 'bg-emerald-100 text-emerald-800',
+            },
+            {
+              id: 'diambil',
+              label: 'Sudah Diambil',
+              count: services.filter((s) => s.status === 'diambil').length,
+              badgeColor: 'bg-slate-200 text-slate-700',
+            },
           ].map((tab) => {
             const active = statusFilter === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
+                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 flex items-center gap-1.5 active:scale-95 ${
                   active
-                    ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-900'
+                    ? 'bg-gradient-to-r from-teal-700 to-emerald-700 text-white shadow-sm ring-1 ring-teal-600 font-extrabold'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200/60 font-semibold'
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                    active ? 'bg-white/20 text-white' : tab.badgeColor || 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {tab.count}
+                </span>
               </button>
             );
           })}

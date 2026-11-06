@@ -379,25 +379,25 @@ export const PPOBView: React.FC = () => {
           <button
             type="button"
             onClick={() => setMobileTab('buy')}
-            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
               mobileTab === 'buy'
-                ? 'bg-white text-teal-900 shadow-xs font-extrabold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
             }`}
           >
-            <Zap className="w-3.5 h-3.5 text-teal-600" />
+            <Zap className="w-4 h-4 text-teal-600" />
             <span>Pilih Paket & Isi</span>
           </button>
           <button
             type="button"
             onClick={() => setMobileTab('history')}
-            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
               mobileTab === 'history'
-                ? 'bg-white text-teal-900 shadow-xs font-extrabold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
             }`}
           >
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
+            <Clock className="w-4 h-4 text-teal-600" />
             <span>Riwayat ({ppobTransactions.length})</span>
           </button>
         </div>

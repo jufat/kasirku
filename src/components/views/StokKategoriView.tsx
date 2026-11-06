@@ -564,21 +564,21 @@ export const StokKategoriView: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setStockStatusFilter(tab.id as any)}
-                  className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition cursor-pointer shrink-0 flex items-center gap-1 ${
+                  className={`px-2.5 py-1 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 flex items-center gap-1.5 active:scale-95 ${
                     active
                       ? tab.id === 'needs_restock'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-900'
+                        ? 'bg-rose-600 text-white shadow-sm font-extrabold ring-1 ring-rose-500'
+                        : 'bg-gradient-to-r from-teal-700 to-emerald-700 text-white shadow-sm ring-1 ring-teal-600 font-extrabold'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200/60 font-semibold'
                   }`}
                 >
                   <span>{tab.label}</span>
                   <span
-                    className={`text-[9px] font-mono px-1 py-0.1 rounded-full ${
+                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
                       active
                         ? 'bg-white/20 text-white'
                         : tab.urgent
-                        ? 'bg-rose-100 text-rose-700 font-extrabold'
+                        ? 'bg-rose-100 text-rose-800 font-black'
                         : 'bg-slate-200 text-slate-700'
                     }`}
                   >
@@ -592,7 +592,7 @@ export const StokKategoriView: React.FC = () => {
 
         {/* Row 2: Category Tabs & Result Counter */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 max-w-full scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full scrollbar-none">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
               Kategori:
             </span>
@@ -607,15 +607,15 @@ export const StokKategoriView: React.FC = () => {
                 <button
                   key={cat}
                   onClick={() => setSelectedCat(cat)}
-                  className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition shrink-0 flex items-center gap-1 cursor-pointer ${
+                  className={`px-2.5 py-1 text-xs font-bold rounded-xl transition shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95 ${
                     active
-                      ? 'bg-slate-800 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                      ? 'bg-slate-900 text-white shadow-sm ring-1 ring-slate-800 font-extrabold'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 border border-slate-200/60 font-semibold'
                   }`}
                 >
                   <span>{cat}</span>
                   <span
-                    className={`text-[9px] font-mono px-1 py-0.1 rounded-full ${
+                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
                       active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
                     }`}
                   >
