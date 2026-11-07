@@ -28,6 +28,9 @@ import {
   Receipt,
   Wallet,
   Building2,
+  Tag,
+  Crown,
+  Percent,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType } from '../../types/pos';
@@ -82,7 +85,7 @@ const MBANKING_TYPES = [
 ];
 
 const QRIS_PROVIDERS = [
-  'QRIS EDC Merchant Ju-Fat',
+  'QRIS Merchant Ju-Fat Cell',
   'QRIS BCA Merchant',
   'QRIS BRImo Merchant',
   'QRIS Livin\' Mandiri',
@@ -106,7 +109,10 @@ export const AtmMiniView: React.FC = () => {
     setIsMobileSidebarOpen,
     drawerCashBalance,
     digitalBalance,
+    shift,
   } = usePOS();
+
+  const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
   // 2 Primary Tabs: 'tarik_tunai' | 'transfer_topup'
   const [primaryTab, setPrimaryTab] = useState<'tarik_tunai' | 'transfer_topup'>('tarik_tunai');
@@ -128,6 +134,7 @@ export const AtmMiniView: React.FC = () => {
   const [nominal, setNominal] = useState<number>(500000);
   const [adminEdcFee, setAdminEdcFee] = useState<number>(3000);
   const [counterFee, setCounterFee] = useState<number>(5000);
+  const [counterFeeDiscount, setCounterFeeDiscount] = useState<number>(0);
   const [note, setNote] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
@@ -142,6 +149,8 @@ export const AtmMiniView: React.FC = () => {
   const [selectedTxDetail, setSelectedTxDetail] = useState<any | null>(null);
   const [atmMiniPaymentMethod, setAtmMiniPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
   const [atmMiniCustomerPhone, setAtmMiniCustomerPhone] = useState('');
+  const [atmMiniDebtorName, setAtmMiniDebtorName] = useState('');
+  const [atmMiniKasbonError, setAtmMiniKasbonError] = useState<string | null>(null);
   const [atmMiniDueDate, setAtmMiniDueDate] = useState(() =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
   );
@@ -163,6 +172,10 @@ export const AtmMiniView: React.FC = () => {
       : 'qris_atm';
 
   const tarikTunaiSource = tarikChannel;
+
+  const isCurrentChannelCard =
+    (primaryTab === 'tarik_tunai' && tarikChannel === 'kartu_debit') ||
+    (primaryTab === 'transfer_topup' && transferChannel === 'kartu_debit');
 
   // Handle switching primary tab
   const handlePrimaryTabChange = (tab: 'tarik_tunai' | 'transfer_topup') => {
@@ -249,7 +262,8 @@ export const AtmMiniView: React.FC = () => {
   };
 
   const isTarikTunai = primaryTab === 'tarik_tunai';
-  const totalAdmin = adminEdcFee + counterFee;
+  const effectiveCounterFee = Math.max(0, counterFee - counterFeeDiscount);
+  const totalAdmin = adminEdcFee + effectiveCounterFee;
   const isPotongTunai = isTarikTunai && adminDeductionType === 'potong_tunai';
 
   // Skenario 1 (tambah_transfer): Nasabah kirim 103.000, fisik diserahkan 100.000 (Laci keluar 100.000)
@@ -263,6 +277,11 @@ export const AtmMiniView: React.FC = () => {
 
     if (nominal <= 0) {
       alert('Nominal transaksi harus lebih dari Rp 0!');
+      return;
+    }
+
+    if (effectiveCounterFee === 0 && !isOwner && counterFeeDiscount > 0) {
+      alert('Jasa Konter Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
       return;
     }
 
@@ -288,11 +307,25 @@ export const AtmMiniView: React.FC = () => {
 
     // Default cash received in modal to totalDebited
     setCashReceivedInput(totalDebited);
+    setAtmMiniDebtorName(customerName.trim());
+    setAtmMiniKasbonError(null);
     setIsPaymentModalOpen(true);
   };
 
   // Step 2: Confirm and process transaction + open thermal receipt
   const handleConfirmAndExecuteTransaction = () => {
+    // Validasi khusus pembayaran Kasbon / Hutang
+    let finalCustomerName = customerName.trim();
+    if (atmMiniPaymentMethod === 'hutang') {
+      const debtorName = atmMiniDebtorName.trim() || customerName.trim();
+      if (!debtorName || debtorName.toLowerCase() === 'nasabah edc' || debtorName.toLowerCase() === 'pelanggan umum') {
+        setAtmMiniKasbonError('Nama Orang / Pelanggan yang Kasbon wajib diisi agar tersimpan jelas di Buku Hutang!');
+        return;
+      }
+      finalCustomerName = debtorName;
+      setCustomerName(debtorName);
+    }
+
     let providerName = bankName;
     let actualCardType = cardType;
     let maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
@@ -306,7 +339,7 @@ export const AtmMiniView: React.FC = () => {
         destination = `Kartu Debit ATM (${bankName} - ${cardType})`;
       } else if (tarikChannel === 'ewallet') {
         providerName = ewalletProvider;
-        actualCardType = 'M-Banking';
+        actualCardType = 'E-Wallet';
         maskedIdentifier = `EW-${ewalletProvider.toUpperCase()} · ${targetAccountOrPhone}`;
         destination = `Tarik Tunai E-Wallet ${ewalletProvider} (${targetAccountOrPhone})${cardNumberLast4.trim() ? ' · Ref: ' + cardNumberLast4.trim() : ''}`;
       } else if (tarikChannel === 'mbanking') {
@@ -328,7 +361,7 @@ export const AtmMiniView: React.FC = () => {
         destination = targetAccountOrPhone;
       } else if (transferChannel === 'ewallet') {
         providerName = ewalletProvider;
-        actualCardType = 'M-Banking';
+        actualCardType = 'E-Wallet';
         maskedIdentifier = `EW-${ewalletProvider.toUpperCase()} · ${targetAccountOrPhone}`;
         destination = `${targetAccountOrPhone} (${ewalletProvider})`;
       } else if (transferChannel === 'mbanking') {
@@ -344,33 +377,39 @@ export const AtmMiniView: React.FC = () => {
       }
     }
 
+    const resolvedDisplayName =
+      finalCustomerName ||
+      (activeMode === 'qris_atm' || (primaryTab === 'tarik_tunai' && tarikChannel === 'qris')
+        ? 'Pelanggan QRIS'
+        : activeMode === 'mbanking_atm' || (primaryTab === 'tarik_tunai' && tarikChannel !== 'kartu_debit')
+        ? 'Nasabah M-Banking / E-Wallet'
+        : isCurrentChannelCard
+        ? 'Nasabah EDC'
+        : 'Nasabah');
+
     const tx = recordAtmMiniTransaction(
       activeMode,
       providerName,
       actualCardType,
       maskedIdentifier,
-      customerName ||
-        (activeMode === 'qris_atm' || (primaryTab === 'tarik_tunai' && tarikChannel === 'qris')
-          ? 'Pelanggan QRIS'
-          : activeMode === 'mbanking_atm' || (primaryTab === 'tarik_tunai' && tarikChannel !== 'kartu_debit')
-          ? 'Nasabah M-Banking / E-Wallet'
-          : 'Nasabah EDC'),
+      resolvedDisplayName,
       nominal,
       adminEdcFee,
-      counterFee,
+      effectiveCounterFee,
       destination,
       note,
       atmMiniPaymentMethod,
       atmMiniCustomerPhone || targetAccountOrPhone,
       atmMiniDueDate,
-      adminDeductionType
+      adminDeductionType,
+      counterFeeDiscount > 0 ? counterFeeDiscount : undefined
     );
 
     setIsPaymentModalOpen(false);
 
     const serviceName =
       primaryTab === 'tarik_tunai'
-        ? (tarikChannel === 'qris' ? 'Tarik Tunai QRIS' : 'Tarik Tunai')
+        ? (tarikChannel === 'qris' ? 'Tarik Tunai QRIS' : tarikChannel === 'kartu_debit' ? 'Tarik Tunai Kartu EDC' : 'Tarik Tunai')
         : transferChannel === 'kartu_debit'
         ? 'Transfer EDC'
         : transferChannel === 'ewallet'
@@ -469,7 +508,7 @@ export const AtmMiniView: React.FC = () => {
             }`}
           >
             <CreditCard className="w-4 h-4 text-teal-700" />
-            <span>EDC Terminal</span>
+            <span>{isCurrentChannelCard ? 'EDC Terminal' : 'Form Transaksi'}</span>
           </button>
           <button
             type="button"
@@ -507,7 +546,7 @@ export const AtmMiniView: React.FC = () => {
         </div>
       </div>
 
-      {/* Left Column: EDC ATM Mini Terminal & Transaction Form */}
+      {/* Left Column: ATM Mini Form */}
       <div
         className={`${
           mobileTab === 'terminal' ? 'flex' : 'hidden'
@@ -522,12 +561,30 @@ export const AtmMiniView: React.FC = () => {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-extrabold tracking-tight">ATM Mini & EDC</h3>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-300 text-amber-950 uppercase tracking-wider">
-                    Online
+                  <h3 className="text-base font-extrabold tracking-tight">
+                    {isCurrentChannelCard ? 'ATM Mini & Mesin EDC' : 'ATM Mini & Layanan Digital'}
+                  </h3>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                    isCurrentChannelCard ? 'bg-amber-300 text-amber-950' : 'bg-emerald-300 text-emerald-950'
+                  }`}>
+                    {isCurrentChannelCard ? 'EDC Online' : 'Online'}
                   </span>
                 </div>
-                <p className="text-[11px] text-teal-100">Terminal: EDC-JUFAT-01 · Sunmi P2 Pro Multi-Payment</p>
+                <p className="text-[11px] text-teal-100">
+                  {isCurrentChannelCard
+                    ? 'Terminal: EDC-JUFAT-01 · Sunmi P2 Pro Multi-Payment'
+                    : primaryTab === 'tarik_tunai'
+                    ? tarikChannel === 'qris'
+                      ? 'Layanan Tarik Tunai QRIS Dinamis & Statis (Non-EDC)'
+                      : tarikChannel === 'ewallet'
+                      ? `Layanan Tarik Tunai E-Wallet (${ewalletProvider})`
+                      : `Layanan Tarik Tunai M-Banking (${mbankingApp.split(' ')[0]})`
+                    : transferChannel === 'qris'
+                    ? 'Layanan Pembayaran QRIS Merchant Nasional (Non-EDC)'
+                    : transferChannel === 'ewallet'
+                    ? `Layanan Top Up E-Wallet Digital (${ewalletProvider})`
+                    : `Layanan Transfer Bank (${mbankingApp.split(' ')[0]})`}
+                </p>
               </div>
             </div>
 
@@ -605,7 +662,9 @@ export const AtmMiniView: React.FC = () => {
 
             <div className="flex items-center gap-1.5 min-w-0 text-right">
               <div className="min-w-0">
-                <span className="text-[10px] text-slate-500 font-semibold block">Saldo Rekening EDC:</span>
+                <span className="text-[10px] text-slate-500 font-semibold block">
+                  {isCurrentChannelCard ? 'Saldo Rekening EDC:' : 'Saldo Rekening Digital:'}
+                </span>
                 <span className="font-mono font-black text-sky-900 text-xs truncate block">
                   Rp {digitalBalance.toLocaleString('id-ID')}
                 </span>
@@ -1136,7 +1195,7 @@ export const AtmMiniView: React.FC = () => {
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
                   <QrCode className="w-4 h-4 text-teal-600" />
-                  <span>Sistem Pembayaran QRIS Nasional (EDC Merchant)</span>
+                  <span>Sistem Pembayaran QRIS Nasional (Ju-Fat Cell)</span>
                 </div>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-800 text-white font-bold tracking-wide">
                   NMID: ID10202688190
@@ -1292,21 +1351,103 @@ export const AtmMiniView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-emerald-800 font-bold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Jasa Konter Ju-Fat (Laba):</span>
-              </span>
-              <div className="flex items-center gap-1 font-mono">
-                <span className="text-slate-400">Rp</span>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={counterFee}
-                  onChange={(e) => setCounterFee(Number(e.target.value) || 0)}
-                  className="w-24 text-right px-2 py-0.5 bg-white border border-emerald-300 rounded text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-800 font-bold flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Jasa Konter Ju-Fat (Laba):</span>
+                </span>
+                <div className="flex items-center gap-1 font-mono">
+                  <span className="text-slate-400">Rp</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={counterFee}
+                    onChange={(e) => setCounterFee(Number(e.target.value) || 0)}
+                    className="w-24 text-right px-2 py-0.5 bg-white border border-emerald-300 rounded text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* DISKON JASA KONTER */}
+              <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1 font-bold text-slate-700">
+                    <Tag className="w-3 h-3 text-emerald-600" />
+                    <span>Diskon Jasa:</span>
+                    {isOwner && (
+                      <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1 rounded font-black">
+                        👑 Owner
+                      </span>
+                    )}
+                  </div>
+                  {counterFeeDiscount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCounterFeeDiscount(0)}
+                      className="text-[10px] text-rose-600 underline cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  {[
+                    { label: '0', val: 0 },
+                    { label: '1rb', val: 1000 },
+                    { label: '2rb', val: 2000 },
+                    { label: '3rb', val: 3000 },
+                    { label: '5rb', val: 5000 },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => setCounterFeeDiscount(p.val)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                        counterFeeDiscount === p.val
+                          ? 'bg-emerald-600 text-white border-emerald-600 font-black'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isOwner) {
+                        setCounterFeeDiscount(counterFee);
+                      } else {
+                        alert('Gratis Jasa Konter (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                      }
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                      counterFeeDiscount === counterFee && counterFee > 0
+                        ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
+                        : isOwner
+                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                        : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <span>👑 Bebas Jasa (Rp 0)</span>
+                  </button>
+                </div>
+
+                {counterFeeDiscount > 0 && (
+                  <div className="flex justify-between items-center text-[10px] pt-0.5 font-bold">
+                    <span className="text-slate-500">Jasa Efektif:</span>
+                    <span className="font-mono text-emerald-800">
+                      {effectiveCounterFee === 0 ? (
+                        <span className="text-amber-700 font-black">Rp 0 (GRATIS OWNER)</span>
+                      ) : (
+                        `Rp ${effectiveCounterFee.toLocaleString('id-ID')}`
+                      )}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1426,7 +1567,11 @@ export const AtmMiniView: React.FC = () => {
             <div className="text-[11px] text-emerald-700 font-semibold flex items-center justify-between pt-1">
               <span>Laba Bersih Jasa Konter:</span>
               <span className="font-bold font-mono text-emerald-800">
-                +Rp {counterFee.toLocaleString('id-ID')}
+                {effectiveCounterFee === 0 ? (
+                  <span className="text-amber-700 font-black">+Rp 0 (GRATIS OWNER)</span>
+                ) : (
+                  `+Rp ${effectiveCounterFee.toLocaleString('id-ID')}`
+                )}
               </span>
             </div>
           </div>
@@ -1487,7 +1632,7 @@ export const AtmMiniView: React.FC = () => {
 
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
             <span className="text-[10px] font-bold text-slate-500 uppercase block">
-              Transfer EDC Hari Ini
+              Transfer Hari Ini
             </span>
             <span className="text-base font-extrabold text-slate-900 font-mono">
               Rp {totalTransferHariIni.toLocaleString('id-ID')}
@@ -1505,7 +1650,7 @@ export const AtmMiniView: React.FC = () => {
 
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
             <span className="text-[10px] font-bold text-emerald-800 uppercase block">
-              Laba Bersih Jasa EDC & Digital
+              Laba Bersih Jasa Konter
             </span>
             <span className="text-base font-extrabold text-emerald-900 font-mono">
               +Rp {totalLabaAtmMini.toLocaleString('id-ID')}
@@ -1685,8 +1830,12 @@ export const AtmMiniView: React.FC = () => {
                   <CreditCard className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold tracking-tight">Dialog Pembayaran & Otorisasi EDC</h3>
-                  <p className="text-[11px] text-teal-100">Ju-Fat Cell · Terminal Sunmi P2 Pro Multi-Payment</p>
+                  <h3 className="text-sm font-extrabold tracking-tight">
+                    {isCurrentChannelCard ? 'Dialog Pembayaran & Otorisasi EDC' : 'Dialog Konfirmasi Transaksi Digital'}
+                  </h3>
+                  <p className="text-[11px] text-teal-100">
+                    {isCurrentChannelCard ? 'Ju-Fat Cell · Terminal Sunmi P2 Pro Multi-Payment' : 'Ju-Fat Cell · Transaksi Digital Non-EDC'}
+                  </p>
                 </div>
               </div>
               <button
@@ -1708,16 +1857,22 @@ export const AtmMiniView: React.FC = () => {
                     {activeMode === 'tarik_tunai_atm'
                       ? `Layanan Tarik Tunai (${tarikTunaiSource === 'kartu_debit' ? 'Kartu ATM' : tarikTunaiSource === 'ewallet' ? 'E-Wallet' : 'M-Banking'})`
                       : activeMode === 'transfer_atm'
-                      ? 'Layanan Transfer EDC'
+                      ? (isCurrentChannelCard ? 'Layanan Transfer EDC' : 'Layanan Transfer Bank')
                       : activeMode === 'topup_ewallet_atm'
                       ? 'Top Up E-Wallet'
                       : activeMode === 'mbanking_atm'
                       ? 'Mobile Banking'
                       : 'Sistem QRIS Merchant'}
                   </span>
-                  <span className="text-[11px] font-mono text-teal-900 font-bold">
-                    EDC-JUFAT-01
-                  </span>
+                  {isCurrentChannelCard ? (
+                    <span className="text-[11px] font-mono text-teal-900 font-bold">
+                      EDC-JUFAT-01
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      TRANSAKSI DIGITAL
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs pt-1">
@@ -1791,7 +1946,11 @@ export const AtmMiniView: React.FC = () => {
                     <span>Jasa Konter Ju-Fat (Laba):</span>
                   </span>
                   <span className="font-mono font-bold text-emerald-700">
-                    +Rp {counterFee.toLocaleString('id-ID')}
+                    {effectiveCounterFee === 0 ? (
+                      <span className="text-amber-700 font-black">+Rp 0 (GRATIS OWNER)</span>
+                    ) : (
+                      `+Rp ${effectiveCounterFee.toLocaleString('id-ID')}`
+                    )}
                   </span>
                 </div>
 
@@ -1814,7 +1973,7 @@ export const AtmMiniView: React.FC = () => {
               {/* Pilihan Metode Pembayaran: Tunai, QRIS, Kasbon (Hutang) */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-700 block">
-                  Metode Pembayaran Transaksi EDC:
+                  {isCurrentChannelCard ? 'Metode Pembayaran Transaksi EDC:' : 'Metode Pembayaran Transaksi:'}
                 </label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
@@ -1865,27 +2024,47 @@ export const AtmMiniView: React.FC = () => {
               )}
 
               {atmMiniPaymentMethod === 'hutang' && (
-                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
-                  <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900">
-                    <Receipt className="w-4 h-4 text-amber-600" />
-                    <span>Rincian Kasbon Nasabah (Masuk Data Hutang)</span>
+                <div className="p-3 bg-amber-50 border-2 border-amber-400 rounded-xl space-y-2.5 text-amber-950">
+                  <div className="flex items-center justify-between font-bold text-xs text-amber-900 pb-1.5 border-b border-amber-200">
+                    <div className="flex items-center gap-1.5">
+                      <Receipt className="w-4 h-4 text-amber-600" />
+                      <span>Data Kasbon Nasabah (Masuk Buku Hutang)</span>
+                    </div>
+                    <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                      Nama Wajib Diisi *
+                    </span>
                   </div>
+
+                  {/* Input Nama Pelanggan yang Berhutang / Kasbon */}
+                  <div>
+                    <label className="text-[11px] font-extrabold text-amber-950 flex items-center justify-between mb-1">
+                      <span>Nama Orang / Pelanggan yang Kasbon *</span>
+                      <span className="text-[10px] text-amber-800 font-semibold">Tersimpan di Daftar Hutang</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={atmMiniDebtorName}
+                      onChange={(e) => {
+                        setAtmMiniDebtorName(e.target.value);
+                        if (atmMiniKasbonError) setAtmMiniKasbonError(null);
+                      }}
+                      placeholder="Ketik nama orang yang berhutang (cth: Pak Sugeng, Mas Budi, Bu Erni)..."
+                      className={`w-full px-3 py-2 text-xs bg-white border-2 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs ${
+                        atmMiniKasbonError ? 'border-rose-500 bg-rose-50/50 animate-pulse' : 'border-amber-400'
+                      }`}
+                    />
+                    {atmMiniKasbonError && (
+                      <p className="text-[10px] font-bold text-rose-600 mt-1">
+                        ⚠️ {atmMiniKasbonError}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                        No. WA / HP:
-                      </label>
-                      <input
-                        type="text"
-                        value={atmMiniCustomerPhone}
-                        onChange={(e) => setAtmMiniCustomerPhone(e.target.value)}
-                        placeholder={targetAccountOrPhone || '08...'}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                        Jatuh Tempo:
+                        Jatuh Tempo Kasbon:
                       </label>
                       <input
                         type="date"
@@ -1894,10 +2073,29 @@ export const AtmMiniView: React.FC = () => {
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                        No. WA / HP (Opsional):
+                      </label>
+                      <input
+                        type="text"
+                        value={atmMiniCustomerPhone}
+                        onChange={(e) => setAtmMiniCustomerPhone(e.target.value)}
+                        placeholder="Boleh dikosongkan..."
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
                   </div>
-                  <p className="text-[11px] text-amber-800">
-                    ⚡ Total tagihan <span className="font-bold">Rp {totalDebited.toLocaleString('id-ID')}</span> akan langsung tercatat di menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{customerName || 'Nasabah EDC'}</span>.
-                  </p>
+
+                  <div className="p-2 bg-amber-100/90 rounded-lg text-[11px] text-amber-950 font-medium border border-amber-300 flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <span>
+                      Dicatat sebesar <strong className="font-mono font-bold">Rp {totalDebited.toLocaleString('id-ID')}</strong> di Buku Hutang atas nama:{' '}
+                      <strong className="underline font-bold text-amber-950">
+                        {atmMiniDebtorName.trim() || customerName.trim() || '(Ketik nama di atas)'}
+                      </strong>
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -2067,90 +2265,110 @@ export const AtmMiniView: React.FC = () => {
       {/* ========================================================================= */}
       {/* 2. DIALOG DETAIL RIWAYAT TRANSAKSI EDC (MODAL LIHAT DATA)                  */}
       {/* ========================================================================= */}
-      {selectedTxDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden my-auto animate-scale-up">
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-bold">Rincian Transaksi EDC #{selectedTxDetail.traceNo}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedTxDetail(null)}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {selectedTxDetail && (() => {
+        const isDetailCard =
+          selectedTxDetail.cardType !== 'M-Banking' &&
+          selectedTxDetail.cardType !== 'E-Wallet' &&
+          selectedTxDetail.cardType !== 'QRIS' &&
+          selectedTxDetail.type !== 'qris_atm' &&
+          selectedTxDetail.type !== 'mbanking_atm' &&
+          selectedTxDetail.type !== 'topup_ewallet_atm' &&
+          !selectedTxDetail.cardNumberMasked?.startsWith('EW-') &&
+          !selectedTxDetail.cardNumberMasked?.startsWith('APP ') &&
+          !selectedTxDetail.cardNumberMasked?.startsWith('RRN-');
 
-            <div className="p-4 space-y-3 text-xs">
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">Waktu Transaksi:</span>
-                <span className="font-semibold text-slate-800">{selectedTxDetail.date}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">Layanan:</span>
-                <span className="font-bold text-teal-800 uppercase">
-                  {selectedTxDetail.type === 'tarik_tunai_atm'
-                    ? 'Tarik Tunai'
-                    : selectedTxDetail.type === 'transfer_atm'
-                    ? 'Transfer EDC'
-                    : selectedTxDetail.type === 'topup_ewallet_atm'
-                    ? 'Top Up E-Wallet'
-                    : selectedTxDetail.type === 'mbanking_atm'
-                    ? 'Mobile Banking'
-                    : selectedTxDetail.type === 'ewallet_mbanking_atm'
-                    ? 'E-Wallet & M-Banking'
-                    : 'Sistem QRIS'}
-                </span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">Bank / Provider:</span>
-                <span className="font-bold text-slate-800">{selectedTxDetail.bankName}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">No Kartu / Akun:</span>
-                <span className="font-mono font-bold text-slate-800">{selectedTxDetail.cardNumberMasked}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">Nama Nasabah:</span>
-                <span className="font-bold text-slate-900">{selectedTxDetail.customerName}</span>
-              </div>
-              {selectedTxDetail.targetAccountOrPhone && (
-                <div className="flex justify-between pb-2 border-b border-slate-100">
-                  <span className="text-slate-500">No Tujuan:</span>
-                  <span className="font-mono font-bold text-teal-900">{selectedTxDetail.targetAccountOrPhone}</span>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden my-auto animate-scale-up">
+              <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-sm font-bold">
+                    {isDetailCard
+                      ? `Rincian Transaksi EDC #${selectedTxDetail.traceNo}`
+                      : `Rincian Transaksi Digital #${selectedTxDetail.traceNo}`}
+                  </h3>
                 </div>
-              )}
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">Nominal Pokok:</span>
-                <span className="font-mono font-bold text-slate-900">Rp {selectedTxDetail.nominal.toLocaleString('id-ID')}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTxDetail(null)}
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-slate-500">Biaya Admin EDC:</span>
-                <span className="font-mono text-slate-700">Rp {selectedTxDetail.adminEdcFee.toLocaleString('id-ID')}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-slate-100">
-                <span className="text-emerald-700 font-bold">Laba Jasa Konter:</span>
-                <span className="font-mono font-bold text-emerald-800">+Rp {selectedTxDetail.counterFee.toLocaleString('id-ID')}</span>
-              </div>
-              <div className="flex justify-between pt-1 font-bold text-sm text-slate-900">
-                <span>Total Ditransfer / Didebet:</span>
-                <span className="font-mono font-black text-emerald-800">Rp {selectedTxDetail.totalDebited.toLocaleString('id-ID')}</span>
-              </div>
-              {selectedTxDetail.type === 'tarik_tunai_atm' && (
-                <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 mt-1">
-                  <span>Uang Fisik Diserahkan (Laci):</span>
-                  <span className="font-mono text-rose-700 font-black">
-                    -Rp {selectedTxDetail.cashHandedOrReceived.toLocaleString('id-ID')}
-                    {selectedTxDetail.adminDeductionType === 'potong_tunai' && (
-                      <span className="text-[10px] text-amber-800 font-normal ml-1">(Potong Admin)</span>
-                    )}
+
+              <div className="p-4 space-y-3 text-xs">
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Waktu Transaksi:</span>
+                  <span className="font-semibold text-slate-800">{selectedTxDetail.date}</span>
+                </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Layanan:</span>
+                  <span className="font-bold text-teal-800 uppercase">
+                    {selectedTxDetail.type === 'tarik_tunai_atm'
+                      ? (isDetailCard ? 'Tarik Tunai EDC' : 'Tarik Tunai')
+                      : selectedTxDetail.type === 'transfer_atm'
+                      ? (isDetailCard ? 'Transfer EDC' : 'Transfer Bank')
+                      : selectedTxDetail.type === 'topup_ewallet_atm'
+                      ? 'Top Up E-Wallet'
+                      : selectedTxDetail.type === 'mbanking_atm'
+                      ? 'Mobile Banking'
+                      : selectedTxDetail.type === 'ewallet_mbanking_atm'
+                      ? 'E-Wallet & M-Banking'
+                      : 'Sistem QRIS'}
                   </span>
                 </div>
-              )}
-            </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Bank / Provider:</span>
+                  <span className="font-bold text-slate-800">{selectedTxDetail.bankName}</span>
+                </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">
+                    {isDetailCard ? 'No Kartu:' : 'No Akun / Ref:'}
+                  </span>
+                  <span className="font-mono font-bold text-slate-800">{selectedTxDetail.cardNumberMasked}</span>
+                </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Nama Nasabah:</span>
+                  <span className="font-bold text-slate-900">{selectedTxDetail.customerName}</span>
+                </div>
+                {selectedTxDetail.targetAccountOrPhone && (
+                  <div className="flex justify-between pb-2 border-b border-slate-100">
+                    <span className="text-slate-500">No Tujuan:</span>
+                    <span className="font-mono font-bold text-teal-900">{selectedTxDetail.targetAccountOrPhone}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Nominal Pokok:</span>
+                  <span className="font-mono font-bold text-slate-900">Rp {selectedTxDetail.nominal.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">
+                    {isDetailCard ? 'Biaya Admin EDC:' : 'Biaya Admin Transaksi / App:'}
+                  </span>
+                  <span className="font-mono text-slate-700">Rp {selectedTxDetail.adminEdcFee.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-emerald-700 font-bold">Laba Jasa Konter:</span>
+                  <span className="font-mono font-bold text-emerald-800">+Rp {selectedTxDetail.counterFee.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between pt-1 font-bold text-sm text-slate-900">
+                  <span>Total Ditransfer / Didebet:</span>
+                  <span className="font-mono font-black text-emerald-800">Rp {selectedTxDetail.totalDebited.toLocaleString('id-ID')}</span>
+                </div>
+                {selectedTxDetail.type === 'tarik_tunai_atm' && (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 mt-1">
+                    <span>Uang Fisik Diserahkan (Laci):</span>
+                    <span className="font-mono text-rose-700 font-black">
+                      -Rp {selectedTxDetail.cashHandedOrReceived.toLocaleString('id-ID')}
+                      {selectedTxDetail.adminDeductionType === 'potong_tunai' && (
+                        <span className="text-[10px] text-amber-800 font-normal ml-1">(Potong Admin)</span>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
               <button

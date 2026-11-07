@@ -114,7 +114,8 @@ interface POSContextType {
     paymentMethod?: 'tunai' | 'qris' | 'hutang',
     customerPhone?: string,
     dueDate?: string,
-    adminDeductionType?: 'tambah_transfer' | 'potong_tunai'
+    adminDeductionType?: 'tambah_transfer' | 'potong_tunai',
+    discount?: number
   ) => AtmMiniTransaction;
 
   // PPOB
@@ -134,7 +135,8 @@ interface POSContextType {
     paymentMethod?: 'tunai' | 'qris' | 'hutang',
     customerPhone?: string,
     dueDate?: string,
-    note?: string
+    note?: string,
+    discount?: number
   ) => PPOBTransaction;
   updatePPOBTransaction: (tx: PPOBTransaction) => void;
   deletePPOBTransaction: (id: string) => void;
@@ -196,7 +198,7 @@ interface POSContextType {
 
   // Debts & Returns
   debts: DebtRecord[];
-  payDebt: (debtId: string, payAmount: number) => void;
+  payDebt: (debtId: string, payAmount: number, discountAmount?: number) => void;
   addDebt: (debt: Omit<DebtRecord, 'id' | 'remainingAmount' | 'status'>) => void;
   returns: ReturnRecord[];
   updateReturnStatus: (id: string, newStatus: ReturnRecord['status']) => void;
@@ -957,7 +959,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: 'tunai' | 'qris' | 'hutang' = 'tunai',
     customerPhone?: string,
     dueDate?: string,
-    adminDeductionType: 'tambah_transfer' | 'potong_tunai' = 'tambah_transfer'
+    adminDeductionType: 'tambah_transfer' | 'potong_tunai' = 'tambah_transfer',
+    discount?: number
   ): AtmMiniTransaction => {
     const traceNo = Math.floor(100000 + Math.random() * 900000).toString();
     const approvalCode = `APPR-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -994,6 +997,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cashHandedOrReceived,
       paymentMethod,
       adminDeductionType: type === 'tarik_tunai_atm' ? adminDeductionType : undefined,
+      discount: discount && discount > 0 ? discount : undefined,
       status: 'sukses',
       note,
     };
@@ -1161,7 +1165,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: 'tunai' | 'qris' | 'hutang' = 'tunai',
     customerPhone?: string,
     dueDate?: string,
-    note?: string
+    note?: string,
+    discount?: number
   ): PPOBTransaction => {
     const refNo = `PPOB-${Date.now().toString().slice(-6)}`;
     const profit = sellingPrice - hpp;
@@ -1177,6 +1182,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       packageName,
       hpp,
       sellingPrice,
+      discount: discount && discount > 0 ? discount : undefined,
       profit,
       customerName: customerName || 'Pelanggan PPOB',
       paymentMethod,
@@ -1201,7 +1207,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         note: note?.trim() || `Kasbon PPOB ${category.toUpperCase()} ${provider} ${packageName} (${targetNumber})`,
       };
       setDebts((prev) => [newDebt, ...prev]);
-    } else if (paymentMethod === 'tunai') {
+    } else if (paymentMethod === 'tunai' && sellingPrice > 0) {
       // Auto-journal into Cash Harian
       const mutation: CashMutation = {
         id: `mut-${Date.now()}`,
@@ -1215,7 +1221,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recordedBy: shift.cashierName,
       };
       setMutations((prev) => [mutation, ...prev]);
-    } else {
+    } else if (paymentMethod === 'qris' && sellingPrice > 0) {
       // QRIS
       const mutation: CashMutation = {
         id: `mut-${Date.now()}`,
@@ -1706,32 +1712,39 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Pay Debt (Pelunasan Piutang)
-  const payDebt = (debtId: string, payAmount: number) => {
+  const payDebt = (debtId: string, payAmount: number, discountAmount = 0) => {
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     setDebts((prev) =>
       prev.map((d) => {
         if (d.id === debtId) {
+          const newDiscount = (d.discount || 0) + discountAmount;
           const newPaid = d.paidAmount + payAmount;
-          const newRemain = Math.max(0, d.totalAmount - newPaid);
+          const effectiveTotal = Math.max(0, d.totalAmount - newDiscount);
+          const newRemain = Math.max(0, effectiveTotal - newPaid);
           const newStatus = newRemain === 0 ? 'lunas' : 'cicilan';
 
-          // Auto-journal into Cash Harian
-          const mutation: CashMutation = {
-            id: `mut-${Date.now()}`,
-            timestamp: nowTime,
-            type: 'masuk',
-            category: 'piutang_masuk',
-            description: `Pembayaran Piutang ${d.customerName} (${d.invoiceOrRef})`,
-            amount: payAmount,
-            paymentMethod: 'tunai',
-            runningCashBalance: drawerCashBalance + payAmount,
-            recordedBy: shift.cashierName,
-          };
-          setMutations((prevMut) => [mutation, ...prevMut]);
+          // Auto-journal into Cash Harian ONLY if actual money paid > 0
+          if (payAmount > 0) {
+            const mutation: CashMutation = {
+              id: `mut-${Date.now()}`,
+              timestamp: nowTime,
+              type: 'masuk',
+              category: 'piutang_masuk',
+              description: `Pembayaran Piutang ${d.customerName} (${d.invoiceOrRef})${
+                discountAmount > 0 ? ` [Diskon Rp ${discountAmount.toLocaleString('id-ID')}]` : ''
+              }`,
+              amount: payAmount,
+              paymentMethod: 'tunai',
+              runningCashBalance: drawerCashBalance + payAmount,
+              recordedBy: shift.cashierName,
+            };
+            setMutations((prevMut) => [mutation, ...prevMut]);
+          }
 
           return {
             ...d,
+            discount: newDiscount > 0 ? newDiscount : undefined,
             paidAmount: newPaid,
             remainingAmount: newRemain,
             status: newStatus,

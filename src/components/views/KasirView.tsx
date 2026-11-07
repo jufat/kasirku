@@ -22,6 +22,9 @@ import {
   ChevronRight,
   Printer,
   History,
+  Sparkles,
+  Crown,
+  Gift,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { ProductCategory, PaymentMethod, Product } from '../../types/pos';
@@ -41,7 +44,10 @@ export const KasirView: React.FC = () => {
     transactions,
     openReceipt,
     drawerCashBalance,
+    shift,
   } = usePOS();
+
+  const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
   const allCategories: ProductCategory[] = ['Semua', ...categories];
   const [selectedCat, setSelectedCat] = useState<ProductCategory>('Semua');
@@ -167,7 +173,13 @@ export const KasirView: React.FC = () => {
     if (cart.length === 0) return;
     setCheckoutError(null);
 
-    if (paymentMethod === 'tunai' && cashTendered < finalTotal) {
+    // Validasi Pembayaran Rp 0 (Khusus yang jaga Owner)
+    if (finalTotal === 0 && !isOwner) {
+      setCheckoutError('Pembayaran Rp 0 (Diskon 100% / Gratis) hanya diizinkan untuk shift Owner! Silakan ganti ke shift Owner.');
+      return;
+    }
+
+    if (paymentMethod === 'tunai' && finalTotal > 0 && cashTendered < finalTotal) {
       setCheckoutError(`Nominal pembayaran uang tunai kurang! Minimal Rp ${finalTotal.toLocaleString('id-ID')}`);
       return;
     }
@@ -721,20 +733,83 @@ export const KasirView: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1">
-                <Percent className="w-3 h-3 text-emerald-600" />
-                <span>Diskon (Rp):</span>
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={discountAmount || ''}
-                onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
-                placeholder="0"
-                className="w-24 text-right px-2 py-0.5 text-xs bg-white border border-slate-300 rounded font-mono"
-              />
+            {/* Sistem Diskon */}
+            <div className="space-y-1.5 bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1 font-bold text-slate-700">
+                  <Percent className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Diskon / Potongan:</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-400 font-mono text-xs">Rp</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={discountAmount || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value) || 0;
+                      setDiscountAmount(val);
+                      if (val >= cartSubtotal && isOwner) {
+                        setCashTendered(0);
+                      }
+                    }}
+                    placeholder="0"
+                    className="w-24 text-right px-2 py-0.5 text-xs bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Preset Diskon Chips */}
+              <div className="flex items-center gap-1 overflow-x-auto pt-0.5">
+                {[
+                  { label: '0%', val: 0 },
+                  { label: '5%', val: Math.round(cartSubtotal * 0.05) },
+                  { label: '10%', val: Math.round(cartSubtotal * 0.1) },
+                  { label: '20%', val: Math.round(cartSubtotal * 0.2) },
+                  { label: '50%', val: Math.round(cartSubtotal * 0.5) },
+                ].map((d) => (
+                  <button
+                    key={d.label}
+                    type="button"
+                    onClick={() => {
+                      setDiscountAmount(d.val);
+                      setCheckoutError(null);
+                    }}
+                    className={`px-1.5 py-0.5 text-[10px] rounded font-bold transition cursor-pointer shrink-0 ${
+                      discountAmount === d.val && d.val > 0
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+
+                {/* 👑 Preset 100% / Bayar Rp 0 (Khusus Owner) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isOwner) {
+                      setCheckoutError('Diskon 100% (Bayar Rp 0) hanya diizinkan untuk shift Owner!');
+                      return;
+                    }
+                    setDiscountAmount(cartSubtotal);
+                    setCashTendered(0);
+                    setCheckoutError(null);
+                  }}
+                  className={`px-2 py-0.5 text-[10px] rounded font-black transition cursor-pointer shrink-0 flex items-center gap-1 ${
+                    finalTotal === 0 && discountAmount >= cartSubtotal
+                      ? 'bg-amber-400 text-slate-950 ring-1 ring-amber-500 shadow-xs'
+                      : isOwner
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200 opacity-60'
+                  }`}
+                  title={isOwner ? 'Owner: Bayar Rp 0 / Gratis 100%' : 'Khusus shift Owner'}
+                >
+                  <span>👑 100% (Rp 0)</span>
+                </button>
+              </div>
             </div>
 
             {/* Total Highlight */}
@@ -964,15 +1039,28 @@ export const KasirView: React.FC = () => {
           {/* Submit Checkout Button */}
           <button
             type="submit"
-            disabled={cart.length === 0 || isCashInsufficient}
-            className={`w-full py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition duration-150 cursor-pointer ${
-              cart.length === 0 || isCashInsufficient
+            disabled={cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)}
+            className={`w-full py-3.5 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition duration-150 cursor-pointer ${
+              cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                : finalTotal === 0 && isOwner
+                ? 'bg-gradient-to-r from-amber-500 via-emerald-600 to-teal-600 hover:brightness-110 text-white ring-2 ring-amber-300 shadow-amber-950/20 active:scale-[0.99]'
                 : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-teal-900/20 active:scale-[0.99]'
             }`}
           >
-            <CheckCircle className="w-4 h-4 text-amber-300" />
-            <span>Bayar & Cetak Struk (Selesai)</span>
+            {finalTotal === 0 && isOwner ? (
+              <>
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>🎁 Bayar Rp 0 & Cetak Struk (Owner Gratis)</span>
+              </>
+            ) : finalTotal === 0 && !isOwner ? (
+              <span>Bayar Rp 0 Khusus Owner (Ganti Shift)</span>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4 text-amber-300" />
+                <span>Bayar & Cetak Struk (Rp {finalTotal.toLocaleString('id-ID')})</span>
+              </>
+            )}
           </button>
         </form>
       </div>
@@ -1086,25 +1174,72 @@ export const KasirView: React.FC = () => {
 
           {/* Checkout Form */}
           <form onSubmit={handleCheckout} className="border-t border-slate-200 bg-slate-50 p-3.5 space-y-3 shrink-0">
-            <div className="space-y-1 text-xs text-slate-600">
+            <div className="space-y-1.5 text-xs text-slate-600">
               <div className="flex justify-between">
                 <span>Subtotal Barang:</span>
                 <span className="font-mono font-semibold text-slate-800">
                   Rp {cartSubtotal.toLocaleString('id-ID')}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span>Diskon (Rp):</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={discountAmount || ''}
-                  onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
-                  placeholder="0"
-                  className="w-24 text-right px-2 py-0.5 text-xs bg-white border border-slate-300 rounded font-mono"
-                />
+
+              {/* Sistem Diskon Mobile */}
+              <div className="space-y-1 bg-white p-2 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-700">Diskon (Rp):</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={discountAmount || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value) || 0;
+                      setDiscountAmount(val);
+                      if (val >= cartSubtotal && isOwner) setCashTendered(0);
+                    }}
+                    placeholder="0"
+                    className="w-24 text-right px-2 py-0.5 text-xs bg-slate-50 border border-slate-300 rounded font-mono font-bold"
+                  />
+                </div>
+                <div className="flex items-center gap-1 overflow-x-auto pt-0.5">
+                  {[
+                    { label: '0%', val: 0 },
+                    { label: '5%', val: Math.round(cartSubtotal * 0.05) },
+                    { label: '10%', val: Math.round(cartSubtotal * 0.1) },
+                    { label: '20%', val: Math.round(cartSubtotal * 0.2) },
+                    { label: '50%', val: Math.round(cartSubtotal * 0.5) },
+                  ].map((d) => (
+                    <button
+                      key={d.label}
+                      type="button"
+                      onClick={() => setDiscountAmount(d.val)}
+                      className="px-1.5 py-0.5 text-[10px] rounded bg-slate-100 font-bold shrink-0 border border-slate-200"
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isOwner) {
+                        setCheckoutError('Diskon 100% (Bayar Rp 0) hanya diizinkan untuk shift Owner!');
+                        return;
+                      }
+                      setDiscountAmount(cartSubtotal);
+                      setCashTendered(0);
+                    }}
+                    className={`px-2 py-0.5 text-[10px] rounded font-black shrink-0 ${
+                      finalTotal === 0 && discountAmount >= cartSubtotal
+                        ? 'bg-amber-400 text-slate-950 ring-1 ring-amber-500'
+                        : isOwner
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-slate-100 text-slate-400 opacity-60'
+                    }`}
+                  >
+                    👑 100% (Rp 0)
+                  </button>
+                </div>
               </div>
+
               <div className="pt-1.5 border-t border-slate-200 flex justify-between items-baseline">
                 <span className="text-sm font-bold text-slate-900">Total Tagihan:</span>
                 <span className="text-xl font-extrabold text-emerald-900 font-mono">
@@ -1321,15 +1456,28 @@ export const KasirView: React.FC = () => {
 
             <button
               type="submit"
-              disabled={cart.length === 0 || isCashInsufficient}
-              className={`w-full py-3 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer ${
-                cart.length === 0 || isCashInsufficient
+              disabled={cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)}
+              className={`w-full py-3.5 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer ${
+                cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : finalTotal === 0 && isOwner
+                  ? 'bg-gradient-to-r from-amber-500 via-emerald-600 to-teal-600 text-white ring-2 ring-amber-300 active:scale-[0.99]'
                   : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 text-white shadow-teal-900/20 active:scale-[0.99]'
               }`}
             >
-              <CheckCircle className="w-4 h-4 text-amber-300" />
-              <span>Bayar & Cetak Struk (Selesai)</span>
+              {finalTotal === 0 && isOwner ? (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>🎁 Bayar Rp 0 & Cetak Struk (Owner Gratis)</span>
+                </>
+              ) : finalTotal === 0 && !isOwner ? (
+                <span>Bayar Rp 0 Khusus Owner (Ganti Shift)</span>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 text-amber-300" />
+                  <span>Bayar & Cetak Struk (Rp {finalTotal.toLocaleString('id-ID')})</span>
+                </>
+              )}
             </button>
           </form>
         </div>

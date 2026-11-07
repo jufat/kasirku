@@ -95,6 +95,7 @@ export interface AtmMiniTransaction {
   paymentMethod?: 'tunai' | 'qris' | 'hutang';
   adminDeductionType?: 'tambah_transfer' | 'potong_tunai';
   status: 'sukses' | 'gagal';
+  discount?: number;
   note?: string;
 }
 
@@ -124,6 +125,7 @@ export interface PPOBTransaction {
   customerName: string;
   paymentMethod: 'tunai' | 'qris' | 'hutang';
   status: 'sukses' | 'proses';
+  discount?: number;
 }
 
 export type ServiceStatus = 'antrean' | 'proses' | 'selesai' | 'diambil';
@@ -145,6 +147,7 @@ export interface ServiceTicket {
   technicianName: string;
   warrantyDays: number;
   technicianNote?: string;
+  discount?: number;
 }
 
 export type CashMutationCategory =
@@ -183,6 +186,7 @@ export interface DebtRecord {
   remainingAmount: number;
   dueDate: string;
   status: 'belum_lunas' | 'cicilan' | 'lunas';
+  discount?: number;
   note?: string;
 }
 
@@ -288,6 +292,7 @@ export interface PrintOrder {
   status: PrintOrderStatus;
   deadline?: string;
   fileOrNote?: string;
+  discount?: number;
 }
 
 export interface SyncTransactionEvent {

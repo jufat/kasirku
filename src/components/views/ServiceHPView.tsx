@@ -18,13 +18,19 @@ import {
   QrCode,
   Receipt,
   X,
+  Tag,
+  Crown,
+  Percent,
+  Gift,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { ServiceTicket, ServiceStatus } from '../../types/pos';
 
 export const ServiceHPView: React.FC = () => {
-  const { services, addServiceTicket, updateServiceStatus, deleteServiceTicket, openReceipt } =
+  const { shift, services, addServiceTicket, updateServiceStatus, deleteServiceTicket, openReceipt } =
     usePOS();
+
+  const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -39,6 +45,7 @@ export const ServiceHPView: React.FC = () => {
   const [problemDescription, setProblemDescription] = useState('');
   const [sparepartCost, setSparepartCost] = useState(120000);
   const [laborFee, setLaborFee] = useState(80000);
+  const [serviceDiscount, setServiceDiscount] = useState<number>(0);
   const [downPayment, setDownPayment] = useState(50000);
   const [dpPaymentMethod, setDpPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
   const [dpDueDate, setDpDueDate] = useState(() =>
@@ -53,13 +60,15 @@ export const ServiceHPView: React.FC = () => {
   const [settlingTicket, setSettlingTicket] = useState<ServiceTicket | null>(null);
   const [settleMethod, setSettleMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
   const [settleCashReceived, setSettleCashReceived] = useState<number>(0);
+  const [settleServiceDiscount, setSettleServiceDiscount] = useState<number>(0);
   const [settleDueDate, setSettleDueDate] = useState(() =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
   );
   const [settlePhone, setSettlePhone] = useState('');
   const [settleNote, setSettleNote] = useState('');
 
-  const totalCost = sparepartCost + laborFee;
+  const rawTotalCost = sparepartCost + laborFee;
+  const totalCost = Math.max(0, rawTotalCost - serviceDiscount);
   const remainingCost = Math.max(0, totalCost - downPayment);
 
   const filteredServices = services.filter((s) => {
@@ -79,6 +88,11 @@ export const ServiceHPView: React.FC = () => {
       return;
     }
 
+    if (totalCost === 0 && !isOwner) {
+      alert('Estimasi biaya servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      return;
+    }
+
     const newTicket = addServiceTicket(
       {
         customerName,
@@ -89,6 +103,7 @@ export const ServiceHPView: React.FC = () => {
         status: 'antrean',
         sparepartCost,
         laborFee,
+        discount: serviceDiscount > 0 ? serviceDiscount : undefined,
         downPayment,
         totalCost,
         technicianName,
@@ -111,6 +126,7 @@ export const ServiceHPView: React.FC = () => {
     setDeviceModel('');
     setImeiOrSn('');
     setProblemDescription('');
+    setServiceDiscount(0);
     setDownPayment(0);
     setDpPaymentMethod('tunai');
     setTechnicianNote('');
@@ -133,6 +149,7 @@ export const ServiceHPView: React.FC = () => {
       return;
     }
     setSettlingTicket(ticket);
+    setSettleServiceDiscount(0);
     setSettleMethod('tunai');
     setSettleCashReceived(remaining);
     setSettlePhone(ticket.customerPhone || '');
@@ -141,7 +158,13 @@ export const ServiceHPView: React.FC = () => {
 
   const handleConfirmSettle = () => {
     if (!settlingTicket) return;
-    const remaining = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+    const baseRemaining = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+    const actualRemaining = Math.max(0, baseRemaining - settleServiceDiscount);
+
+    if (actualRemaining === 0 && !isOwner) {
+      alert('Pelunasan servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      return;
+    }
 
     updateServiceStatus(
       settlingTicket.id,
@@ -154,6 +177,7 @@ export const ServiceHPView: React.FC = () => {
 
     const ticketCopy: ServiceTicket = {
       ...settlingTicket,
+      discount: (settlingTicket.discount || 0) + settleServiceDiscount,
       status: 'diambil',
       downPayment: settlingTicket.totalCost,
     };
@@ -559,6 +583,98 @@ export const ServiceHPView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* DISKON BIAYA SERVIS */}
+                <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1 font-bold text-slate-700">
+                      <Tag className="w-3.5 h-3.5 text-teal-600" />
+                      <span>Diskon / Potongan Servis:</span>
+                      {isOwner && (
+                        <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1 py-0.2 rounded font-black">
+                          👑 Owner (Bisa Rp 0)
+                        </span>
+                      )}
+                    </div>
+                    {serviceDiscount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setServiceDiscount(0)}
+                        className="text-[10px] text-rose-600 underline cursor-pointer"
+                      >
+                        Reset Diskon
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1">
+                    {[
+                      { label: '0%', val: 0 },
+                      { label: '5%', val: Math.round(rawTotalCost * 0.05) },
+                      { label: '10%', val: Math.round(rawTotalCost * 0.1) },
+                      { label: '20%', val: Math.round(rawTotalCost * 0.2) },
+                      { label: '50%', val: Math.round(rawTotalCost * 0.5) },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setServiceDiscount(p.val)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                          serviceDiscount === p.val
+                            ? 'bg-teal-600 text-white border-teal-600 font-black'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isOwner) {
+                          setServiceDiscount(rawTotalCost);
+                          setDownPayment(0);
+                        } else {
+                          alert('Biaya servis Rp 0 (Diskon 100%) hanya diizinkan bila yang bertugas adalah OWNER!');
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                        serviceDiscount === rawTotalCost && rawTotalCost > 0
+                          ? 'bg-amber-400 text-slate-950 border-amber-400'
+                          : isOwner
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                          : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <span>👑 100% (Rp 0)</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <span className="text-[11px] text-slate-500">Nominal Diskon Manual:</span>
+                    <div className="flex items-center gap-1 font-mono">
+                      <span className="text-slate-400 font-bold">Rp</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={serviceDiscount || ''}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          if (!isOwner && val >= rawTotalCost && rawTotalCost > 0) {
+                            alert('Hanya OWNER yang dapat menetapkan biaya servis Rp 0!');
+                            setServiceDiscount(Math.max(0, rawTotalCost - 1000));
+                            return;
+                          }
+                          setServiceDiscount(val);
+                        }}
+                        placeholder="0"
+                        className="w-28 text-right px-2 py-0.5 bg-white border border-slate-300 rounded font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200">
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">
@@ -645,9 +761,16 @@ export const ServiceHPView: React.FC = () => {
 
                 <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
                   <span className="font-bold text-slate-800">Total Biaya Servis:</span>
-                  <span className="text-base font-extrabold text-emerald-900 font-mono">
-                    Rp {totalCost.toLocaleString('id-ID')}
-                  </span>
+                  <div className="text-right">
+                    {serviceDiscount > 0 && (
+                      <span className="text-[11px] text-slate-400 line-through font-mono block">
+                        Rp {rawTotalCost.toLocaleString('id-ID')}
+                      </span>
+                    )}
+                    <span className={`text-base font-black font-mono ${totalCost === 0 ? 'text-amber-600' : 'text-emerald-900'}`}>
+                      {totalCost === 0 ? 'Rp 0 (GRATIS OWNER)' : `Rp ${totalCost.toLocaleString('id-ID')}`}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex justify-between items-baseline text-red-600 font-semibold font-mono">
                   <span>Sisa Pelunasan Saat Diambil:</span>
@@ -784,6 +907,108 @@ export const ServiceHPView: React.FC = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* DISKON PELUNASAN SERVIS */}
+                <div className="mt-2 p-2.5 bg-slate-100 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <Tag className="w-3.5 h-3.5 text-purple-700" />
+                      <span>Diskon / Potongan Pelunasan</span>
+                      {isOwner && (
+                        <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1 py-0.2 rounded font-black">
+                          👑 Owner (Bisa Rp 0)
+                        </span>
+                      )}
+                    </div>
+                    {settleServiceDiscount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettleServiceDiscount(0);
+                          const rem = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+                          setSettleCashReceived(rem);
+                        }}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold cursor-pointer underline"
+                      >
+                        Hapus Diskon
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1">
+                    {[
+                      { label: '0', val: 0 },
+                      { label: '5rb', val: 5000 },
+                      { label: '10rb', val: 10000 },
+                      { label: '25rb', val: 25000 },
+                      {
+                        label: '50%',
+                        val: Math.round(
+                          (settlingTicket.totalCost - settlingTicket.downPayment) * 0.5
+                        ),
+                      },
+                    ].map((p) => {
+                      const baseRem = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+                      const safeVal = Math.min(baseRem, p.val);
+                      return (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => {
+                            setSettleServiceDiscount(safeVal);
+                            setSettleCashReceived(Math.max(0, baseRem - safeVal));
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                            settleServiceDiscount === safeVal
+                              ? 'bg-purple-700 text-white border-purple-700 font-black'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const baseRem = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+                        if (isOwner) {
+                          setSettleServiceDiscount(baseRem);
+                          setSettleCashReceived(0);
+                        } else {
+                          alert('Pelunasan servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                        settleServiceDiscount === (settlingTicket.totalCost - settlingTicket.downPayment)
+                          ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
+                          : isOwner
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                          : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <span>👑 100% Sisa Rp 0</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200">
+                    <span className="text-slate-600 font-medium">Sisa Wajib Bayar:</span>
+                    <span className="font-mono font-black text-sm text-slate-900">
+                      {Math.max(
+                        0,
+                        settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount
+                      ) === 0 ? (
+                        <span className="text-amber-700 font-black">Rp 0 (GRATIS OWNER)</span>
+                      ) : (
+                        `Rp ${Math.max(
+                          0,
+                          settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount
+                        ).toLocaleString('id-ID')}`
+                      )}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Payment Method Selector */}
@@ -799,7 +1024,7 @@ export const ServiceHPView: React.FC = () => {
                   ].map((m) => {
                     const Icon = m.icon;
                     const active = settleMethod === m.id;
-                    const remaining = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+                    const rem = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount);
                     return (
                       <button
                         key={m.id}
@@ -807,7 +1032,7 @@ export const ServiceHPView: React.FC = () => {
                         onClick={() => {
                           setSettleMethod(m.id as any);
                           if (m.id === 'tunai' && settleCashReceived === 0) {
-                            setSettleCashReceived(remaining);
+                            setSettleCashReceived(rem);
                           }
                         }}
                         className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border ${
@@ -833,7 +1058,7 @@ export const ServiceHPView: React.FC = () => {
                       <span>Uang Fisik Diterima Kasir:</span>
                     </span>
                     <span className="text-[11px] font-mono font-bold text-emerald-900">
-                      Wajib: Rp {(settlingTicket.totalCost - settlingTicket.downPayment).toLocaleString('id-ID')}
+                      Wajib: Rp {Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount).toLocaleString('id-ID')}
                     </span>
                   </div>
 
@@ -847,7 +1072,7 @@ export const ServiceHPView: React.FC = () => {
                       value={settleCashReceived || ''}
                       onChange={(e) => setSettleCashReceived(Number(e.target.value) || 0)}
                       className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      placeholder={(settlingTicket.totalCost - settlingTicket.downPayment).toString()}
+                      placeholder={Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount).toString()}
                     />
                   </div>
 
@@ -856,7 +1081,9 @@ export const ServiceHPView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() =>
-                        setSettleCashReceived(settlingTicket.totalCost - settlingTicket.downPayment)
+                        setSettleCashReceived(
+                          Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
+                        )
                       }
                       className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer"
                     >
@@ -879,14 +1106,16 @@ export const ServiceHPView: React.FC = () => {
                     <span className="font-bold text-slate-700">Kembalian Kasir:</span>
                     <span
                       className={`font-mono font-black text-sm ${
-                        settleCashReceived >= (settlingTicket.totalCost - settlingTicket.downPayment)
+                        settleCashReceived >=
+                        Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
                           ? 'text-emerald-800'
                           : 'text-rose-600'
                       }`}
                     >
-                      {settleCashReceived >= (settlingTicket.totalCost - settlingTicket.downPayment)
-                        ? `Rp ${(settleCashReceived - (settlingTicket.totalCost - settlingTicket.downPayment)).toLocaleString('id-ID')}`
-                        : `Kurang Rp ${(settlingTicket.totalCost - settlingTicket.downPayment - settleCashReceived).toLocaleString('id-ID')}`}
+                      {settleCashReceived >=
+                      Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
+                        ? `Rp ${(settleCashReceived - Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)).toLocaleString('id-ID')}`
+                        : `Kurang Rp ${(Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount) - settleCashReceived).toLocaleString('id-ID')}`}
                     </span>
                   </div>
                 </div>
@@ -905,7 +1134,7 @@ export const ServiceHPView: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-sky-900">
-                    Minta pelanggan scan QRIS sebesar <span className="font-bold font-mono">Rp {(settlingTicket.totalCost - settlingTicket.downPayment).toLocaleString('id-ID')}</span>.
+                    Minta pelanggan scan QRIS sebesar <span className="font-bold font-mono">Rp {Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount).toLocaleString('id-ID')}</span>.
                   </p>
                   <p className="text-[10px] text-sky-700">
                     💡 Pembayaran non-tunai langsung tercatat ke laporan keuangan harian.
@@ -958,7 +1187,7 @@ export const ServiceHPView: React.FC = () => {
                     />
                   </div>
                   <p className="text-[11px] text-amber-800">
-                    ⚡ Sisa tagihan servis <span className="font-bold font-mono">Rp {(settlingTicket.totalCost - settlingTicket.downPayment).toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{settlingTicket.customerName}</span>.
+                    ⚡ Sisa tagihan servis <span className="font-bold font-mono">Rp {Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount).toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{settlingTicket.customerName}</span>.
                   </p>
                 </div>
               )}
@@ -976,10 +1205,24 @@ export const ServiceHPView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmSettle}
-                className="flex-2 py-2.5 px-4 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 hover:from-purple-600 hover:to-indigo-600 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                className={`flex-2 py-2.5 px-4 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                  Math.max(
+                    0,
+                    settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount
+                  ) === 0 && isOwner
+                    ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 ring-2 ring-amber-400/50 hover:brightness-105'
+                    : 'bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 hover:from-purple-600 hover:to-indigo-600 text-white'
+                }`}
               >
                 <CheckCircle className="w-4 h-4 text-amber-300" />
-                <span>Konfirmasi Pelunasan & Serahkan HP</span>
+                <span>
+                  {Math.max(
+                    0,
+                    settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount
+                  ) === 0 && isOwner
+                    ? '🎁 Pelunasan Rp 0 & Serahkan HP (Owner Gratis)'
+                    : 'Konfirmasi Pelunasan & Serahkan HP'}
+                </span>
               </button>
             </div>
           </div>

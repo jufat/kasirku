@@ -42,6 +42,7 @@ const POPULAR_GAMES = [
 
 export const PPOBView: React.FC = () => {
   const {
+    shift,
     ppobPackages,
     addPPOBPackage,
     updatePPOBPackage,
@@ -52,6 +53,8 @@ export const PPOBView: React.FC = () => {
     deletePPOBTransaction,
     openReceipt,
   } = usePOS();
+
+  const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
   const [category, setCategory] = useState<PPOBCategory>('pulsa');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -169,11 +172,18 @@ export const PPOBView: React.FC = () => {
   const [selectedPackageForCheckout, setSelectedPackageForCheckout] = useState<PPOBPackage | null>(null);
   const [ppobPaymentMethod, setPpobPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
   const [ppobCashReceived, setPpobCashReceived] = useState<number>(0);
+  const [ppobDiscount, setPpobDiscount] = useState<number>(0);
   const [ppobCustomerPhone, setPpobCustomerPhone] = useState('');
+  const [ppobDebtorName, setPpobDebtorName] = useState('');
+  const [ppobKasbonError, setPpobKasbonError] = useState<string | null>(null);
   const [ppobDueDate, setPpobDueDate] = useState(() =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
   );
   const [ppobNote, setPpobNote] = useState('');
+
+  const finalPPOBPrice = selectedPackageForCheckout
+    ? Math.max(0, selectedPackageForCheckout.price - ppobDiscount)
+    : 0;
 
   const handleInitiatePurchase = (pkg: PPOBPackage) => {
     let target = phoneNumber.trim();
@@ -197,15 +207,35 @@ export const PPOBView: React.FC = () => {
     }
 
     setSelectedPackageForCheckout(pkg);
+    setPpobDiscount(0);
     setPpobCashReceived(pkg.price);
     setPpobPaymentMethod('tunai');
     setPpobCustomerPhone(phoneNumber.trim() || '');
+    setPpobDebtorName(customerName.trim());
+    setPpobKasbonError(null);
     setPpobNote('');
   };
 
   const handleConfirmPurchase = () => {
     if (!selectedPackageForCheckout) return;
     const pkg = selectedPackageForCheckout;
+
+    if (finalPPOBPrice === 0 && !isOwner) {
+      alert('Transaksi PPOB Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      return;
+    }
+
+    let finalCustomerName = customerName.trim();
+    if (ppobPaymentMethod === 'hutang') {
+      const debtorName = ppobDebtorName.trim() || customerName.trim();
+      if (!debtorName || debtorName.toLowerCase() === 'pelanggan ppob' || debtorName.toLowerCase() === 'player game') {
+        setPpobKasbonError('Nama Pelanggan yang Kasbon wajib diisi agar tersimpan di Buku Hutang!');
+        return;
+      }
+      finalCustomerName = debtorName;
+      setCustomerName(debtorName);
+    }
+
     let target = phoneNumber.trim();
     if (category === 'game') {
       target = gameZoneId.trim()
@@ -219,12 +249,13 @@ export const PPOBView: React.FC = () => {
       target,
       pkg.name,
       pkg.hpp,
-      pkg.price,
-      customerName.trim() || (category === 'game' ? 'Player Game' : 'Pelanggan PPOB'),
+      finalPPOBPrice,
+      finalCustomerName || (category === 'game' ? 'Player Game' : 'Pelanggan PPOB'),
       ppobPaymentMethod,
       ppobCustomerPhone.trim() || target,
       ppobDueDate,
-      ppobNote.trim() || undefined
+      ppobNote.trim() || undefined,
+      ppobDiscount > 0 ? ppobDiscount : undefined
     );
 
     setSelectedPackageForCheckout(null);
@@ -237,7 +268,9 @@ export const PPOBView: React.FC = () => {
         : 'Kasbon (Hutang)';
 
     setSuccessMessage(
-      `Pembelian ${pkg.name} untuk ${target} (${methodLabel}) berhasil diproses!`
+      finalPPOBPrice === 0
+        ? `Pembelian ${pkg.name} untuk ${target} Rp 0 (GRATIS OWNER) berhasil diproses!`
+        : `Pembelian ${pkg.name} untuk ${target} (${methodLabel}) berhasil diproses!`
     );
     setTimeout(() => setSuccessMessage(''), 6000);
   };
@@ -1348,9 +1381,116 @@ export const PPOBView: React.FC = () => {
                 </div>
                 <div className="border-t border-slate-200 pt-1.5 flex justify-between items-baseline">
                   <span className="font-bold text-slate-800">Total Tagihan:</span>
-                  <span className="text-lg font-black font-mono text-emerald-800">
-                    Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}
-                  </span>
+                  <div className="text-right">
+                    {ppobDiscount > 0 && (
+                      <span className="text-[11px] text-slate-400 line-through font-mono block">
+                        Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}
+                      </span>
+                    )}
+                    <span className={`text-lg font-black font-mono ${finalPPOBPrice === 0 ? 'text-amber-600' : 'text-emerald-800'}`}>
+                      {finalPPOBPrice === 0 ? 'Rp 0 (GRATIS OWNER)' : `Rp ${finalPPOBPrice.toLocaleString('id-ID')}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* DISKON TRANSAKSI PPOB */}
+                <div className="mt-1.5 pt-2 border-t border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1 font-bold text-slate-700">
+                      <Tag className="w-3.5 h-3.5 text-teal-600" />
+                      <span>Diskon / Potongan Harga:</span>
+                      {isOwner && (
+                        <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-1 py-0.2 rounded font-black">
+                          👑 Owner (Bisa Rp 0)
+                        </span>
+                      )}
+                    </div>
+                    {ppobDiscount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPpobDiscount(0);
+                          setPpobCashReceived(selectedPackageForCheckout.price);
+                        }}
+                        className="text-[10px] text-rose-600 underline cursor-pointer"
+                      >
+                        Reset Diskon
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1">
+                    {[
+                      { label: '0', val: 0 },
+                      { label: '1rb', val: 1000 },
+                      { label: '2rb', val: 2000 },
+                      { label: '3rb', val: 3000 },
+                      { label: '5rb', val: 5000 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => {
+                          setPpobDiscount(p.val);
+                          setPpobCashReceived(Math.max(0, selectedPackageForCheckout.price - p.val));
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                          ppobDiscount === p.val
+                            ? 'bg-teal-600 text-white border-teal-600 font-black'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isOwner) {
+                          setPpobDiscount(selectedPackageForCheckout.price);
+                          setPpobCashReceived(0);
+                        } else {
+                          alert('Diskon 100% (Bayar Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                        ppobDiscount === selectedPackageForCheckout.price
+                          ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
+                          : isOwner
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                          : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <span>👑 100% (Rp 0)</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-0.5">
+                    <span className="text-[11px] text-slate-500">Nominal Diskon Manual:</span>
+                    <div className="flex items-center gap-1 font-mono">
+                      <span className="text-slate-400 font-bold">Rp</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={ppobDiscount || ''}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          if (!isOwner && val >= selectedPackageForCheckout.price) {
+                            alert('Hanya OWNER yang dapat menetapkan pembayaran PPOB Rp 0!');
+                            setPpobDiscount(Math.max(0, selectedPackageForCheckout.price - 500));
+                            setPpobCashReceived(500);
+                            return;
+                          }
+                          setPpobDiscount(val);
+                          setPpobCashReceived(Math.max(0, selectedPackageForCheckout.price - val));
+                        }}
+                        placeholder="0"
+                        className="w-24 text-right px-2 py-0.5 bg-white border border-slate-300 rounded font-bold text-xs"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1374,7 +1514,7 @@ export const PPOBView: React.FC = () => {
                         onClick={() => {
                           setPpobPaymentMethod(m.id as any);
                           if (m.id === 'tunai' && ppobCashReceived === 0) {
-                            setPpobCashReceived(selectedPackageForCheckout.price);
+                            setPpobCashReceived(finalPPOBPrice);
                           }
                         }}
                         className={`py-2 px-1 text-xs font-bold rounded-xl flex flex-col items-center gap-1 transition cursor-pointer border ${
@@ -1400,7 +1540,7 @@ export const PPOBView: React.FC = () => {
                       <span>Uang Fisik Diterima Kasir:</span>
                     </span>
                     <span className="text-[11px] font-mono font-bold text-emerald-900">
-                      Tagihan: Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}
+                      Tagihan: Rp {finalPPOBPrice.toLocaleString('id-ID')}
                     </span>
                   </div>
 
@@ -1414,7 +1554,7 @@ export const PPOBView: React.FC = () => {
                       value={ppobCashReceived || ''}
                       onChange={(e) => setPpobCashReceived(Number(e.target.value) || 0)}
                       className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      placeholder={selectedPackageForCheckout.price.toString()}
+                      placeholder={finalPPOBPrice.toString()}
                     />
                   </div>
 
@@ -1422,7 +1562,7 @@ export const PPOBView: React.FC = () => {
                   <div className="flex items-center gap-1 overflow-x-auto pt-0.5">
                     <button
                       type="button"
-                      onClick={() => setPpobCashReceived(selectedPackageForCheckout.price)}
+                      onClick={() => setPpobCashReceived(finalPPOBPrice)}
                       className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer"
                     >
                       Uang Pas
@@ -1444,14 +1584,14 @@ export const PPOBView: React.FC = () => {
                     <span className="font-bold text-slate-700">Uang Kembalian:</span>
                     <span
                       className={`font-mono font-black text-sm ${
-                        ppobCashReceived >= selectedPackageForCheckout.price
+                        ppobCashReceived >= finalPPOBPrice
                           ? 'text-emerald-800'
                           : 'text-rose-600'
                       }`}
                     >
-                      {ppobCashReceived >= selectedPackageForCheckout.price
-                        ? `Rp ${(ppobCashReceived - selectedPackageForCheckout.price).toLocaleString('id-ID')}`
-                        : `Kurang Rp ${(selectedPackageForCheckout.price - ppobCashReceived).toLocaleString('id-ID')}`}
+                      {ppobCashReceived >= finalPPOBPrice
+                        ? `Rp ${(ppobCashReceived - finalPPOBPrice).toLocaleString('id-ID')}`
+                        : `Kurang Rp ${(finalPPOBPrice - ppobCashReceived).toLocaleString('id-ID')}`}
                     </span>
                   </div>
                 </div>
@@ -1470,7 +1610,7 @@ export const PPOBView: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-sky-900">
-                    Minta pembeli scan kode QRIS sebesar <span className="font-bold font-mono">Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}</span>.
+                    Minta pembeli scan kode QRIS sebesar <span className="font-bold font-mono">Rp {finalPPOBPrice.toLocaleString('id-ID')}</span>.
                   </p>
                   <p className="text-[10px] text-sky-700">
                     💡 Saldo masuk ke rekening QRIS toko, saldo kas laci tetap aman.
@@ -1480,12 +1620,55 @@ export const PPOBView: React.FC = () => {
 
               {/* Detail Pembayaran Kasbon (Hutang) */}
               {ppobPaymentMethod === 'hutang' && (
-                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
-                  <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900">
-                    <Receipt className="w-4 h-4 text-amber-600" />
-                    <span>Data Kasbon Pelanggan (Masuk Buku Hutang)</span>
+                <div className="p-3 bg-amber-50 border-2 border-amber-400 rounded-xl space-y-2.5 text-amber-950">
+                  <div className="flex items-center justify-between font-bold text-xs text-amber-900 pb-1.5 border-b border-amber-200">
+                    <div className="flex items-center gap-1.5">
+                      <Receipt className="w-4 h-4 text-amber-600" />
+                      <span>Data Kasbon Pelanggan (Masuk Buku Hutang)</span>
+                    </div>
+                    <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                      Nama Wajib Diisi *
+                    </span>
                   </div>
+
+                  {/* Input Nama Pelanggan yang Berhutang / Kasbon */}
+                  <div>
+                    <label className="text-[11px] font-extrabold text-amber-950 flex items-center justify-between mb-1">
+                      <span>Nama Orang / Pelanggan yang Kasbon *</span>
+                      <span className="text-[10px] text-amber-800 font-semibold">Tersimpan di Buku Hutang</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={ppobDebtorName}
+                      onChange={(e) => {
+                        setPpobDebtorName(e.target.value);
+                        if (ppobKasbonError) setPpobKasbonError(null);
+                      }}
+                      placeholder="Ketik nama orang yang berhutang (cth: Pak Sugeng, Mas Budi, Bu Erni)..."
+                      className={`w-full px-3 py-2 text-xs bg-white border-2 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs ${
+                        ppobKasbonError ? 'border-rose-500 bg-rose-50/50 animate-pulse' : 'border-amber-400'
+                      }`}
+                    />
+                    {ppobKasbonError && (
+                      <p className="text-[10px] font-bold text-rose-600 mt-1">
+                        ⚠️ {ppobKasbonError}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
+                        Jatuh Tempo Kasbon:
+                      </label>
+                      <input
+                        type="date"
+                        value={ppobDueDate}
+                        onChange={(e) => setPpobDueDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
                     <div>
                       <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
                         No. WA / HP:
@@ -1498,18 +1681,8 @@ export const PPOBView: React.FC = () => {
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
                       />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
-                        Jatuh Tempo:
-                      </label>
-                      <input
-                        type="date"
-                        value={ppobDueDate}
-                        onChange={(e) => setPpobDueDate(e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      />
-                    </div>
                   </div>
+
                   <div>
                     <label className="text-[10px] font-bold text-amber-900 block mb-0.5">
                       Catatan Kasbon (Opsional):
@@ -1522,9 +1695,16 @@ export const PPOBView: React.FC = () => {
                       className="w-full px-2.5 py-1 text-xs bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
-                  <p className="text-[11px] text-amber-800">
-                    ⚡ Total tagihan <span className="font-bold">Rp {selectedPackageForCheckout.price.toLocaleString('id-ID')}</span> akan otomatis masuk ke menu <span className="font-bold">Hutang & Retur</span> atas nama <span className="underline font-bold">{customerName.trim() || 'Pelanggan PPOB'}</span>.
-                  </p>
+
+                  <div className="p-2 bg-amber-100/90 rounded-lg text-[11px] text-amber-950 font-medium border border-amber-300 flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <span>
+                      Dicatat sebesar <strong className="font-mono font-bold">Rp {finalPPOBPrice.toLocaleString('id-ID')}</strong> di Buku Hutang atas nama:{' '}
+                      <strong className="underline font-bold text-amber-950">
+                        {ppobDebtorName.trim() || customerName.trim() || '(Ketik nama di atas)'}
+                      </strong>
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -1541,10 +1721,18 @@ export const PPOBView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmPurchase}
-                className="flex-2 py-2.5 px-4 bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                className={`flex-2 py-2.5 px-4 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                  finalPPOBPrice === 0 && isOwner
+                    ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 ring-2 ring-amber-400/50 hover:brightness-105'
+                    : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white'
+                }`}
               >
                 <CheckCircle className="w-4 h-4 text-amber-300" />
-                <span>Konfirmasi & Proses Transaksi</span>
+                <span>
+                  {finalPPOBPrice === 0 && isOwner
+                    ? '🎁 Bayar Rp 0 & Proses (Owner Gratis)'
+                    : 'Konfirmasi & Proses Transaksi'}
+                </span>
               </button>
             </div>
           </div>

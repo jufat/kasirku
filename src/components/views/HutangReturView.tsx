@@ -11,6 +11,9 @@ import {
   User,
   DollarSign,
   Wallet,
+  Crown,
+  Percent,
+  Gift,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { DebtRecord, ReturnRecord } from '../../types/pos';
@@ -23,7 +26,10 @@ export const HutangReturView: React.FC = () => {
     returns,
     updateReturnStatus,
     addReturnRecord,
+    shift,
   } = usePOS();
+
+  const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
   const [activeSubTab, setActiveSubTab] = useState<'hutang' | 'retur'>('hutang');
   const [search, setSearch] = useState('');
@@ -31,6 +37,7 @@ export const HutangReturView: React.FC = () => {
   // Debt Pay Modal
   const [payingDebt, setPayingDebt] = useState<DebtRecord | null>(null);
   const [payAmount, setPayAmount] = useState<number>(0);
+  const [debtDiscount, setDebtDiscount] = useState<number>(0);
 
   // New Debt Modal
   const [isNewDebtOpen, setIsNewDebtOpen] = useState(false);
@@ -56,10 +63,28 @@ export const HutangReturView: React.FC = () => {
 
   const handlePaySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!payingDebt || payAmount <= 0) return;
-    payDebt(payingDebt.id, payAmount);
+    if (!payingDebt) return;
+    const baseRemaining = payingDebt.remainingAmount;
+    const actualPayAmount = Math.max(0, payAmount);
+    const actualDiscount = Math.max(0, debtDiscount);
+    const totalCovered = actualPayAmount + actualDiscount;
+
+    if (totalCovered <= 0) {
+      alert('Masukkan nominal pembayaran diterima atau tentukan nominal diskon/pemutihan!');
+      return;
+    }
+
+    if (actualPayAmount === 0 && actualDiscount >= baseRemaining) {
+      if (!isOwner) {
+        alert('⚠️ Pemutihan Piutang 100% (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+        return;
+      }
+    }
+
+    payDebt(payingDebt.id, actualPayAmount, actualDiscount);
     setPayingDebt(null);
     setPayAmount(0);
+    setDebtDiscount(0);
   };
 
   const handleCreateDebt = (e: React.FormEvent) => {
@@ -258,6 +283,7 @@ export const HutangReturView: React.FC = () => {
                             <button
                               onClick={() => {
                                 setPayingDebt(d);
+                                setDebtDiscount(0);
                                 setPayAmount(d.remainingAmount);
                               }}
                               className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded transition shadow-xs cursor-pointer"
@@ -383,83 +409,320 @@ export const HutangReturView: React.FC = () => {
       )}
 
       {/* Pay Debt Modal */}
-      {payingDebt && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-sm font-bold text-slate-900">Pembayaran Piutang Pelanggan</h3>
-              <button
-                onClick={() => setPayingDebt(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </div>
+      {payingDebt && (() => {
+        const baseRemaining = payingDebt.remainingAmount;
+        const cleanRemaining = Math.max(0, baseRemaining - debtDiscount);
+        const isFullWriteOff = debtDiscount >= baseRemaining;
+        const isZeroPayment = payAmount === 0 && isFullWriteOff;
 
-            <form onSubmit={handlePaySubmit} className="space-y-3 text-xs">
-              <div>
-                <span className="text-slate-500 block">Nama Pelanggan:</span>
-                <span className="font-bold text-slate-900 text-sm">
-                  {payingDebt.customerName}
-                </span>
-              </div>
-
-              <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-1 font-mono">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Total Piutang:</span>
-                  <span className="font-bold">
-                    Rp {payingDebt.totalAmount.toLocaleString('id-ID')}
-                  </span>
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-2xl border border-slate-200 space-y-3.5 my-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Pembayaran Piutang Pelanggan</h3>
+                    <p className="text-[10.5px] text-slate-500">
+                      Pelunasan, cicilan, dan diskon/pemutihan piutang
+                    </p>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Sudah Dibayar:</span>
-                  <span className="font-bold text-emerald-700">
-                    Rp {payingDebt.paidAmount.toLocaleString('id-ID')}
-                  </span>
-                </div>
-                <div className="flex justify-between text-red-600 font-extrabold pt-1 border-t border-purple-200">
-                  <span>Sisa Wajib Bayar:</span>
-                  <span>Rp {payingDebt.remainingAmount.toLocaleString('id-ID')}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Nominal Pembayaran Diterima (Rp) *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  max={payingDebt.remainingAmount}
-                  min="1"
-                  value={payAmount || ''}
-                  onChange={(e) => setPayAmount(Number(e.target.value) || 0)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-purple-600 focus:outline-none"
-                />
-                <span className="text-[10px] text-emerald-700 block mt-1">
-                  *Pembayaran otomatis tercatat sebagai uang kas masuk di laci
-                </span>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setPayingDebt(null)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 font-semibold"
+                  onClick={() => {
+                    setPayingDebt(null);
+                    setDebtDiscount(0);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 font-bold cursor-pointer"
                 >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-xs"
-                >
-                  Proses Bayar Masuk Kas
+                  ✕
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handlePaySubmit} className="space-y-3 text-xs">
+                {/* Info Pelanggan & Tagihan */}
+                <div className="p-3 bg-purple-50/70 rounded-xl border border-purple-200/80 space-y-1.5 font-mono">
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span className="text-[11px] font-sans text-slate-500">Pelanggan:</span>
+                    <span className="font-sans font-black text-slate-900 text-sm">
+                      {payingDebt.customerName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-600 text-[11px]">
+                    <span>Total Piutang Awal:</span>
+                    <span className="font-bold">
+                      Rp {payingDebt.totalAmount.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700 text-[11px]">
+                    <span>Sudah Pernah Dicicil:</span>
+                    <span className="font-bold">
+                      Rp {payingDebt.paidAmount.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-purple-950 font-black text-xs pt-1 border-t border-purple-200">
+                    <span>Sisa Piutang Berjalan:</span>
+                    <span>Rp {baseRemaining.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+
+                {/* Potongan / Diskon / Pemutihan */}
+                <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                      <Percent className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Diskon / Potongan / Pemutihan (Rp):</span>
+                    </label>
+                    {isOwner ? (
+                      <span className="text-[10px] font-extrabold text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                        <Crown className="w-3 h-3 text-amber-800" />
+                        Akses Owner Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500">Kasir Shift</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      max={baseRemaining}
+                      value={debtDiscount || ''}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value) || 0);
+                        const disc = Math.min(baseRemaining, val);
+                        setDebtDiscount(disc);
+                        setPayAmount(Math.max(0, baseRemaining - disc));
+                      }}
+                      placeholder="0"
+                      className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-xs text-amber-950 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                    {debtDiscount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDebtDiscount(0);
+                          setPayAmount(baseRemaining);
+                        }}
+                        className="px-2 py-1.5 text-[11px] bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-lg font-bold cursor-pointer transition"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Preset Diskon */}
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDebtDiscount(0);
+                        setPayAmount(baseRemaining);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition cursor-pointer ${
+                        debtDiscount === 0
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                      }`}
+                    >
+                      0% (Normal)
+                    </button>
+                    {baseRemaining >= 5000 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const disc = Math.min(5000, baseRemaining);
+                          setDebtDiscount(disc);
+                          setPayAmount(Math.max(0, baseRemaining - disc));
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition cursor-pointer ${
+                          debtDiscount === 5000
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                        }`}
+                      >
+                        Rp 5.000
+                      </button>
+                    )}
+                    {baseRemaining >= 10000 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const disc = Math.min(10000, baseRemaining);
+                          setDebtDiscount(disc);
+                          setPayAmount(Math.max(0, baseRemaining - disc));
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition cursor-pointer ${
+                          debtDiscount === 10000
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                        }`}
+                      >
+                        Rp 10.000
+                      </button>
+                    )}
+                    {baseRemaining >= 20000 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const disc = Math.min(20000, baseRemaining);
+                          setDebtDiscount(disc);
+                          setPayAmount(Math.max(0, baseRemaining - disc));
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition cursor-pointer ${
+                          debtDiscount === 20000
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                        }`}
+                      >
+                        Rp 20.000
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const half = Math.round(baseRemaining * 0.5);
+                        setDebtDiscount(half);
+                        setPayAmount(Math.max(0, baseRemaining - half));
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition cursor-pointer ${
+                        debtDiscount === Math.round(baseRemaining * 0.5) && debtDiscount > 0
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                      }`}
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isOwner) {
+                          alert('⚠️ Pemutihan Piutang 100% (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                          return;
+                        }
+                        setDebtDiscount(baseRemaining);
+                        setPayAmount(0);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10.5px] font-black transition cursor-pointer flex items-center gap-1 ${
+                        isFullWriteOff
+                          ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-xs ring-1 ring-amber-600'
+                          : 'bg-amber-100 border border-amber-400 text-amber-900 hover:bg-amber-200'
+                      }`}
+                      title="Pemutihan piutang khusus Owner"
+                    >
+                      <Crown className="w-3 h-3 text-amber-950" />
+                      <span>👑 100% Pemutihan (Rp 0 - Owner)</span>
+                    </button>
+                  </div>
+
+                  {debtDiscount > 0 && (
+                    <div className="flex justify-between items-center text-[11px] font-mono font-bold text-amber-900 pt-1 border-t border-amber-200/80">
+                      <span>Sisa Bersih Ditagihkan:</span>
+                      <span className="text-xs font-black">
+                        Rp {cleanRemaining.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input Pembayaran Diterima */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-[11px] block">
+                      Nominal Pembayaran Diterima (Rp) *
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPayAmount(cleanRemaining)}
+                        className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded cursor-pointer transition"
+                      >
+                        Bayar Pas (Rp {cleanRemaining.toLocaleString('id-ID')})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayAmount(0)}
+                        className="text-[10px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded cursor-pointer transition"
+                      >
+                        Nol (0)
+                      </button>
+                    </div>
+                  </div>
+
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={payAmount === 0 ? (isZeroPayment ? 0 : '') : payAmount}
+                    onChange={(e) => setPayAmount(Math.max(0, Number(e.target.value) || 0))}
+                    placeholder="Masukkan nominal bayar..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                  />
+
+                  {/* Summary Result */}
+                  <div className="p-2 bg-slate-100 rounded-lg text-[10.5px] font-mono space-y-0.5">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Uang Masuk ke Laci Kas:</span>
+                      <span className="font-bold text-emerald-700">
+                        Rp {payAmount.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Status Setelah Transaksi:</span>
+                      <span className="font-bold">
+                        {payAmount >= cleanRemaining ? (
+                          <span className="text-emerald-700 uppercase font-black">
+                            LUNAS {isZeroPayment ? '(PEMUTIHAN OWNER)' : ''}
+                          </span>
+                        ) : (
+                          <span className="text-rose-600">
+                            Masih Ada Sisa Rp {Math.max(0, cleanRemaining - payAmount).toLocaleString('id-ID')}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayingDebt(null);
+                      setDebtDiscount(0);
+                    }}
+                    className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 font-semibold cursor-pointer"
+                  >
+                    Batal
+                  </button>
+
+                  {isZeroPayment && isOwner ? (
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-600 hover:to-yellow-500 text-slate-950 font-black rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer text-xs transition"
+                    >
+                      <Crown className="w-4 h-4 text-amber-950" />
+                      <span>👑 Pemutihan Piutang Rp 0 & Lunas (Owner Bebas)</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-xs cursor-pointer text-xs transition"
+                    >
+                      Proses Bayar Masuk Kas
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* New Debt Modal */}
       {isNewDebtOpen && (
