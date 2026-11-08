@@ -14,6 +14,7 @@ import {
   Package,
   Layers,
   CheckCircle,
+  CheckCircle2,
   CreditCard,
   BarChart3,
   Calendar,
@@ -29,6 +30,14 @@ import {
   Smartphone,
   Building2,
   ArrowRightLeft,
+  Calculator,
+  Copy,
+  Printer,
+  Coins,
+  ShieldAlert,
+  Clock,
+  RotateCcw,
+  User,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -68,6 +77,8 @@ export const DashboardView: React.FC = () => {
     setActiveTab,
     setIsCashMutationModalOpen,
     restockProduct,
+    shift,
+    setIsShiftModalOpen,
   } = usePOS();
 
   // Timeframe and date filter states
@@ -114,6 +125,121 @@ export const DashboardView: React.FC = () => {
       setDigitalToast('Saldo digital operasional (bank & e-wallet) berhasil diperbarui!');
       setTimeout(() => setDigitalToast(''), 3000);
     }
+  };
+
+  // =========================================================================
+  // REKONSILIASI SHIFT: AUDIT SALDO FISIK DI LACI VS SALDO DIGITAL OPERASIONAL
+  // =========================================================================
+  const [physicalCashCounted, setPhysicalCashCounted] = useState<number>(drawerCashBalance);
+  const [isDenominationOpen, setIsDenominationOpen] = useState(false);
+  const [denominations, setDenominations] = useState<{ [key: string]: number }>({
+    '100000': 0,
+    '50000': 0,
+    '20000': 0,
+    '10000': 0,
+    '5000': 0,
+    '2000': 0,
+    '1000': 0,
+    'koin': 0,
+  });
+  const [reconcileCopied, setReconcileCopied] = useState(false);
+  const [reconcileToast, setReconcileToast] = useState('');
+  const [reconcileNote, setReconcileNote] = useState('');
+
+  // Keep physicalCashCounted in sync with drawer cash when drawer balance changes if not manually edited
+  useEffect(() => {
+    setPhysicalCashCounted((prev) => (prev === 0 || prev === drawerCashBalance ? drawerCashBalance : prev));
+  }, [drawerCashBalance]);
+
+  const handleDenominationChange = (key: string, qty: number) => {
+    const cleanQty = Math.max(0, isNaN(qty) ? 0 : qty);
+    const updated = { ...denominations, [key]: cleanQty };
+    setDenominations(updated);
+
+    const totalFromDenoms =
+      (updated['100000'] || 0) * 100000 +
+      (updated['50000'] || 0) * 50000 +
+      (updated['20000'] || 0) * 20000 +
+      (updated['10000'] || 0) * 10000 +
+      (updated['5000'] || 0) * 5000 +
+      (updated['2000'] || 0) * 2000 +
+      (updated['1000'] || 0) * 1000 +
+      (updated['koin'] || 0);
+
+    setPhysicalCashCounted(totalFromDenoms);
+  };
+
+  const handleResetDenominations = () => {
+    setDenominations({
+      '100000': 0,
+      '50000': 0,
+      '20000': 0,
+      '10000': 0,
+      '5000': 0,
+      '2000': 0,
+      '1000': 0,
+      'koin': 0,
+    });
+    setPhysicalCashCounted(drawerCashBalance);
+  };
+
+  // Perhitungan Mutasi Kas Shift Berjalan
+  const cashInMutations = (mutations || []).filter((m) => m.type === 'masuk' && m.paymentMethod === 'tunai');
+  const cashOutMutations = (mutations || []).filter((m) => m.type === 'keluar' && m.paymentMethod === 'tunai');
+  const totalCashInShift = cashInMutations.reduce((sum, m) => sum + m.amount, 0);
+  const totalCashOutShift = cashOutMutations.reduce((sum, m) => sum + m.amount, 0);
+  const selisihShift = physicalCashCounted - drawerCashBalance;
+  const isShiftBalanced = selisihShift === 0;
+  const isShiftSurplus = selisihShift > 0;
+  const isShiftDeficit = selisihShift < 0;
+
+  // Laporan Teks Ringkas Siap Salin ke WhatsApp
+  const generateReconciliationReportText = () => {
+    const nowTime = new Date().toLocaleString('id-ID');
+    const statusText = isShiftBalanced
+      ? '🟢 SEIMBANG (MATCH 100% - TIDAK ADA SELISIH)'
+      : isShiftSurplus
+      ? `🟡 SURPLUS (+Rp ${selisihShift.toLocaleString('id-ID')} LEBIH FISIK)`
+      : `🔴 PERINGATAN DEFISIT (-Rp ${Math.abs(selisihShift).toLocaleString('id-ID')} FISIK KURANG)`;
+
+    return [
+      '========================================',
+      '   LAPORAN REKONSILIASI SHIFT JU-FAT CELL',
+      '========================================',
+      `Waktu Audit    : ${nowTime}`,
+      `Petugas Kasir  : ${shift.cashierName} (${shift.role.toUpperCase()})`,
+      `Shift Operasi  : ${shift.shiftName}`,
+      `Jam Buka Shift : ${shift.startTime}`,
+      '----------------------------------------',
+      '1. AUDIT KAS FISIK DI LACI:',
+      `• Modal Awal Laci   : Rp ${shift.startingCash.toLocaleString('id-ID')}`,
+      `• Total Kas Masuk   : +Rp ${totalCashInShift.toLocaleString('id-ID')}`,
+      `• Total Kas Keluar  : -Rp ${totalCashOutShift.toLocaleString('id-ID')}`,
+      `• Ekspektasi Sistem : Rp ${drawerCashBalance.toLocaleString('id-ID')}`,
+      `• Uang Fisik Dihitung: Rp ${physicalCashCounted.toLocaleString('id-ID')}`,
+      `• Selisih Riil      : Rp ${selisihShift.toLocaleString('id-ID')}`,
+      `• Status Keseimbangan: ${statusText}`,
+      '----------------------------------------',
+      '2. AUDIT SALDO DIGITAL & LIKUIDITAS:',
+      `• Saldo Digital Bank/EDC : Rp ${digitalBalance.toLocaleString('id-ID')}`,
+      `• Total Likuiditas Konter: Rp ${(drawerCashBalance + digitalBalance).toLocaleString('id-ID')}`,
+      '----------------------------------------',
+      reconcileNote ? `Catatan Petugas : ${reconcileNote}\n----------------------------------------` : '',
+      'Laporan ini digenerate otomatis oleh Sistem POS Ju-Fat Cell.',
+      '========================================',
+    ].filter(Boolean).join('\n');
+  };
+
+  const handleCopyReconciliationReport = () => {
+    const text = generateReconciliationReportText();
+    navigator.clipboard.writeText(text).then(() => {
+      setReconcileCopied(true);
+      setReconcileToast('Laporan Rekonsiliasi Shift berhasil disalin! Siap dipaste ke WhatsApp.');
+      setTimeout(() => {
+        setReconcileCopied(false);
+        setReconcileToast('');
+      }, 3500);
+    });
   };
 
   // Close date picker when clicking outside
@@ -813,6 +939,427 @@ export const DashboardView: React.FC = () => {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: LAPORAN REKONSILIASI SHIFT & AUDIT SALDO (FISIK LACI VS DIGITAL) */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border-2 border-teal-500/30 p-4 sm:p-5 md:p-6 shadow-md space-y-5 relative overflow-hidden">
+        {/* Decorative corner accent */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-teal-500/10 via-emerald-500/5 to-transparent pointer-events-none rounded-tr-2xl" />
+
+        {/* Top Header */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-600 via-emerald-600 to-cyan-700 text-white flex items-center justify-center shadow-md shrink-0">
+              <Scale className="w-5 h-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  Laporan Rekonsiliasi Shift & Audit Likuiditas
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-100 text-teal-900 border border-teal-200">
+                  Otomatis & Real-Time
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  isShiftBalanced
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : isShiftSurplus
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-rose-100 text-rose-800 border border-rose-300'
+                }`}>
+                  {isShiftBalanced ? '✓ Seimbang (Match)' : isShiftSurplus ? '▲ Surplus Kas' : '⚠️ Tidak Seimbang (Minus)'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Audit otomatis selisih uang fisik laci kasir vs saldo sistem POS & pemantauan likuiditas digital
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons on top right */}
+          <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+            <button
+              type="button"
+              onClick={handleCopyReconciliationReport}
+              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+              title="Salin ringkasan rekonsiliasi shift ke WhatsApp"
+            >
+              {reconcileCopied ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-700 font-extrabold">Tersalin!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Salin ke WA</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDenominationOpen(!isDenominationOpen)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+                isDenominationOpen
+                  ? 'bg-teal-700 text-white ring-2 ring-teal-500'
+                  : 'bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100'
+              }`}
+            >
+              <Calculator className="w-3.5 h-3.5" />
+              <span>{isDenominationOpen ? 'Tutup Hitung Pecahan' : 'Hitung Pecahan Uang'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsShiftModalOpen(true)}
+              className="px-3 py-1.5 text-xs font-extrabold bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Tutup Shift & Rekonsiliasi</span>
+            </button>
+          </div>
+        </div>
+
+        {reconcileToast && (
+          <div className="p-2.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-900 border border-emerald-200 flex items-center gap-2 animate-fadeIn">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{reconcileToast}</span>
+          </div>
+        )}
+
+        {/* Shift Identity Bar */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Petugas Shift:</span>
+              <span className="font-extrabold text-slate-900 flex items-center gap-1">
+                <User className="w-3.5 h-3.5 text-teal-600" />
+                {shift.cashierName} ({shift.role.toUpperCase()})
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Shift Aktif:</span>
+              <span className="font-bold text-teal-800 bg-teal-100/80 px-2 py-0.5 rounded">
+                {shift.shiftName}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Buka Shift:</span>
+              <span className="font-mono text-slate-700 font-bold">{shift.startTime}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-600">
+            <span>Modal Awal Laci:</span>
+            <span className="font-mono font-black text-slate-900">
+              Rp {shift.startingCash.toLocaleString('id-ID')}
+            </span>
+          </div>
+        </div>
+
+        {/* 3 Main Comparison Columns: Kas Sistem vs Fisik Dihitung vs Saldo Digital */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {/* Card 1: Ekspektasi Kas Laci Sistem */}
+          <div className="bg-gradient-to-br from-slate-50 to-emerald-50/40 border border-emerald-200 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800">
+                  1. Kas Laci Menurut Sistem
+                </span>
+                <Wallet className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-emerald-950 font-mono tabular-nums mt-1.5">
+                Rp {drawerCashBalance.toLocaleString('id-ID')}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Berdasarkan riwayat transaksi POS & kas harian
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-emerald-100/80 space-y-1 text-[11px]">
+              <div className="flex justify-between text-slate-600">
+                <span>Modal Awal:</span>
+                <span className="font-mono font-bold">Rp {shift.startingCash.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between text-emerald-700 font-bold">
+                <span>Total Kas Masuk (+):</span>
+                <span className="font-mono">+Rp {totalCashInShift.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between text-rose-600 font-bold">
+                <span>Total Kas Keluar (-):</span>
+                <span className="font-mono">-Rp {totalCashOutShift.toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Uang Fisik Riil yang Dihitung di Laci */}
+          <div className="bg-gradient-to-br from-slate-50 to-amber-50/40 border border-amber-200 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-900">
+                  2. Fisik Dihitung Kasir
+                </span>
+                <Calculator className="w-4 h-4 text-amber-600" />
+              </div>
+
+              {/* Direct input or calculated from denomination */}
+              <div className="mt-1.5 relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono font-bold text-slate-400 text-sm">
+                  Rp
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={physicalCashCounted || ''}
+                  onChange={(e) => setPhysicalCashCounted(Number(e.target.value) || 0)}
+                  className="w-full pl-9 pr-3 py-1.5 font-mono font-black text-xl text-slate-900 bg-white border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex items-center justify-between mt-1 text-[10.5px] text-slate-500">
+                <span>Input hitungan uang lembar di laci</span>
+                <button
+                  type="button"
+                  onClick={() => setPhysicalCashCounted(drawerCashBalance)}
+                  className="text-amber-800 hover:underline font-bold"
+                >
+                  Samakan Sistem
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-amber-100/80 space-y-1 text-[11px]">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Pecahan Lembar:</span>
+                <button
+                  type="button"
+                  onClick={() => setIsDenominationOpen(!isDenominationOpen)}
+                  className="text-amber-800 hover:text-amber-950 font-extrabold underline flex items-center gap-1"
+                >
+                  <Coins className="w-3 h-3" />
+                  <span>{isDenominationOpen ? 'Tutup Rincian' : 'Buka Rincian Pecahan'}</span>
+                </button>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Status Audit:</span>
+                <span className="font-bold">
+                  {isShiftBalanced ? 'Siap Valid' : 'Perlu Investigasi'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Saldo Digital Operasional */}
+          <div className="bg-gradient-to-br from-slate-50 to-sky-50/40 border border-sky-200 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-sky-900">
+                  3. Saldo Digital Operasional
+                </span>
+                <Smartphone className="w-4 h-4 text-sky-600" />
+              </div>
+              <div className="text-2xl font-black text-sky-950 font-mono tabular-nums mt-1.5">
+                Rp {digitalBalance.toLocaleString('id-ID')}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Rekening bank, saldo EDC & e-wallet penampung
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-sky-100/80 space-y-1 text-[11px]">
+              <div className="flex justify-between text-slate-600">
+                <span>Total Likuiditas Toko:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  Rp {(drawerCashBalance + digitalBalance).toLocaleString('id-ID')}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Rasio Kas : Digital:</span>
+                <span className="font-mono font-bold text-sky-800">
+                  {cashPercentage}% : {digitalPercentage}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Denomination Counter Panel (Foldable) */}
+        {isDenominationOpen && (
+          <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+              <div className="flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-700" />
+                <span className="font-extrabold text-xs text-amber-950">
+                  Kalkulator Hitung Uang Pecahan Laci Kasir
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetDenominations}
+                className="text-[11px] text-amber-900 hover:text-amber-950 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Reset Hitungan</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
+              {[
+                { key: '100000', label: 'Rp 100.000', val: 100000 },
+                { key: '50000', label: 'Rp 50.000', val: 50000 },
+                { key: '20000', label: 'Rp 20.000', val: 20000 },
+                { key: '10000', label: 'Rp 10.000', val: 10000 },
+                { key: '5000', label: 'Rp 5.000', val: 5000 },
+                { key: '2000', label: 'Rp 2.000', val: 2000 },
+                { key: '1000', label: 'Rp 1.000', val: 1000 },
+                { key: 'koin', label: 'Total Koin', val: 1, isCoin: true },
+              ].map((d) => (
+                <div key={d.key} className="bg-white p-2 rounded-xl border border-amber-200 flex flex-col justify-between">
+                  <span className="text-[10px] font-extrabold text-slate-700">{d.label}</span>
+                  <div className="flex items-center gap-1 mt-1">
+                    <input
+                      type="number"
+                      min="0"
+                      value={denominations[d.key] || ''}
+                      onChange={(e) => handleDenominationChange(d.key, Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-center text-xs font-mono font-bold py-1 bg-amber-50/50 border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    />
+                    <span className="text-[10px] text-slate-400 font-bold">
+                      {d.isCoin ? 'Rp' : 'lbr'}
+                    </span>
+                  </div>
+                  <span className="text-[9.5px] font-mono text-amber-900 font-bold mt-1 text-right">
+                    Rp {((denominations[d.key] || 0) * d.val).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1 border-t border-amber-200/60 text-xs font-bold text-amber-950">
+              <span>Total Hasil Hitungan Fisik:</span>
+              <span className="font-mono text-sm font-black text-emerald-800">
+                Rp {physicalCashCounted.toLocaleString('id-ID')}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* AUTOMATIC DISCREPANCY & BALANCE ALERT BOX */}
+        {/* ========================================================================= */}
+        {isShiftBalanced ? (
+          <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider bg-emerald-600 text-white px-2 py-0.5 rounded-md">
+                  Status Rekonsiliasi: SEIMBANG (MATCH 100%)
+                </span>
+                <span className="font-mono font-bold text-emerald-900 text-xs">
+                  Selisih: Rp 0
+                </span>
+              </div>
+              <p className="text-xs text-emerald-950 font-semibold mt-1">
+                Uang fisik di laci kasir (<b>Rp {physicalCashCounted.toLocaleString('id-ID')}</b>) cocok 100% dengan catatan saldo sistem POS (<b>Rp {drawerCashBalance.toLocaleString('id-ID')}</b>).
+              </p>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                Tidak ada selisih kas fisik. Semua transaksi tunai, tarik tunai, kasbon, dan mutasi pengeluaran tercatat akurat dan siap untuk pergantian shift.
+              </p>
+            </div>
+          </div>
+        ) : isShiftSurplus ? (
+          <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-sm">
+              <AlertTriangle className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2 py-0.5 rounded-md">
+                  PERHATIAN: ADA SELISIH SURPLUS (+Rp {selisihShift.toLocaleString('id-ID')})
+                </span>
+                <span className="font-mono font-bold text-amber-900 text-xs">
+                  Fisik Laci Lebih Banyak
+                </span>
+              </div>
+              <p className="text-xs text-amber-950 font-bold mt-1">
+                Uang fisik di laci (Rp {physicalCashCounted.toLocaleString('id-ID')}) lebih banyak sebesar <span className="font-mono underline text-amber-900">+Rp {selisihShift.toLocaleString('id-ID')}</span> dari catatan sistem POS (Rp {drawerCashBalance.toLocaleString('id-ID')}).
+              </p>
+              <div className="mt-2 text-[11px] text-amber-900 bg-white/70 border border-amber-200 rounded-xl p-2.5 space-y-1">
+                <span className="font-bold block">💡 Langkah Diagnosa Kasir:</span>
+                <ul className="list-disc list-inside space-y-0.5 text-slate-700">
+                  <li>Periksa apakah ada pelanggan yang membayar sisa kasbon/hutang tetapi belum di-input ke menu <b>Hutang & Retur</b>.</li>
+                  <li>Periksa apakah ada uang kembalian pelanggan yang ditolak atau dimasukkan kembali ke laci.</li>
+                  <li>Periksa apakah ada penerimaan uang jasa/fotokopi/servis yang belum tercatat di kasir.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-rose-50 border-2 border-rose-400 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+              <ShieldAlert className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider bg-rose-600 text-white px-2 py-0.5 rounded-md">
+                  ⚠️ PERINGATAN: ADA SELISIH TIDAK SEIMBANG (-Rp {Math.abs(selisihShift).toLocaleString('id-ID')})
+                </span>
+                <span className="font-mono font-bold text-rose-900 text-xs">
+                  Uang Fisik Laci Kurang (Defisit)
+                </span>
+              </div>
+              <p className="text-xs text-rose-950 font-black mt-1">
+                Uang fisik di laci (Rp {physicalCashCounted.toLocaleString('id-ID')}) kurang sebesar <span className="font-mono underline text-rose-700">-Rp {Math.abs(selisihShift).toLocaleString('id-ID')}</span> dibandingkan saldo yang seharusnya ada di sistem (Rp {drawerCashBalance.toLocaleString('id-ID')}).
+              </p>
+              <div className="mt-2 text-[11px] text-rose-950 bg-white border border-rose-200 rounded-xl p-2.5 space-y-1.5 shadow-xs">
+                <span className="font-extrabold text-rose-800 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  Penyebab & Investigasi Selisih Tidak Seimbang:
+                </span>
+                <ul className="list-disc list-inside space-y-1 text-slate-700">
+                  <li>
+                    <b>Pembayaran Tidak Penuh / Kasbon:</b> Apakah ada pelanggan yang membayar sebagian (DP) tetapi kasir mencatat sebagai bayar penuh? (Sisa seharusnya masuk ke kasbon).
+                  </li>
+                  <li>
+                    <b>Pengeluaran Kas Belum Tercatat:</b> Apakah ada belanja operasional toko, makan/minum, atau nota pengeluaran tunai yang belum dicatat di tombol <b>Catat Kas</b>?
+                  </li>
+                  <li>
+                    <b>Salah Kembalian / Tarik Tunai:</b> Periksa kembali penyerahan uang fisik tarik tunai mesin EDC atau pemberian kembalian.
+                  </li>
+                  <li>
+                    <b>Metode Pembayaran Tertukar:</b> Periksa apakah ada transaksi QRIS atau Transfer Bank yang tidak sengaja terinput sebagai 'Tunai'.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Digital Liquidity Warning if balance < 1jt */}
+        {digitalBalance < 1000000 && (
+          <div className="p-3 bg-sky-50 border border-sky-300 rounded-xl flex items-center justify-between gap-3 text-xs text-sky-950">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-sky-600 shrink-0" />
+              <span>
+                <b>Peringatan Saldo Digital Minim:</b> Saldo operasional bank & e-wallet tersisa <b className="font-mono">Rp {digitalBalance.toLocaleString('id-ID')}</b>. Disarankan top-up saldo untuk kelancaran tarik tunai/transfer pelanggan berikutnya.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setTempDigitalInput(digitalBalance.toString());
+                setIsEditingDigitalBalance(true);
+              }}
+              className="px-2.5 py-1 bg-white hover:bg-sky-100 border border-sky-300 font-bold rounded-lg text-sky-800 transition cursor-pointer shrink-0"
+            >
+              Update Saldo Digital
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}

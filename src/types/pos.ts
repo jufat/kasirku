@@ -37,6 +37,10 @@ export interface POSTransaction {
   paymentMethod: PaymentMethod;
   cashTendered: number;
   changeAmount: number;
+  paidAmount?: number;
+  remainingDebt?: number;
+  isPartialPayment?: boolean;
+  dueDate?: string;
   type: 'pos_penjualan';
   note?: string;
 }
@@ -83,7 +87,7 @@ export interface AtmMiniTransaction {
   date: string;
   type: AtmMiniType;
   bankName: string;
-  cardType: 'GPN' | 'Mastercard' | 'Visa' | 'BCA Card' | 'QRIS' | 'M-Banking';
+  cardType: 'GPN' | 'Mastercard' | 'Visa' | 'BCA Card' | 'QRIS' | 'M-Banking' | 'E-Wallet';
   cardNumberMasked: string;
   customerName: string;
   targetAccountOrPhone?: string;
@@ -93,6 +97,10 @@ export interface AtmMiniTransaction {
   totalDebited: number;
   cashHandedOrReceived: number;
   paymentMethod?: 'tunai' | 'qris' | 'hutang';
+  paidAmount?: number;
+  remainingDebt?: number;
+  isPartialPayment?: boolean;
+  dueDate?: string;
   adminDeductionType?: 'tambah_transfer' | 'potong_tunai';
   status: 'sukses' | 'gagal';
   discount?: number;
@@ -148,6 +156,9 @@ export interface ServiceTicket {
   warrantyDays: number;
   technicianNote?: string;
   discount?: number;
+  remainingDebt?: number;
+  isPartialPayment?: boolean;
+  dueDate?: string;
 }
 
 export type CashMutationCategory =
@@ -293,6 +304,9 @@ export interface PrintOrder {
   deadline?: string;
   fileOrNote?: string;
   discount?: number;
+  paidAmount?: number;
+  isPartialPayment?: boolean;
+  dueDate?: string;
 }
 
 export interface SyncTransactionEvent {

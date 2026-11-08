@@ -33,7 +33,7 @@ import {
   Percent,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
-import { AtmMiniType } from '../../types/pos';
+import { AtmMiniType, AtmMiniTransaction } from '../../types/pos';
 
 const BANK_LIST = [
   'BRI',
@@ -121,7 +121,7 @@ export const AtmMiniView: React.FC = () => {
 
   // Form states
   const [bankName, setBankName] = useState('BRI');
-  const [cardType, setCardType] = useState<'GPN' | 'Mastercard' | 'Visa' | 'BCA Card' | 'QRIS' | 'M-Banking'>('GPN');
+  const [cardType, setCardType] = useState<AtmMiniTransaction['cardType']>('GPN');
   const [cardNumberLast4, setCardNumberLast4] = useState('7192');
   const [customerName, setCustomerName] = useState('');
   const [targetAccountOrPhone, setTargetAccountOrPhone] = useState('');
@@ -314,12 +314,19 @@ export const AtmMiniView: React.FC = () => {
 
   // Step 2: Confirm and process transaction + open thermal receipt
   const handleConfirmAndExecuteTransaction = () => {
-    // Validasi khusus pembayaran Kasbon / Hutang
+    const isTarikTunai = primaryTab === 'tarik_tunai';
+    const isPartialAtmMini = !isTarikTunai && atmMiniPaymentMethod === 'tunai' && cashReceivedInput > 0 && cashReceivedInput < totalDebited;
+
+    // Validasi khusus pembayaran Kasbon / Hutang & Bayar Sebagian
     let finalCustomerName = customerName.trim();
-    if (atmMiniPaymentMethod === 'hutang') {
+    if (atmMiniPaymentMethod === 'hutang' || isPartialAtmMini) {
       const debtorName = atmMiniDebtorName.trim() || customerName.trim();
-      if (!debtorName || debtorName.toLowerCase() === 'nasabah edc' || debtorName.toLowerCase() === 'pelanggan umum') {
-        setAtmMiniKasbonError('Nama Orang / Pelanggan yang Kasbon wajib diisi agar tersimpan jelas di Buku Hutang!');
+      if (!debtorName || debtorName.toLowerCase() === 'nasabah edc' || debtorName.toLowerCase() === 'pelanggan umum' || debtorName.toLowerCase() === 'nasabah') {
+        setAtmMiniKasbonError(
+          isPartialAtmMini
+            ? 'Untuk Bayar Sebagian (Sisa Kasbon), Nama Pelanggan wajib diisi agar tersimpan jelas di Buku Hutang!'
+            : 'Nama Orang / Pelanggan yang Kasbon wajib diisi agar tersimpan jelas di Buku Hutang!'
+        );
         return;
       }
       finalCustomerName = debtorName;
@@ -327,7 +334,7 @@ export const AtmMiniView: React.FC = () => {
     }
 
     let providerName = bankName;
-    let actualCardType = cardType;
+    let actualCardType: AtmMiniTransaction['cardType'] = cardType;
     let maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
     let destination: string | undefined = undefined;
 
@@ -398,11 +405,12 @@ export const AtmMiniView: React.FC = () => {
       effectiveCounterFee,
       destination,
       note,
-      atmMiniPaymentMethod,
+      isPartialAtmMini ? 'hutang' : atmMiniPaymentMethod,
       atmMiniCustomerPhone || targetAccountOrPhone,
       atmMiniDueDate,
       adminDeductionType,
-      counterFeeDiscount > 0 ? counterFeeDiscount : undefined
+      counterFeeDiscount > 0 ? counterFeeDiscount : undefined,
+      isPartialAtmMini ? cashReceivedInput : (atmMiniPaymentMethod === 'hutang' ? 0 : totalDebited)
     );
 
     setIsPaymentModalOpen(false);
@@ -1934,7 +1942,9 @@ export const AtmMiniView: React.FC = () => {
                       ? 'Biaya Admin Aplikasi:'
                       : activeMode === 'topup_ewallet_atm'
                       ? 'Biaya Admin Layanan:'
-                      : 'Biaya Admin EDC / Bank:'}
+                      : isCurrentChannelCard
+                      ? 'Biaya Admin EDC / Bank:'
+                      : 'Biaya Admin Transaksi / App:'}
                   </span>
                   <span className="font-mono font-semibold text-slate-700">
                     Rp {adminEdcFee.toLocaleString('id-ID')}
@@ -2205,19 +2215,80 @@ export const AtmMiniView: React.FC = () => {
                         ))}
                       </div>
 
-                      {/* Change Amount */}
+                      {/* Change Amount & Sisa Kasbon */}
                       <div className="flex items-center justify-between pt-1 text-xs">
-                        <span className="font-bold text-slate-700">Uang Kembalian Kasir:</span>
+                        <span className="font-bold text-slate-700">
+                          {cashReceivedInput >= totalDebited
+                            ? 'Uang Kembalian Kasir:'
+                            : cashReceivedInput > 0
+                            ? 'Sisa Kasbon (Masuk Buku Hutang):'
+                            : 'Kurang Bayar:'}
+                        </span>
                         <span
                           className={`font-mono font-black text-sm ${
-                            cashReceivedInput >= totalDebited ? 'text-emerald-700' : 'text-rose-600'
+                            cashReceivedInput >= totalDebited
+                              ? 'text-emerald-700'
+                              : cashReceivedInput > 0
+                              ? 'text-amber-700'
+                              : 'text-rose-600'
                           }`}
                         >
                           {cashReceivedInput >= totalDebited
                             ? `Rp ${(cashReceivedInput - totalDebited).toLocaleString('id-ID')}`
-                            : `Kurang Rp ${(totalDebited - cashReceivedInput).toLocaleString('id-ID')}`}
+                            : `Rp ${(totalDebited - cashReceivedInput).toLocaleString('id-ID')}`}
                         </span>
                       </div>
+
+                      {/* Info & Input Pelanggan Kasbon jika Bayar Sebagian */}
+                      {cashReceivedInput > 0 && cashReceivedInput < totalDebited && (
+                        <div className="mt-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
+                          <p className="text-[10px] text-amber-900 leading-tight">
+                            💡 <strong>Mode Bayar Sebagian:</strong> Uang Rp {cashReceivedInput.toLocaleString('id-ID')} dicatat masuk laci kasir, dan sisa <strong className="font-mono">Rp {(totalDebited - cashReceivedInput).toLocaleString('id-ID')}</strong> otomatis dicatat ke Buku Kasbon atas nama nasabah di bawah ini:
+                          </p>
+                          <div>
+                            <label className="text-[10px] font-extrabold text-amber-950 flex items-center justify-between mb-0.5">
+                              <span>Nama Pelanggan yang Kasbon Sisa: *</span>
+                              <span className="text-[9px] text-rose-600 font-bold bg-rose-50 px-1 rounded border border-rose-200">
+                                Wajib Diisi
+                              </span>
+                            </label>
+                            <input
+                              type="text"
+                              value={atmMiniDebtorName}
+                              onChange={(e) => {
+                                setAtmMiniDebtorName(e.target.value);
+                                if (atmMiniKasbonError) setAtmMiniKasbonError(null);
+                              }}
+                              placeholder="Ketik nama pelanggan yang berhutang..."
+                              className="w-full px-2.5 py-1 text-xs bg-white border border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                            {atmMiniKasbonError && (
+                              <p className="text-[10px] font-bold text-rose-600 mt-1">⚠️ {atmMiniKasbonError}</p>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-[10px]">
+                            <div>
+                              <span className="font-bold text-amber-900 block mb-0.5">Jatuh Tempo:</span>
+                              <input
+                                type="date"
+                                value={atmMiniDueDate}
+                                onChange={(e) => setAtmMiniDueDate(e.target.value)}
+                                className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono"
+                              />
+                            </div>
+                            <div>
+                              <span className="font-bold text-amber-900 block mb-0.5">No. HP / WA:</span>
+                              <input
+                                type="text"
+                                value={atmMiniCustomerPhone}
+                                onChange={(e) => setAtmMiniCustomerPhone(e.target.value)}
+                                placeholder="Opsional..."
+                                className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -2393,7 +2464,8 @@ export const AtmMiniView: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      );
+    })()}
     </div>
   );
 };

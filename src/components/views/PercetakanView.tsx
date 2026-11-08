@@ -530,26 +530,36 @@ export const PercetakanView: React.FC = () => {
       return;
     }
 
+    const isPartial = settlePrintMethod === 'tunai' && settlePrintCashReceived > 0 && settlePrintCashReceived < actualRemaining;
+    const actualPaid = isPartial ? settlePrintCashReceived : (settlePrintMethod === 'hutang' ? 0 : actualRemaining);
+    const remainingDebt = Math.max(0, actualRemaining - actualPaid);
+
     updatePrintOrderStatus(
       settlingPrintOrder.id,
       'diambil',
       settlePrintMethod,
       settlePrintDueDate,
       settlePrintPhone || settlingPrintOrder.customerPhone,
-      settlePrintNote
+      settlePrintNote,
+      isPartial ? actualPaid : undefined
     );
     const orderCopy: PrintOrder = {
       ...settlingPrintOrder,
       discount: (settlingPrintOrder.discount || 0) + settlePrintDiscount,
       status: 'diambil',
-      remainingAmount: 0,
-      downPayment: settlingPrintOrder.totalAmount,
-      paymentMethod: settlePrintMethod,
+      remainingAmount: remainingDebt,
+      paidAmount: (settlingPrintOrder.downPayment || 0) + actualPaid,
+      isPartialPayment: isPartial,
+      dueDate: isPartial || settlePrintMethod === 'hutang' ? settlePrintDueDate : undefined,
+      downPayment: (settlingPrintOrder.downPayment || 0) + actualPaid,
+      paymentMethod: isPartial ? 'tunai' : settlePrintMethod,
     };
     setSettlingPrintOrder(null);
     setSuccessToast(
       actualRemaining === 0
         ? `Pesanan ${settlingPrintOrder.id} dilunasi Rp 0 (GRATIS OWNER) & diserahkan!`
+        : isPartial
+        ? `Pesanan ${settlingPrintOrder.id} diserahkan (Bayar Rp ${actualPaid.toLocaleString('id-ID')}, sisa Rp ${remainingDebt.toLocaleString('id-ID')} masuk Kasbon)!`
         : settlePrintMethod === 'hutang'
         ? `Pesanan ${settlingPrintOrder.id} diserahkan & sisa tagihan masuk ke Buku Hutang / Kasbon!`
         : `Pesanan ${settlingPrintOrder.id} berhasil dilunasi (${settlePrintMethod.toUpperCase()}) & diserahkan!`
@@ -3011,29 +3021,72 @@ export const PercetakanView: React.FC = () => {
               </div>
 
               {/* Method specific fields */}
-              {settlePrintMethod === 'tunai' && (
-                <div className="space-y-2 p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-slate-700">Uang Diterima:</span>
-                    <span className="text-[11px] text-slate-500">Pas / Lebih</span>
+              {settlePrintMethod === 'tunai' && (() => {
+                const currentRemaining = Math.max(0, (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)) - settlePrintDiscount);
+                const isPartial = settlePrintCashReceived > 0 && settlePrintCashReceived < currentRemaining;
+                const changeAmount = Math.max(0, settlePrintCashReceived - currentRemaining);
+                const remainingKasbon = Math.max(0, currentRemaining - settlePrintCashReceived);
+
+                return (
+                  <div className="space-y-2.5 p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-700">Uang Diterima:</span>
+                      <span className="text-[11px] text-slate-500">Bisa bayar penuh atau sebagian (DP)</span>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={settlePrintCashReceived || ''}
+                      onChange={(e) => setSettlePrintCashReceived(Number(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl font-mono font-black text-sm text-right text-emerald-950 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      placeholder="Masukkan nominal uang tunai..."
+                    />
+
+                    {isPartial ? (
+                      <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 space-y-1.5 animate-fadeIn">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Mode Bayar Sebagian (DP / Kasbon)</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 leading-tight">
+                          Uang masuk laci kas: <b className="font-mono text-emerald-800">Rp {settlePrintCashReceived.toLocaleString('id-ID')}</b>.<br />
+                          Sisa tagihan: <b className="font-mono text-rose-700">Rp {remainingKasbon.toLocaleString('id-ID')}</b> otomatis dicatat ke Buku Kasbon atas nama <b>{settlingPrintOrder.customerName}</b>.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-200/60">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Jatuh Tempo Kasbon:</label>
+                            <input
+                              type="date"
+                              value={settlePrintDueDate}
+                              onChange={(e) => setSettlePrintDueDate(e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium focus:ring-1 focus:ring-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-700 block mb-0.5">No. WhatsApp / HP:</label>
+                            <input
+                              type="text"
+                              value={settlePrintPhone}
+                              onChange={(e) => setSettlePrintPhone(e.target.value)}
+                              placeholder="0812..."
+                              className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono focus:ring-1 focus:ring-amber-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1 text-xs font-bold">
+                        <span className="text-slate-600">Kembalian:</span>
+                        <span className="font-mono text-sm text-emerald-700">
+                          Rp {changeAmount.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <input
-                    type="number"
-                    min={settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)}
-                    step="any"
-                    value={settlePrintCashReceived || ''}
-                    onChange={(e) => setSettlePrintCashReceived(Number(e.target.value) || 0)}
-                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl font-mono font-black text-sm text-right text-emerald-950 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    placeholder="Masukkan nominal uang tunai..."
-                  />
-                  <div className="flex items-center justify-between pt-1 text-xs font-bold">
-                    <span className="text-slate-600">Kembalian:</span>
-                    <span className="font-mono text-sm text-emerald-700">
-                      Rp {Math.max(0, settlePrintCashReceived - (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment))).toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {settlePrintMethod === 'qris' && (
                 <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1.5 text-xs text-blue-900">
@@ -3118,6 +3171,8 @@ export const PercetakanView: React.FC = () => {
                       settlePrintDiscount
                   ) === 0 && isOwner
                     ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 ring-2 ring-amber-400/50 hover:brightness-105'
+                    : settlePrintMethod === 'tunai' && settlePrintCashReceived > 0 && settlePrintCashReceived < Math.max(0, (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)) - settlePrintDiscount)
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'
                     : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white'
                 }`}
               >
@@ -3129,6 +3184,8 @@ export const PercetakanView: React.FC = () => {
                       settlePrintDiscount
                   ) === 0 && isOwner
                     ? '🎁 Pelunasan Rp 0 & Serahkan (Owner Gratis)'
+                    : settlePrintMethod === 'tunai' && settlePrintCashReceived > 0 && settlePrintCashReceived < Math.max(0, (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)) - settlePrintDiscount)
+                    ? `Konfirmasi Bayar Sebagian (Sisa Rp ${(Math.max(0, (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment)) - settlePrintDiscount) - settlePrintCashReceived).toLocaleString('id-ID')} Kasbon)`
                     : 'Konfirmasi Pelunasan & Serahkan'}
                 </span>
               </button>

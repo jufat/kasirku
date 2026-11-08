@@ -166,29 +166,38 @@ export const ServiceHPView: React.FC = () => {
       return;
     }
 
+    const isPartial = settleMethod === 'tunai' && settleCashReceived > 0 && settleCashReceived < actualRemaining;
+
     updateServiceStatus(
       settlingTicket.id,
       'diambil',
-      settleMethod,
+      isPartial ? 'hutang' : settleMethod,
       settleDueDate,
       settlePhone || settlingTicket.customerPhone,
-      settleNote
+      settleNote,
+      isPartial ? settleCashReceived : (settleMethod === 'hutang' ? 0 : actualRemaining)
     );
 
     const ticketCopy: ServiceTicket = {
       ...settlingTicket,
       discount: (settlingTicket.discount || 0) + settleServiceDiscount,
       status: 'diambil',
-      downPayment: settlingTicket.totalCost,
+      downPayment: isPartial
+        ? settlingTicket.downPayment + settleCashReceived
+        : (settleMethod === 'hutang' ? settlingTicket.downPayment : settlingTicket.totalCost),
+      remainingDebt: isPartial ? Math.max(0, actualRemaining - settleCashReceived) : undefined,
+      isPartialPayment: isPartial,
+      dueDate: isPartial ? settleDueDate : undefined,
     };
     setSettlingTicket(null);
 
-    const methodLabel =
-      settleMethod === 'tunai'
-        ? 'Tunai'
-        : settleMethod === 'qris'
-        ? 'QRIS'
-        : 'Kasbon (Masuk Data Hutang)';
+    const methodLabel = isPartial
+      ? `Bayar Sebagian (DP Rp ${settleCashReceived.toLocaleString('id-ID')}, Sisa Kasbon Rp ${(actualRemaining - settleCashReceived).toLocaleString('id-ID')})`
+      : settleMethod === 'tunai'
+      ? 'Tunai Penuh'
+      : settleMethod === 'qris'
+      ? 'QRIS'
+      : 'Kasbon (Masuk Data Hutang)';
 
     setToastMessage(
       `Pelunasan service ${ticketCopy.id} (${ticketCopy.deviceModel}) via ${methodLabel} sukses diproses!`
@@ -1101,23 +1110,40 @@ export const ServiceHPView: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Kembalian */}
+                  {/* Kembalian & Sisa Kasbon */}
                   <div className="flex items-center justify-between pt-1 border-t border-emerald-200 text-xs">
-                    <span className="font-bold text-slate-700">Kembalian Kasir:</span>
+                    <span className="font-bold text-slate-700">
+                      {settleCashReceived >=
+                      Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
+                        ? 'Kembalian Kasir:'
+                        : settleCashReceived > 0
+                        ? 'Sisa Kasbon (Masuk Buku Hutang):'
+                        : 'Kurang Bayar:'}
+                    </span>
                     <span
                       className={`font-mono font-black text-sm ${
                         settleCashReceived >=
                         Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
                           ? 'text-emerald-800'
+                          : settleCashReceived > 0
+                          ? 'text-amber-800'
                           : 'text-rose-600'
                       }`}
                     >
                       {settleCashReceived >=
                       Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
                         ? `Rp ${(settleCashReceived - Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)).toLocaleString('id-ID')}`
-                        : `Kurang Rp ${(Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount) - settleCashReceived).toLocaleString('id-ID')}`}
+                        : `Rp ${(Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount) - settleCashReceived).toLocaleString('id-ID')}`}
                     </span>
                   </div>
+
+                  {settleCashReceived > 0 &&
+                    settleCashReceived <
+                      Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount) && (
+                      <div className="p-2 bg-amber-100 rounded-lg text-[10px] text-amber-950 border border-amber-300">
+                        💡 <strong>Mode Bayar Sebagian:</strong> Uang Rp {settleCashReceived.toLocaleString('id-ID')} masuk kas laci, sisa <strong className="font-mono">Rp {(Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount) - settleCashReceived).toLocaleString('id-ID')}</strong> otomatis dicatat ke Buku Kasbon atas nama {settlingTicket.customerName}.
+                      </div>
+                    )}
                 </div>
               )}
 
@@ -1221,6 +1247,11 @@ export const ServiceHPView: React.FC = () => {
                     settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount
                   ) === 0 && isOwner
                     ? '🎁 Pelunasan Rp 0 & Serahkan HP (Owner Gratis)'
+                    : settleMethod === 'tunai' &&
+                      settleCashReceived > 0 &&
+                      settleCashReceived <
+                        Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount)
+                    ? `Bayar Sebagian (Rp ${settleCashReceived.toLocaleString('id-ID')}) & Sisa Kasbon`
                     : 'Konfirmasi Pelunasan & Serahkan HP'}
                 </span>
               </button>

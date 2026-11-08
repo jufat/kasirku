@@ -82,7 +82,9 @@ interface POSContextType {
     taxPercent: number,
     note?: string,
     customerPhone?: string,
-    dueDate?: string
+    dueDate?: string,
+    isPartialPayment?: boolean,
+    paidAmount?: number
   ) => POSTransaction;
 
   // Agency
@@ -115,7 +117,8 @@ interface POSContextType {
     customerPhone?: string,
     dueDate?: string,
     adminDeductionType?: 'tambah_transfer' | 'potong_tunai',
-    discount?: number
+    discount?: number,
+    paidAmount?: number
   ) => AtmMiniTransaction;
 
   // PPOB
@@ -154,7 +157,8 @@ interface POSContextType {
     paymentMethod?: 'tunai' | 'qris' | 'hutang',
     dueDate?: string,
     customerPhone?: string,
-    note?: string
+    note?: string,
+    partialPaidAmount?: number
   ) => void;
   deleteServiceTicket: (id: string) => void;
 
@@ -167,7 +171,8 @@ interface POSContextType {
     paymentMethod?: 'tunai' | 'qris' | 'hutang',
     dueDate?: string,
     customerPhone?: string,
-    note?: string
+    note?: string,
+    partialPaidAmount?: number
   ) => void;
   deletePrintOrder: (id: string) => void;
   printServices: PrintServiceItem[];
@@ -737,7 +742,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     taxPercent: number,
     note?: string,
     customerPhone?: string,
-    dueDate?: string
+    dueDate?: string,
+    isPartialPayment?: boolean,
+    paidAmount?: number
   ): POSTransaction => {
     const subtotal = cartSubtotal;
     const taxAmount = Math.round((subtotal - discountAmount) * (taxPercent / 100));
@@ -747,20 +754,45 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     )}`;
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
+    // Deteksi Pembayaran Parsial / Bayar Sebagian (Sisa Masuk Kasbon)
+    const isPartial = Boolean(
+      isPartialPayment ||
+      (paymentMethod === 'tunai' && cashTendered > 0 && cashTendered < finalTotal) ||
+      (paymentMethod === 'hutang' && paidAmount !== undefined && paidAmount > 0)
+    );
+
+    const actualPaid = isPartial
+      ? (paidAmount !== undefined ? Math.min(paidAmount, finalTotal) : Math.min(cashTendered, finalTotal))
+      : (paymentMethod === 'hutang' ? 0 : finalTotal);
+
+    const remainingDebt = isPartial
+      ? Math.max(0, finalTotal - actualPaid)
+      : (paymentMethod === 'hutang' ? finalTotal : 0);
+
+    const changeAmount = (!isPartial && paymentMethod === 'tunai')
+      ? Math.max(0, cashTendered - finalTotal)
+      : 0;
+
+    const resolvedPaymentMethod: PaymentMethod = isPartial ? 'hutang' : paymentMethod;
+
     const newTx: POSTransaction = {
       id: `tx-${Date.now()}`,
       invoiceNo,
       date: new Date().toLocaleString('id-ID'),
       cashier: shift.cashierName,
-      customerName: customerName.trim() || 'Pelanggan Umum',
+      customerName: customerName.trim() || (remainingDebt > 0 ? 'Pelanggan Kasbon' : 'Pelanggan Umum'),
       items: [...cart],
       subtotal,
       discount: discountAmount,
       tax: taxAmount,
       total: finalTotal,
-      paymentMethod,
-      cashTendered: paymentMethod === 'tunai' ? cashTendered : finalTotal,
-      changeAmount: paymentMethod === 'tunai' ? Math.max(0, cashTendered - finalTotal) : 0,
+      paymentMethod: resolvedPaymentMethod,
+      cashTendered: isPartial ? actualPaid : (paymentMethod === 'tunai' ? cashTendered : finalTotal),
+      changeAmount,
+      paidAmount: isPartial ? actualPaid : undefined,
+      remainingDebt: remainingDebt > 0 ? remainingDebt : undefined,
+      isPartialPayment: isPartial && remainingDebt > 0,
+      dueDate: remainingDebt > 0 ? (dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) : undefined,
       type: 'pos_penjualan',
       note,
     };
@@ -777,66 +809,66 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     // 2. Auto-journal to Cash Ledger & Real-Time Sync
-    if (paymentMethod === 'tunai') {
-      const newRunning = drawerCashBalance + finalTotal;
-      const newMutation: CashMutation = {
-        id: `mut-${Date.now()}`,
-        timestamp: nowTime,
-        type: 'masuk',
-        category: 'penjualan_pos',
-        description: `Penjualan Kasir ${invoiceNo} (${cart.length} item: ${cart
-          .map((i) => `${i.product.name.slice(0, 15)}..x${i.quantity}`)
-          .join(', ')})`,
-        amount: finalTotal,
-        paymentMethod: 'tunai',
-        runningCashBalance: newRunning,
-        recordedBy: shift.cashierName,
-      };
-      setMutations((prev) => [newMutation, ...prev]);
+    if (actualPaid > 0) {
+      if (paymentMethod === 'tunai' || isPartial) {
+        const newRunning = drawerCashBalance + actualPaid;
+        const newMutation: CashMutation = {
+          id: `mut-${Date.now()}`,
+          timestamp: nowTime,
+          type: 'masuk',
+          category: 'penjualan_pos',
+          description: isPartial
+            ? `Penjualan Kasir (Bayar Sebagian) ${invoiceNo} (${cart.length} item) - Diterima Rp ${actualPaid.toLocaleString('id-ID')}, Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')}`
+            : `Penjualan Kasir ${invoiceNo} (${cart.length} item: ${cart
+                .map((i) => `${i.product.name.slice(0, 15)}..x${i.quantity}`)
+                .join(', ')})`,
+          amount: actualPaid,
+          paymentMethod: 'tunai',
+          runningCashBalance: newRunning,
+          recordedBy: shift.cashierName,
+        };
+        setMutations((prev) => [newMutation, ...prev]);
 
-      // Broadcast inter-module real-time sync event
-      setLastSyncEvent({
-        id: `sync-${Date.now()}`,
-        timestamp: nowTime,
-        source: 'kasir',
-        actionTitle: `Penjualan Kasir (${cart.length} item)`,
-        customerName: customerName.trim() || 'Pelanggan Umum',
-        drawerCashDelta: finalTotal,
-        digitalBalanceDelta: 0,
-        note: `Struk ${invoiceNo} · Masuk Kas Fisik Laci +Rp ${finalTotal.toLocaleString('id-ID')}`,
-      });
-    } else if (paymentMethod === 'qris') {
-      const newMutation: CashMutation = {
-        id: `mut-${Date.now()}`,
-        timestamp: nowTime,
-        type: 'masuk',
-        category: 'penjualan_pos',
-        description: `Penjualan QRIS Kasir ${invoiceNo} (${cart.length} item)`,
-        amount: finalTotal,
-        paymentMethod: 'non_tunai',
-        runningCashBalance: drawerCashBalance,
-        recordedBy: shift.cashierName,
-      };
-      setMutations((prev) => [newMutation, ...prev]);
+        setLastSyncEvent({
+          id: `sync-${Date.now()}`,
+          timestamp: nowTime,
+          source: 'kasir',
+          actionTitle: isPartial ? `Kasir (Bayar Sebagian DP)` : `Penjualan Kasir (${cart.length} item)`,
+          customerName: customerName.trim() || 'Pelanggan',
+          drawerCashDelta: actualPaid,
+          digitalBalanceDelta: 0,
+          note: `Struk ${invoiceNo} · Masuk Kas Fisik Laci +Rp ${actualPaid.toLocaleString('id-ID')}${remainingDebt > 0 ? ` (Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')})` : ''}`,
+        });
+      } else if (paymentMethod === 'qris') {
+        const newMutation: CashMutation = {
+          id: `mut-${Date.now()}`,
+          timestamp: nowTime,
+          type: 'masuk',
+          category: 'penjualan_pos',
+          description: `Penjualan QRIS Kasir ${invoiceNo} (${cart.length} item)`,
+          amount: actualPaid,
+          paymentMethod: 'non_tunai',
+          runningCashBalance: drawerCashBalance,
+          recordedBy: shift.cashierName,
+        };
+        setMutations((prev) => [newMutation, ...prev]);
+        setDigitalBalance((prev) => prev + actualPaid);
 
-      // QRIS payment instantly enters digital bank account
-      setDigitalBalance((prev) => prev + finalTotal);
-
-      // Broadcast inter-module real-time sync event
-      setLastSyncEvent({
-        id: `sync-${Date.now()}`,
-        timestamp: nowTime,
-        source: 'kasir',
-        actionTitle: `Penjualan QRIS Kasir (${cart.length} item)`,
-        customerName: customerName.trim() || 'Pelanggan Umum',
-        drawerCashDelta: 0,
-        digitalBalanceDelta: finalTotal,
-        note: `Struk ${invoiceNo} · Masuk Saldo Digital Bank/QRIS +Rp ${finalTotal.toLocaleString('id-ID')}`,
-      });
+        setLastSyncEvent({
+          id: `sync-${Date.now()}`,
+          timestamp: nowTime,
+          source: 'kasir',
+          actionTitle: `Penjualan QRIS Kasir (${cart.length} item)`,
+          customerName: customerName.trim() || 'Pelanggan Umum',
+          drawerCashDelta: 0,
+          digitalBalanceDelta: actualPaid,
+          note: `Struk ${invoiceNo} · Masuk Saldo Digital Bank/QRIS +Rp ${actualPaid.toLocaleString('id-ID')}`,
+        });
+      }
     }
 
-    // 3. If Hutang/Kasbon, record directly into Debt Ledger
-    if (paymentMethod === 'hutang') {
+    // 3. If there is remaining debt (Kasbon / Hutang), record directly into Debt Ledger
+    if (remainingDebt > 0) {
       const newDebt: DebtRecord = {
         id: `dbt-${Date.now()}`,
         invoiceOrRef: invoiceNo,
@@ -844,24 +876,28 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customerName: customerName.trim() || 'Pelanggan Kasbon',
         customerPhone: customerPhone?.trim() || '-',
         totalAmount: finalTotal,
-        paidAmount: 0,
-        remainingAmount: finalTotal,
+        paidAmount: actualPaid,
+        remainingAmount: remainingDebt,
         dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), // default 7 days
-        status: 'belum_lunas',
-        note: note?.trim() || `Kasbon Penjualan Kasir ${invoiceNo}`,
+        status: actualPaid > 0 ? 'cicilan' : 'belum_lunas',
+        note: note?.trim() || (actualPaid > 0
+          ? `Kasbon Sisa Penjualan Kasir ${invoiceNo} (Sudah bayar Rp ${actualPaid.toLocaleString('id-ID')})`
+          : `Kasbon Penjualan Kasir ${invoiceNo}`),
       };
       setDebts((prev) => [newDebt, ...prev]);
 
-      setLastSyncEvent({
-        id: `sync-${Date.now()}`,
-        timestamp: nowTime,
-        source: 'kasir',
-        actionTitle: `Kasbon Kasir (${cart.length} item)`,
-        customerName: customerName.trim() || 'Pelanggan Kasbon',
-        drawerCashDelta: 0,
-        digitalBalanceDelta: 0,
-        note: `Struk ${invoiceNo} · Kasbon Rp ${finalTotal.toLocaleString('id-ID')} dicatat ke Buku Piutang`,
-      });
+      if (actualPaid === 0) {
+        setLastSyncEvent({
+          id: `sync-${Date.now()}`,
+          timestamp: nowTime,
+          source: 'kasir',
+          actionTitle: `Kasbon Penuh Kasir (${cart.length} item)`,
+          customerName: customerName.trim() || 'Pelanggan Kasbon',
+          drawerCashDelta: 0,
+          digitalBalanceDelta: 0,
+          note: `Struk ${invoiceNo} · Kasbon Rp ${finalTotal.toLocaleString('id-ID')} dicatat ke Buku Piutang`,
+        });
+      }
     }
 
     // 4. Save transaction
@@ -960,7 +996,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     customerPhone?: string,
     dueDate?: string,
     adminDeductionType: 'tambah_transfer' | 'potong_tunai' = 'tambah_transfer',
-    discount?: number
+    discount?: number,
+    paidAmount?: number
   ): AtmMiniTransaction => {
     const traceNo = Math.floor(100000 + Math.random() * 900000).toString();
     const approvalCode = `APPR-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -975,6 +1012,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type === 'tarik_tunai_atm'
         ? (isPotongTunai ? Math.max(0, nominal - totalAdmin) : nominal)
         : totalDebited;
+
+    const isPartial = paidAmount !== undefined && paidAmount < totalDebited && paidAmount >= 0;
+    const actualPaid = isPartial ? paidAmount : (paymentMethod === 'hutang' ? 0 : totalDebited);
+    const remainingDebt = isPartial ? Math.max(0, totalDebited - actualPaid) : (paymentMethod === 'hutang' ? totalDebited : 0);
 
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
@@ -995,7 +1036,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       counterFee,
       totalDebited,
       cashHandedOrReceived,
-      paymentMethod,
+      paymentMethod: isPartial ? 'hutang' : paymentMethod,
+      paidAmount: isPartial ? actualPaid : undefined,
+      remainingDebt: remainingDebt > 0 ? remainingDebt : undefined,
+      isPartialPayment: isPartial && remainingDebt > 0,
+      dueDate: remainingDebt > 0 ? (dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) : undefined,
       adminDeductionType: type === 'tarik_tunai_atm' ? adminDeductionType : undefined,
       discount: discount && discount > 0 ? discount : undefined,
       status: 'sukses',
@@ -1004,21 +1049,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAtmMiniTransactions((prev) => [newTx, ...prev]);
 
-    // 1. If Kasbon (Hutang), immediately add to Debt Ledger
-    if (paymentMethod === 'hutang') {
-      const debtAmount = totalDebited;
+    // 1. If Kasbon (Hutang) or Partial Payment, record into Debt Ledger
+    if (remainingDebt > 0) {
       const newDebt: DebtRecord = {
         id: `dbt-${Date.now()}`,
         invoiceOrRef: `EDC-${traceNo}`,
         date: new Date().toISOString().slice(0, 10),
         customerName: customerName.trim() || 'Nasabah EDC',
         customerPhone: customerPhone?.trim() || targetAccountOrPhone || '-',
-        totalAmount: debtAmount,
-        paidAmount: 0,
-        remainingAmount: debtAmount,
+        totalAmount: totalDebited,
+        paidAmount: actualPaid,
+        remainingAmount: remainingDebt,
         dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-        status: 'belum_lunas',
-        note: `Kasbon Mini ATM ${type.replace(/_/g, ' ').toUpperCase()} [${bankName}] Ref:${traceNo}${note ? ' - ' + note : ''}`,
+        status: actualPaid > 0 ? 'cicilan' : 'belum_lunas',
+        note: isPartial
+          ? `Kasbon Sisa Mini ATM ${type.replace(/_/g, ' ').toUpperCase()} [${bankName}] Ref:${traceNo} (DP Rp ${actualPaid.toLocaleString('id-ID')})${note ? ' - ' + note : ''}`
+          : `Kasbon Mini ATM ${type.replace(/_/g, ' ').toUpperCase()} [${bankName}] Ref:${traceNo}${note ? ' - ' + note : ''}`,
       };
       setDebts((prev) => [newDebt, ...prev]);
     }
@@ -1085,16 +1131,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? 'Sistem QRIS'
           : 'Layanan EDC';
 
-      if (paymentMethod === 'tunai') {
-        // Uang masuk fisik ke laci kasir: catat seluruh nominal uang tunai yang diterima (pokok transfer/topup + admin EDC + jasa konter)
-        const fullCashReceived = totalDebited;
+      if (paymentMethod === 'tunai' || (isPartial && actualPaid > 0)) {
+        // Uang masuk fisik ke laci kasir sebesar actualPaid
+        const fullCashReceived = actualPaid;
         const newRunning = drawerCashBalance + fullCashReceived;
         const mutation: CashMutation = {
           id: `mut-${Date.now()}`,
           timestamp: nowTime,
           type: 'masuk',
           category: 'jasa_transfer',
-          description: `Terima Tunai ${serviceName} ${bankName} [${traceNo}] (${customerName}) - Nominal Rp ${nominal.toLocaleString('id-ID')} + Admin/Jasa Rp ${(adminEdcFee + counterFee).toLocaleString('id-ID')}`,
+          description: isPartial
+            ? `Terima Tunai (Bayar Sebagian) ${serviceName} ${bankName} [${traceNo}] (${customerName}) - Diterima Rp ${actualPaid.toLocaleString('id-ID')}, Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')}`
+            : `Terima Tunai ${serviceName} ${bankName} [${traceNo}] (${customerName}) - Nominal Rp ${nominal.toLocaleString('id-ID')} + Admin/Jasa Rp ${(adminEdcFee + counterFee).toLocaleString('id-ID')}`,
           amount: fullCashReceived,
           paymentMethod: 'tunai',
           runningCashBalance: newRunning,
@@ -1340,7 +1388,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: 'tunai' | 'qris' | 'hutang' = 'tunai',
     dueDate?: string,
     customerPhone?: string,
-    note?: string
+    note?: string,
+    partialPaidAmount?: number
   ) => {
     setServices((prev) =>
       prev.map((s) => {
@@ -1356,8 +1405,47 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 minute: '2-digit',
               });
 
-              // If payment method is Kasbon (Hutang), directly record to debts!
-              if (paymentMethod === 'hutang') {
+              const isPartial = partialPaidAmount !== undefined && partialPaidAmount < remaining && partialPaidAmount >= 0;
+              const actualPaid = isPartial ? partialPaidAmount : (paymentMethod === 'hutang' ? 0 : remaining);
+              const debtRemaining = Math.max(0, remaining - actualPaid);
+
+              // 1. Catat kas masuk jika ada nominal yang dibayar
+              if (actualPaid > 0) {
+                if (paymentMethod === 'tunai' || isPartial) {
+                  const mutation: CashMutation = {
+                    id: `mut-${Date.now()}`,
+                    timestamp: nowTime,
+                    type: 'masuk',
+                    category: 'service_hp',
+                    description: isPartial
+                      ? `Pelunasan Servis Sebagian ${s.id} (${s.deviceModel} - ${s.customerName}) - Diterima Rp ${actualPaid.toLocaleString('id-ID')}, Sisa Kasbon Rp ${debtRemaining.toLocaleString('id-ID')}`
+                      : `Pelunasan Service ${s.id} (${s.deviceModel} - ${s.customerName})`,
+                    amount: actualPaid,
+                    paymentMethod: 'tunai',
+                    runningCashBalance: drawerCashBalance + actualPaid,
+                    recordedBy: shift.cashierName,
+                  };
+                  setMutations((prevMut) => [mutation, ...prevMut]);
+                } else {
+                  // QRIS
+                  const mutation: CashMutation = {
+                    id: `mut-${Date.now()}`,
+                    timestamp: nowTime,
+                    type: 'masuk',
+                    category: 'service_hp',
+                    description: `Pelunasan QRIS Service ${s.id} (${s.deviceModel} - ${s.customerName})`,
+                    amount: actualPaid,
+                    paymentMethod: 'non_tunai',
+                    runningCashBalance: drawerCashBalance,
+                    recordedBy: shift.cashierName,
+                  };
+                  setMutations((prevMut) => [mutation, ...prevMut]);
+                  setDigitalBalance((p) => p + actualPaid);
+                }
+              }
+
+              // 2. Jika ada sisa belum lunas, otomatis masuk kasbon / hutang
+              if (debtRemaining > 0) {
                 const newDebt: DebtRecord = {
                   id: `dbt-${Date.now()}`,
                   invoiceOrRef: s.id,
@@ -1365,43 +1453,26 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   customerName: s.customerName.trim() || 'Pelanggan Servis',
                   customerPhone: customerPhone?.trim() || s.customerPhone || '-',
                   totalAmount: s.totalCost,
-                  paidAmount: s.downPayment,
-                  remainingAmount: remaining,
+                  paidAmount: s.downPayment + actualPaid,
+                  remainingAmount: debtRemaining,
                   dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-                  status: s.downPayment > 0 ? 'cicilan' : 'belum_lunas',
-                  note: `Kasbon Pelunasan Servis HP ${s.id} (${s.deviceModel} - ${s.problemDescription})${
-                    note ? ' - ' + note : ''
-                  }`,
+                  status: (s.downPayment + actualPaid) > 0 ? 'cicilan' : 'belum_lunas',
+                  note: isPartial
+                    ? `Kasbon Sisa Pelunasan Servis ${s.id} (${s.deviceModel})${note ? ' - ' + note : ''}`
+                    : `Kasbon Pelunasan Servis HP ${s.id} (${s.deviceModel} - ${s.problemDescription})${note ? ' - ' + note : ''}`,
                 };
                 setDebts((prevDebts) => [newDebt, ...prevDebts]);
-              } else if (paymentMethod === 'tunai') {
-                const mutation: CashMutation = {
-                  id: `mut-${Date.now()}`,
-                  timestamp: nowTime,
-                  type: 'masuk',
-                  category: 'service_hp',
-                  description: `Pelunasan Service ${s.id} (${s.deviceModel} - ${s.customerName})`,
-                  amount: remaining,
-                  paymentMethod: 'tunai',
-                  runningCashBalance: drawerCashBalance + remaining,
-                  recordedBy: shift.cashierName,
-                };
-                setMutations((prevMut) => [mutation, ...prevMut]);
-              } else {
-                // QRIS
-                const mutation: CashMutation = {
-                  id: `mut-${Date.now()}`,
-                  timestamp: nowTime,
-                  type: 'masuk',
-                  category: 'service_hp',
-                  description: `Pelunasan QRIS Service ${s.id} (${s.deviceModel} - ${s.customerName})`,
-                  amount: remaining,
-                  paymentMethod: 'non_tunai',
-                  runningCashBalance: drawerCashBalance,
-                  recordedBy: shift.cashierName,
-                };
-                setMutations((prevMut) => [mutation, ...prevMut]);
               }
+
+              return {
+                ...s,
+                status: newStatus,
+                downPayment: s.downPayment + actualPaid,
+                remainingDebt: debtRemaining > 0 ? debtRemaining : undefined,
+                isPartialPayment: debtRemaining > 0 && (s.downPayment + actualPaid) > 0,
+                dueDate: debtRemaining > 0 ? (dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) : undefined,
+                dateCompleted: new Date().toLocaleString('id-ID'),
+              };
             }
           }
 
@@ -1497,7 +1568,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: 'tunai' | 'qris' | 'hutang' = 'tunai',
     dueDate?: string,
     customerPhone?: string,
-    note?: string
+    note?: string,
+    partialPaidAmount?: number
   ) => {
     setPrintOrders((prev) =>
       prev.map((o) => {
@@ -1513,7 +1585,46 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 minute: '2-digit',
               });
 
-              if (paymentMethod === 'hutang') {
+              const isPartial = partialPaidAmount !== undefined && partialPaidAmount < remaining && partialPaidAmount >= 0;
+              const actualPaid = isPartial ? partialPaidAmount : (paymentMethod === 'hutang' ? 0 : remaining);
+              const debtRemaining = Math.max(0, remaining - actualPaid);
+
+              // 1. Catat kas masuk jika ada nominal dibayar
+              if (actualPaid > 0) {
+                if (paymentMethod === 'tunai' || isPartial) {
+                  const mutation: CashMutation = {
+                    id: `mut-${Date.now()}`,
+                    timestamp: nowTime,
+                    type: 'masuk',
+                    category: 'percetakan',
+                    description: isPartial
+                      ? `Pelunasan Percetakan Sebagian ${o.id} (${o.customerName}) - Diterima Rp ${actualPaid.toLocaleString('id-ID')}, Sisa Kasbon Rp ${debtRemaining.toLocaleString('id-ID')}`
+                      : `Pelunasan Percetakan ${o.id} (${o.customerName})`,
+                    amount: actualPaid,
+                    paymentMethod: 'tunai',
+                    runningCashBalance: drawerCashBalance + actualPaid,
+                    recordedBy: shift.cashierName,
+                  };
+                  setMutations((prevMut) => [mutation, ...prevMut]);
+                } else {
+                  const mutation: CashMutation = {
+                    id: `mut-${Date.now()}`,
+                    timestamp: nowTime,
+                    type: 'masuk',
+                    category: 'percetakan',
+                    description: `Pelunasan QRIS Percetakan ${o.id} (${o.customerName})`,
+                    amount: actualPaid,
+                    paymentMethod: 'non_tunai',
+                    runningCashBalance: drawerCashBalance,
+                    recordedBy: shift.cashierName,
+                  };
+                  setMutations((prevMut) => [mutation, ...prevMut]);
+                  setDigitalBalance((p) => p + actualPaid);
+                }
+              }
+
+              // 2. Jika ada sisa belum lunas, otomatis masuk kasbon / hutang
+              if (debtRemaining > 0) {
                 const newDebt: DebtRecord = {
                   id: `dbt-${Date.now()}`,
                   invoiceOrRef: o.id,
@@ -1521,42 +1632,26 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   customerName: o.customerName.trim() || 'Pelanggan Percetakan',
                   customerPhone: customerPhone?.trim() || o.customerPhone || '-',
                   totalAmount: o.totalAmount,
-                  paidAmount: o.downPayment,
-                  remainingAmount: remaining,
+                  paidAmount: o.downPayment + actualPaid,
+                  remainingAmount: debtRemaining,
                   dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-                  status: o.downPayment > 0 ? 'cicilan' : 'belum_lunas',
-                  note: `Kasbon Pelunasan Percetakan ${o.id} (${o.items.map((i) => i.serviceName).join(', ')})${
-                    note ? ' - ' + note : ''
-                  }`,
+                  status: (o.downPayment + actualPaid) > 0 ? 'cicilan' : 'belum_lunas',
+                  note: isPartial
+                    ? `Kasbon Sisa Pelunasan Percetakan ${o.id} (${o.items.map((i) => i.serviceName).join(', ')})${note ? ' - ' + note : ''}`
+                    : `Kasbon Pelunasan Percetakan ${o.id} (${o.items.map((i) => i.serviceName).join(', ')})${note ? ' - ' + note : ''}`,
                 };
                 setDebts((prevDebts) => [newDebt, ...prevDebts]);
-              } else if (paymentMethod === 'tunai') {
-                const mutation: CashMutation = {
-                  id: `mut-${Date.now()}`,
-                  timestamp: nowTime,
-                  type: 'masuk',
-                  category: 'percetakan',
-                  description: `Pelunasan Percetakan ${o.id} (${o.customerName})`,
-                  amount: remaining,
-                  paymentMethod: 'tunai',
-                  runningCashBalance: drawerCashBalance + remaining,
-                  recordedBy: shift.cashierName,
-                };
-                setMutations((prevMut) => [mutation, ...prevMut]);
-              } else {
-                const mutation: CashMutation = {
-                  id: `mut-${Date.now()}`,
-                  timestamp: nowTime,
-                  type: 'masuk',
-                  category: 'percetakan',
-                  description: `Pelunasan QRIS Percetakan ${o.id} (${o.customerName})`,
-                  amount: remaining,
-                  paymentMethod: 'non_tunai',
-                  runningCashBalance: drawerCashBalance,
-                  recordedBy: shift.cashierName,
-                };
-                setMutations((prevMut) => [mutation, ...prevMut]);
               }
+
+              return {
+                ...o,
+                status: newStatus,
+                downPayment: o.downPayment + actualPaid,
+                remainingAmount: debtRemaining,
+                isPartialPayment: debtRemaining > 0 && (o.downPayment + actualPaid) > 0,
+                dueDate: debtRemaining > 0 ? (dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) : undefined,
+                dateCompleted: new Date().toLocaleString('id-ID'),
+              };
             }
           }
 

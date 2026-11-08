@@ -207,9 +207,18 @@ export const ThermalReceiptModal: React.FC = () => {
           : `TOTAL     : Rp ${posTx.total.toLocaleString('id-ID')}`
       );
       lines.push(`Metode    : ${posTx.paymentMethod.toUpperCase()}`);
-      if (posTx.paymentMethod === 'tunai') {
+      if (posTx.isPartialPayment || (posTx.remainingDebt && posTx.remainingDebt > 0)) {
+        lines.push(`Bayar Tunai: Rp ${posTx.cashTendered.toLocaleString('id-ID')}`);
+        lines.push(`Sisa Kasbon: Rp ${(posTx.remainingDebt || 0).toLocaleString('id-ID')}`);
+        if (posTx.dueDate) lines.push(`Jatuh Tempo: ${posTx.dueDate}`);
+        lines.push(`Status    : BAYAR SEBAGIAN (SISA KASBON)`);
+      } else if (posTx.paymentMethod === 'tunai') {
         lines.push(`Bayar     : Rp ${posTx.cashTendered.toLocaleString('id-ID')}`);
         lines.push(`Kembalian : Rp ${posTx.changeAmount.toLocaleString('id-ID')}`);
+        lines.push(`Status    : LUNAS`);
+      } else if (posTx.paymentMethod === 'hutang') {
+        lines.push(`Status    : KASBON PENUH (HUTANG)`);
+        if (posTx.dueDate) lines.push(`Jatuh Tempo: ${posTx.dueDate}`);
       }
     } else if (atmTx) {
       if (isCardAtmTx) {
@@ -240,15 +249,24 @@ export const ThermalReceiptModal: React.FC = () => {
           ? `TOTAL     : Rp 0 (${isCardAtmTx ? 'BEBAS BIAYA OWNER' : 'GRATIS OWNER'})`
           : `TOTAL     : Rp ${atmTx.totalDebited.toLocaleString('id-ID')}`
       );
-      lines.push(
-        atmTx.type === 'tarik_tunai_atm'
-          ? `Tunai Diberikan: Rp ${atmTx.cashHandedOrReceived.toLocaleString('id-ID')}${
-              atmTx.adminDeductionType === 'potong_tunai' ? ' (Potong Admin)' : ''
-            }`
-          : isCardAtmTx
-          ? 'Status: BERHASIL (APPROVED EDC)'
-          : 'Status: TRANSAKSI BERHASIL (SUKSES)'
-      );
+      if (atmTx.type === 'tarik_tunai_atm') {
+        lines.push(
+          `Tunai Diberikan: Rp ${atmTx.cashHandedOrReceived.toLocaleString('id-ID')}${
+            atmTx.adminDeductionType === 'potong_tunai' ? ' (Potong Admin)' : ''
+          }`
+        );
+      } else if (atmTx.isPartialPayment || (atmTx.remainingDebt && atmTx.remainingDebt > 0)) {
+        lines.push(`Bayar Tunai: Rp ${(atmTx.paidAmount || 0).toLocaleString('id-ID')}`);
+        lines.push(`Sisa Kasbon: Rp ${(atmTx.remainingDebt || 0).toLocaleString('id-ID')}`);
+        if (atmTx.dueDate) lines.push(`Jatuh Tempo: ${atmTx.dueDate}`);
+        lines.push(`Status     : BAYAR SEBAGIAN (SISA KASBON)`);
+      } else {
+        lines.push(
+          isCardAtmTx
+            ? 'Status    : BERHASIL (APPROVED EDC)'
+            : 'Status    : TRANSAKSI BERHASIL (SUKSES)'
+        );
+      }
     } else if (srvTx) {
       lines.push(`No Servis : ${srvTx.id}`);
       lines.push(`Tgl Masuk : ${srvTx.dateIn}`);
@@ -268,9 +286,15 @@ export const ThermalReceiptModal: React.FC = () => {
           ? `TOTAL BIAYA: Rp 0 (GRATIS KHUSUS OWNER)`
           : `TOTAL BIAYA: Rp ${srvTx.totalCost.toLocaleString('id-ID')}`
       );
-      lines.push(`DP Masuk  : Rp ${srvTx.downPayment.toLocaleString('id-ID')}`);
-      const sisa = Math.max(0, srvTx.totalCost - srvTx.downPayment);
-      lines.push(`Status    : ${sisa === 0 || srvTx.status === 'diambil' ? 'LUNAS' : `Sisa Rp ${sisa.toLocaleString('id-ID')}`}`);
+      lines.push(`DP/Bayar  : Rp ${srvTx.downPayment.toLocaleString('id-ID')}`);
+      const sisa = srvTx.remainingDebt !== undefined ? srvTx.remainingDebt : Math.max(0, srvTx.totalCost - srvTx.downPayment);
+      if (sisa > 0) {
+        lines.push(`Sisa Kasbon: Rp ${sisa.toLocaleString('id-ID')}`);
+        if (srvTx.dueDate) lines.push(`Jatuh Tempo: ${srvTx.dueDate}`);
+        lines.push(`Status    : BAYAR SEBAGIAN (KASBON)`);
+      } else {
+        lines.push(`Status    : LUNAS`);
+      }
       lines.push(`Garansi   : ${srvTx.warrantyDays} Hari`);
     } else if (printTx) {
       lines.push(`No Order  : ${printTx.id}`);
@@ -291,8 +315,15 @@ export const ThermalReceiptModal: React.FC = () => {
           ? `TOTAL ORDER: Rp 0 (GRATIS KHUSUS OWNER)`
           : `TOTAL ORDER: Rp ${printTx.totalAmount.toLocaleString('id-ID')}`
       );
-      lines.push(`DP Dibayar : Rp ${printTx.downPayment.toLocaleString('id-ID')} (${printTx.paymentMethod.toUpperCase()})`);
-      lines.push(`Status     : ${printTx.remainingAmount === 0 ? 'LUNAS' : `Sisa Tagihan Rp ${printTx.remainingAmount.toLocaleString('id-ID')}`}`);
+      lines.push(`Bayar/DP   : Rp ${printTx.downPayment.toLocaleString('id-ID')} (${printTx.paymentMethod.toUpperCase()})`);
+      const sisaPrint = printTx.remainingAmount ?? 0;
+      if (sisaPrint > 0) {
+        lines.push(`Sisa Kasbon: Rp ${sisaPrint.toLocaleString('id-ID')}`);
+        if (printTx.dueDate) lines.push(`Jatuh Tempo: ${printTx.dueDate}`);
+        lines.push(`Status     : BAYAR SEBAGIAN (KASBON)`);
+      } else {
+        lines.push(`Status     : LUNAS`);
+      }
     } else if (ppobTx) {
       lines.push(`No Ref    : ${ppobTx.refNo}`);
       lines.push(`Waktu     : ${ppobTx.date}`);
@@ -943,9 +974,9 @@ export const ThermalReceiptModal: React.FC = () => {
                   <span className="text-slate-600">Layanan Transaksi:</span>
                   <span className="font-bold uppercase text-slate-900">
                     {atmTx.type === 'tarik_tunai_atm'
-                      ? 'TARIK TUNAI EDC'
+                      ? isCardAtmTx ? 'TARIK TUNAI EDC' : 'TARIK TUNAI DIGITAL'
                       : atmTx.type === 'transfer_atm'
-                      ? 'TRANSFER EDC'
+                      ? isCardAtmTx ? 'TRANSFER EDC' : 'TRANSFER BANK'
                       : atmTx.type === 'topup_ewallet_atm'
                       ? 'TOP UP E-WALLET'
                       : atmTx.type === 'mbanking_atm'
@@ -959,10 +990,18 @@ export const ThermalReceiptModal: React.FC = () => {
                   <span className="text-slate-600">Nominal Pokok:</span>
                   <span className="font-mono font-bold">Rp {atmTx.nominal.toLocaleString('id-ID')}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Biaya Admin EDC/Bank:</span>
-                  <span className="font-mono">Rp {atmTx.adminEdcFee.toLocaleString('id-ID')}</span>
-                </div>
+                {(isCardAtmTx || atmTx.adminEdcFee > 0) && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">
+                      {isCardAtmTx
+                        ? 'Biaya Admin Mesin EDC:'
+                        : atmTx.type === 'qris_atm' || atmTx.cardType === 'QRIS'
+                        ? 'Biaya MDR / QRIS:'
+                        : 'Biaya Admin Transaksi / App:'}
+                    </span>
+                    <span className="font-mono">Rp {atmTx.adminEdcFee.toLocaleString('id-ID')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-slate-600">Jasa Konter Ju-Fat:</span>
                   <span className="font-mono font-bold text-emerald-800">
@@ -1038,7 +1077,31 @@ export const ThermalReceiptModal: React.FC = () => {
                     <span>Metode Bayar:</span>
                     <span className="font-bold uppercase">{posTx.paymentMethod}</span>
                   </div>
-                  {posTx.paymentMethod === 'tunai' ? (
+                  {posTx.isPartialPayment || (posTx.remainingDebt && posTx.remainingDebt > 0) ? (
+                    <div className="space-y-0.5 bg-amber-50 p-1.5 rounded-lg border border-amber-300 mt-1">
+                      <div className="flex justify-between text-emerald-800 text-[10.5px]">
+                        <span>Uang Tunai (Masuk Laci):</span>
+                        <span className="font-mono font-bold">
+                          Rp {posTx.cashTendered.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-rose-700 font-black text-[11px]">
+                        <span>Sisa Kasbon (Hutang):</span>
+                        <span className="font-mono">
+                          Rp {(posTx.remainingDebt || 0).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      {posTx.dueDate && (
+                        <div className="flex justify-between text-slate-500 text-[9.5px]">
+                          <span>Jatuh Tempo Kasbon:</span>
+                          <span className="font-medium">{posTx.dueDate}</span>
+                        </div>
+                      )}
+                      <div className="text-center font-black text-[10px] text-amber-900 bg-amber-100/90 py-0.5 rounded mt-0.5">
+                        STATUS: BAYAR SEBAGIAN (SISA KASBON)
+                      </div>
+                    </div>
+                  ) : posTx.paymentMethod === 'tunai' ? (
                     <>
                       <div className="flex justify-between text-slate-700 text-[10px]">
                         <span>Uang Tunai (Bayar):</span>
@@ -1052,11 +1115,22 @@ export const ThermalReceiptModal: React.FC = () => {
                           Rp {posTx.changeAmount.toLocaleString('id-ID')}
                         </span>
                       </div>
+                      <div className="text-center font-black text-[10px] text-emerald-800 bg-emerald-50 py-0.5 rounded mt-0.5">
+                        STATUS: LUNAS
+                      </div>
                     </>
                   ) : posTx.paymentMethod === 'hutang' ? (
-                    <div className="flex justify-between font-bold text-red-700 text-[11px]">
-                      <span>Status Pembayaran:</span>
-                      <span>KASBON (HUTANG)</span>
+                    <div className="space-y-0.5 bg-rose-50 p-1.5 rounded-lg border border-rose-300 mt-1">
+                      <div className="flex justify-between font-bold text-rose-700 text-[11px]">
+                        <span>Status Pembayaran:</span>
+                        <span>KASBON PENUH (HUTANG)</span>
+                      </div>
+                      {posTx.dueDate && (
+                        <div className="flex justify-between text-slate-500 text-[9.5px]">
+                          <span>Jatuh Tempo:</span>
+                          <span>{posTx.dueDate}</span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex justify-between font-bold text-emerald-800 text-[11px]">
@@ -1087,22 +1161,32 @@ export const ThermalReceiptModal: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex justify-between text-emerald-800 font-bold text-[10.5px]">
-                    <span>DP / Uang Muka Masuk:</span>
+                    <span>DP / Pembayaran Masuk:</span>
                     <span className="font-mono">Rp {srvTx.downPayment.toLocaleString('id-ID')}</span>
                   </div>
                   {(() => {
-                    const sisa = Math.max(0, srvTx.totalCost - srvTx.downPayment);
-                    const isFullyPaid = sisa === 0 || srvTx.status === 'diambil';
-                    return (
-                      <div
-                        className={`flex justify-between font-black text-[11px] pt-0.5 ${
-                          isFullyPaid ? 'text-emerald-800' : 'text-red-600'
-                        }`}
-                      >
-                        <span>{isFullyPaid ? 'STATUS PELUNASAN:' : 'SISA PELUNASAN:'}</span>
-                        <span className="font-mono">
-                          {isFullyPaid ? 'LUNAS' : `Rp ${sisa.toLocaleString('id-ID')}`}
-                        </span>
+                    const sisa = srvTx.remainingDebt !== undefined ? srvTx.remainingDebt : Math.max(0, srvTx.totalCost - srvTx.downPayment);
+                    const isFullyPaid = sisa === 0 && (srvTx.status === 'diambil' || srvTx.status === 'selesai');
+                    return sisa > 0 ? (
+                      <div className="space-y-0.5 bg-amber-50 p-1.5 rounded-lg border border-amber-300 mt-1">
+                        <div className="flex justify-between font-black text-[11px] text-rose-700">
+                          <span>SISA KASBON (HUTANG):</span>
+                          <span className="font-mono">Rp {sisa.toLocaleString('id-ID')}</span>
+                        </div>
+                        {srvTx.dueDate && (
+                          <div className="flex justify-between text-slate-500 text-[9.5px]">
+                            <span>Jatuh Tempo:</span>
+                            <span>{srvTx.dueDate}</span>
+                          </div>
+                        )}
+                        <div className="text-center font-black text-[10px] text-amber-900 bg-amber-100/90 py-0.5 rounded mt-0.5">
+                          STATUS: BAYAR SEBAGIAN (SISA KASBON)
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between font-black text-[11px] pt-0.5 text-emerald-800">
+                        <span>STATUS PELUNASAN:</span>
+                        <span className="font-mono">LUNAS</span>
                       </div>
                     );
                   })()}
@@ -1134,20 +1218,30 @@ export const ThermalReceiptModal: React.FC = () => {
                       Rp {printTx.downPayment.toLocaleString('id-ID')} ({printTx.paymentMethod.toUpperCase()})
                     </span>
                   </div>
-                  <div
-                    className={`flex justify-between font-black text-[11px] pt-0.5 ${
-                      printTx.remainingAmount > 0 ? 'text-rose-600' : 'text-emerald-800'
-                    }`}
-                  >
-                    <span>
-                      {printTx.remainingAmount > 0 ? 'SISA TAGIHAN:' : 'STATUS PEMBAYARAN:'}
-                    </span>
-                    <span className="font-mono">
-                      {printTx.remainingAmount > 0
-                        ? `Rp ${printTx.remainingAmount.toLocaleString('id-ID')}`
-                        : 'LUNAS'}
-                    </span>
-                  </div>
+                  {printTx.remainingAmount > 0 ? (
+                    <div className="space-y-0.5 bg-amber-50 p-1.5 rounded-lg border border-amber-300 mt-1">
+                      <div className="flex justify-between font-black text-[11px] text-rose-700">
+                        <span>SISA KASBON (HUTANG):</span>
+                        <span className="font-mono">
+                          Rp {printTx.remainingAmount.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      {printTx.dueDate && (
+                        <div className="flex justify-between text-slate-500 text-[9.5px]">
+                          <span>Jatuh Tempo:</span>
+                          <span>{printTx.dueDate}</span>
+                        </div>
+                      )}
+                      <div className="text-center font-black text-[10px] text-amber-900 bg-amber-100/90 py-0.5 rounded mt-0.5">
+                        STATUS: BAYAR SEBAGIAN (SISA KASBON)
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between font-black text-[11px] pt-0.5 text-emerald-800">
+                      <span>STATUS PEMBAYARAN:</span>
+                      <span className="font-mono">LUNAS</span>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1180,6 +1274,30 @@ export const ThermalReceiptModal: React.FC = () => {
                         )}
                       </span>
                     </div>
+                  ) : atmTx.isPartialPayment || (atmTx.remainingDebt && atmTx.remainingDebt > 0) ? (
+                    <div className="space-y-0.5 bg-amber-50 p-1.5 rounded-lg border border-amber-300 mt-1">
+                      <div className="flex justify-between text-emerald-800 text-[10.5px]">
+                        <span>Uang Tunai Diterima:</span>
+                        <span className="font-mono font-bold">
+                          Rp {(atmTx.paidAmount || 0).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-rose-700 font-black text-[11px]">
+                        <span>Sisa Kasbon (Hutang):</span>
+                        <span className="font-mono">
+                          Rp {(atmTx.remainingDebt || 0).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      {atmTx.dueDate && (
+                        <div className="flex justify-between text-slate-500 text-[9.5px]">
+                          <span>Jatuh Tempo:</span>
+                          <span>{atmTx.dueDate}</span>
+                        </div>
+                      )}
+                      <div className="text-center font-black text-[10px] text-amber-900 bg-amber-100/90 py-0.5 rounded mt-0.5">
+                        STATUS: BAYAR SEBAGIAN (SISA KASBON)
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex justify-between text-slate-700 text-[10px]">
                       <span>Uang Diterima Kasir:</span>
@@ -1188,9 +1306,13 @@ export const ThermalReceiptModal: React.FC = () => {
                       </span>
                     </div>
                   )}
-                  <div className="text-center text-[10px] text-emerald-800 font-extrabold bg-emerald-50 py-1 rounded mt-1 border border-emerald-300">
-                    STATUS: TRANSAKSI BERHASIL (APPROVED)
-                  </div>
+                  {(!atmTx.isPartialPayment && !(atmTx.remainingDebt && atmTx.remainingDebt > 0)) && (
+                    <div className="text-center text-[10px] text-emerald-800 font-extrabold bg-emerald-50 py-1 rounded mt-1 border border-emerald-300">
+                      {isCardAtmTx
+                        ? 'STATUS: TRANSAKSI BERHASIL (APPROVED EDC)'
+                        : 'STATUS: TRANSAKSI BERHASIL (SUKSES)'}
+                    </div>
+                  )}
                 </>
               )}
 

@@ -179,14 +179,17 @@ export const KasirView: React.FC = () => {
       return;
     }
 
-    if (paymentMethod === 'tunai' && finalTotal > 0 && cashTendered < finalTotal) {
-      setCheckoutError(`Nominal pembayaran uang tunai kurang! Minimal Rp ${finalTotal.toLocaleString('id-ID')}`);
+    // Validasi Pembayaran Uang Tunai / Bayar Sebagian (Sisa Kasbon)
+    const isPartial = paymentMethod === 'tunai' && cashTendered > 0 && cashTendered < finalTotal;
+
+    if (paymentMethod === 'tunai' && cashTendered === 0 && finalTotal > 0) {
+      setCheckoutError('Uang tunai diterima Rp 0! Ketik nominal uang yang dibayar, atau pilih metode "Kasbon" jika belum bayar sama sekali.');
       return;
     }
 
-    // Validasi Kasbon / Hutang
+    // Validasi Kasbon / Hutang & Bayar Sebagian
     let resolvedCustomerName = customerName.trim();
-    if (paymentMethod === 'hutang') {
+    if (paymentMethod === 'hutang' || isPartial) {
       // Jika nama masih default 'Pelanggan Umum' atau kosong, tetapi user pernah mengetik di No HP/Catatan (misal "Kk erni"), gunakan itu!
       if ((!resolvedCustomerName || resolvedCustomerName.toLowerCase() === 'pelanggan umum') && customerPhone.trim()) {
         resolvedCustomerName = customerPhone.trim();
@@ -194,7 +197,11 @@ export const KasirView: React.FC = () => {
       }
 
       if (!resolvedCustomerName || resolvedCustomerName.toLowerCase() === 'pelanggan umum') {
-        setCheckoutError('Untuk Kasbon, silakan ketik Nama Pelanggan pada kolom yang tersedia!');
+        setCheckoutError(
+          isPartial
+            ? 'Untuk Bayar Sebagian (Sisa Kasbon), silakan ketik Nama Pelanggan agar tersimpan jelas di Buku Hutang!'
+            : 'Untuk Kasbon, silakan ketik Nama Pelanggan pada kolom yang tersedia!'
+        );
         return;
       }
     }
@@ -209,7 +216,9 @@ export const KasirView: React.FC = () => {
       taxPercent,
       checkoutNote,
       customerPhone,
-      debtDueDate
+      debtDueDate,
+      isPartial,
+      isPartial ? cashTendered : undefined
     );
 
     // Reset checkout form
@@ -1000,22 +1009,76 @@ export const KasirView: React.FC = () => {
                 ))}
               </div>
 
-              {/* Kembalian Banner */}
+              {/* Kembalian / Sisa Kasbon Banner */}
               <div
-                className={`p-2 rounded-lg flex items-center justify-between text-xs font-mono font-bold ${
+                className={`p-2.5 rounded-xl border text-xs font-mono font-bold ${
                   isCashInsufficient
-                    ? 'bg-red-50 text-red-700 border border-red-200'
-                    : 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                    ? cashTendered > 0
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                    : 'bg-emerald-50 text-emerald-900 border-emerald-200'
                 }`}
               >
-                <span>{isCashInsufficient ? 'Kurang:' : 'Kembalian:'}</span>
-                <span className="text-sm">
-                  Rp{' '}
-                  {isCashInsufficient
-                    ? (finalTotal - cashTendered).toLocaleString('id-ID')
-                    : changeAmount.toLocaleString('id-ID')}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span>{isCashInsufficient ? (cashTendered > 0 ? 'Sisa Kasbon (Masuk Buku Hutang):' : 'Uang Kurang:') : 'Kembalian:'}</span>
+                  <span className="text-sm font-black">
+                    Rp{' '}
+                    {isCashInsufficient
+                      ? (finalTotal - cashTendered).toLocaleString('id-ID')
+                      : changeAmount.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                {isCashInsufficient && cashTendered > 0 && (
+                  <p className="text-[10px] font-sans font-medium text-amber-800 mt-1 pt-1 border-t border-amber-200">
+                    💡 <strong>Bayar Sebagian Aktif:</strong> Uang Rp {cashTendered.toLocaleString('id-ID')} masuk ke laci, sisa Rp {(finalTotal - cashTendered).toLocaleString('id-ID')} otomatis dicatat ke Buku Kasbon atas nama {customerName || 'pelanggan'}.
+                  </p>
+                )}
               </div>
+
+              {/* Tampilkan kolom input Nama & Jatuh Tempo jika bayar sebagian dan nama masih Pelanggan Umum */}
+              {isCashInsufficient && cashTendered > 0 && (
+                <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
+                  <div>
+                    <label className="text-[10px] font-extrabold text-amber-950 flex items-center justify-between mb-0.5">
+                      <span>Nama Pelanggan yang Kasbon Sisa: *</span>
+                      <span className="text-[9px] text-rose-600 font-bold bg-rose-50 px-1 rounded border border-rose-200">
+                        Wajib Diisi
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customerName === 'Pelanggan Umum' ? '' : customerName}
+                      onChange={(e) => {
+                        setCustomerName(e.target.value);
+                        if (checkoutError) setCheckoutError(null);
+                      }}
+                      placeholder="Ketik nama pelanggan berhutang..."
+                      className="w-full px-2.5 py-1 text-xs bg-white border border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div>
+                      <span className="font-bold text-amber-900 block mb-0.5">Jatuh Tempo:</span>
+                      <input
+                        type="date"
+                        value={debtDueDate}
+                        onChange={(e) => setDebtDueDate(e.target.value)}
+                        className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="font-bold text-amber-900 block mb-0.5">No. HP / WA:</span>
+                      <input
+                        type="text"
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="Opsional..."
+                        className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1039,12 +1102,14 @@ export const KasirView: React.FC = () => {
           {/* Submit Checkout Button */}
           <button
             type="submit"
-            disabled={cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)}
+            disabled={cart.length === 0 || (paymentMethod === 'tunai' && cashTendered === 0 && finalTotal > 0) || (finalTotal === 0 && !isOwner)}
             className={`w-full py-3.5 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition duration-150 cursor-pointer ${
-              cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)
+              cart.length === 0 || (paymentMethod === 'tunai' && cashTendered === 0 && finalTotal > 0) || (finalTotal === 0 && !isOwner)
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
                 : finalTotal === 0 && isOwner
                 ? 'bg-gradient-to-r from-amber-500 via-emerald-600 to-teal-600 hover:brightness-110 text-white ring-2 ring-amber-300 shadow-amber-950/20 active:scale-[0.99]'
+                : isCashInsufficient && cashTendered > 0
+                ? 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white shadow-amber-900/20 active:scale-[0.99]'
                 : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-teal-900/20 active:scale-[0.99]'
             }`}
           >
@@ -1055,6 +1120,11 @@ export const KasirView: React.FC = () => {
               </>
             ) : finalTotal === 0 && !isOwner ? (
               <span>Bayar Rp 0 Khusus Owner (Ganti Shift)</span>
+            ) : isCashInsufficient && cashTendered > 0 ? (
+              <>
+                <Receipt className="w-4 h-4 text-amber-200" />
+                <span>Bayar Rp {cashTendered.toLocaleString('id-ID')} & Sisa Kasbon Rp {(finalTotal - cashTendered).toLocaleString('id-ID')}</span>
+              </>
             ) : (
               <>
                 <CheckCircle className="w-4 h-4 text-amber-300" />
@@ -1420,20 +1490,73 @@ export const KasirView: React.FC = () => {
                 </div>
 
                 <div
-                  className={`p-2 rounded-lg flex items-center justify-between text-xs font-mono font-bold ${
+                  className={`p-2.5 rounded-xl border text-xs font-mono font-bold ${
                     isCashInsufficient
-                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                      : 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                      ? cashTendered > 0
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                      : 'bg-emerald-50 text-emerald-900 border-emerald-200'
                   }`}
                 >
-                  <span>{isCashInsufficient ? 'Kurang:' : 'Kembalian:'}</span>
-                  <span className="text-sm">
-                    Rp{' '}
-                    {isCashInsufficient
-                      ? (finalTotal - cashTendered).toLocaleString('id-ID')
-                      : changeAmount.toLocaleString('id-ID')}
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span>{isCashInsufficient ? (cashTendered > 0 ? 'Sisa Kasbon (Masuk Buku Hutang):' : 'Kurang:') : 'Kembalian:'}</span>
+                    <span className="text-sm font-black">
+                      Rp{' '}
+                      {isCashInsufficient
+                        ? (finalTotal - cashTendered).toLocaleString('id-ID')
+                        : changeAmount.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  {isCashInsufficient && cashTendered > 0 && (
+                    <p className="text-[10px] font-sans font-medium text-amber-800 mt-1 pt-1 border-t border-amber-200">
+                      💡 <strong>Bayar Sebagian Aktif:</strong> Uang Rp {cashTendered.toLocaleString('id-ID')} masuk ke laci, sisa Rp {(finalTotal - cashTendered).toLocaleString('id-ID')} otomatis dicatat ke Buku Kasbon atas nama {customerName || 'pelanggan'}.
+                    </p>
+                  )}
                 </div>
+
+                {isCashInsufficient && cashTendered > 0 && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
+                    <div>
+                      <label className="text-[10px] font-extrabold text-amber-950 flex items-center justify-between mb-0.5">
+                        <span>Nama Pelanggan yang Kasbon Sisa: *</span>
+                        <span className="text-[9px] text-rose-600 font-bold bg-rose-50 px-1 rounded border border-rose-200">
+                          Wajib Diisi
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customerName === 'Pelanggan Umum' ? '' : customerName}
+                        onChange={(e) => {
+                          setCustomerName(e.target.value);
+                          if (checkoutError) setCheckoutError(null);
+                        }}
+                        placeholder="Ketik nama pelanggan berhutang..."
+                        className="w-full px-2.5 py-1 text-xs bg-white border border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div>
+                        <span className="font-bold text-amber-900 block mb-0.5">Jatuh Tempo:</span>
+                        <input
+                          type="date"
+                          value={debtDueDate}
+                          onChange={(e) => setDebtDueDate(e.target.value)}
+                          className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <span className="font-bold text-amber-900 block mb-0.5">No. HP / WA:</span>
+                        <input
+                          type="text"
+                          value={customerPhone}
+                          onChange={(e) => setCustomerPhone(e.target.value)}
+                          placeholder="Opsional..."
+                          className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1456,12 +1579,14 @@ export const KasirView: React.FC = () => {
 
             <button
               type="submit"
-              disabled={cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)}
+              disabled={cart.length === 0 || (paymentMethod === 'tunai' && cashTendered === 0 && finalTotal > 0) || (finalTotal === 0 && !isOwner)}
               className={`w-full py-3.5 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer ${
-                cart.length === 0 || (paymentMethod === 'tunai' && isCashInsufficient && finalTotal > 0) || (finalTotal === 0 && !isOwner)
+                cart.length === 0 || (paymentMethod === 'tunai' && cashTendered === 0 && finalTotal > 0) || (finalTotal === 0 && !isOwner)
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   : finalTotal === 0 && isOwner
                   ? 'bg-gradient-to-r from-amber-500 via-emerald-600 to-teal-600 text-white ring-2 ring-amber-300 active:scale-[0.99]'
+                  : isCashInsufficient && cashTendered > 0
+                  ? 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white shadow-amber-900/20 active:scale-[0.99]'
                   : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 text-white shadow-teal-900/20 active:scale-[0.99]'
               }`}
             >
@@ -1472,6 +1597,11 @@ export const KasirView: React.FC = () => {
                 </>
               ) : finalTotal === 0 && !isOwner ? (
                 <span>Bayar Rp 0 Khusus Owner (Ganti Shift)</span>
+              ) : isCashInsufficient && cashTendered > 0 ? (
+                <>
+                  <Receipt className="w-4 h-4 text-amber-200" />
+                  <span>Bayar Rp {cashTendered.toLocaleString('id-ID')} & Sisa Kasbon Rp {(finalTotal - cashTendered).toLocaleString('id-ID')}</span>
+                </>
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4 text-amber-300" />
