@@ -38,6 +38,9 @@ import {
   Clock,
   RotateCcw,
   User,
+  Sun,
+  Moon,
+  History,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -78,6 +81,7 @@ export const DashboardView: React.FC = () => {
     setIsCashMutationModalOpen,
     restockProduct,
     shift,
+    shiftHistory,
     setIsShiftModalOpen,
   } = usePOS();
 
@@ -1010,14 +1014,25 @@ export const DashboardView: React.FC = () => {
               <Calculator className="w-3.5 h-3.5" />
               <span>{isDenominationOpen ? 'Tutup Hitung Pecahan' : 'Hitung Pecahan Uang'}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsShiftModalOpen(true)}
-              className="px-3 py-1.5 text-xs font-extrabold bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Tutup Shift & Rekonsiliasi</span>
-            </button>
+            {shift.isOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsShiftModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-extrabold bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Moon className="w-3.5 h-3.5" />
+                <span>Tutup Kasir Malam</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsShiftModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Sun className="w-3.5 h-3.5 text-amber-200" />
+                <span>☀️ Buka Kasir / Mulai Shift Pagi</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1029,30 +1044,48 @@ export const DashboardView: React.FC = () => {
         )}
 
         {/* Shift Identity Bar */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div
+          className={`border rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs ${
+            shift.isOpen ? 'bg-slate-50 border-slate-200' : 'bg-rose-50/70 border-rose-200'
+          }`}
+        >
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-medium">Petugas Shift:</span>
+              <span className="text-slate-400 font-medium">Status Register:</span>
+              <span
+                className={`font-black text-[10.5px] px-2 py-0.5 rounded flex items-center gap-1 uppercase tracking-wider ${
+                  shift.isOpen
+                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                    : 'bg-rose-200 text-rose-950 border border-rose-300'
+                }`}
+              >
+                {shift.isOpen ? '🟢 KASIR AKTIF (BUKA)' : '🔴 REGISTER TUTUP (STANDBY)'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">
+                {shift.isOpen ? 'Petugas Shift:' : 'Petugas Semalam:'}
+              </span>
               <span className="font-extrabold text-slate-900 flex items-center gap-1">
                 <User className="w-3.5 h-3.5 text-teal-600" />
-                {shift.cashierName} ({shift.role.toUpperCase()})
+                {shift.isOpen
+                  ? `${shift.cashierName} (${shift.role.toUpperCase()})`
+                  : shift.closedBy || 'Siti (Kasir Sore)'}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-medium">Shift Aktif:</span>
-              <span className="font-bold text-teal-800 bg-teal-100/80 px-2 py-0.5 rounded">
-                {shift.shiftName}
+              <span className="text-slate-400 font-medium">
+                {shift.isOpen ? 'Jam Buka Shift:' : 'Jam Tutup Malam:'}
               </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-medium">Buka Shift:</span>
-              <span className="font-mono text-slate-700 font-bold">{shift.startTime}</span>
+              <span className="font-mono text-slate-700 font-bold">
+                {shift.isOpen ? shift.startTime : shift.closedAt || '22:15 WIB · Semalam'}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-1.5 text-slate-600">
-            <span>Modal Awal Laci:</span>
+            <span>{shift.isOpen ? 'Modal Awal Laci:' : 'Sisa Kas Laci Standby:'}</span>
             <span className="font-mono font-black text-slate-900">
-              Rp {shift.startingCash.toLocaleString('id-ID')}
+              Rp {(shift.isOpen ? shift.startingCash : drawerCashBalance).toLocaleString('id-ID')}
             </span>
           </div>
         </div>
@@ -1360,6 +1393,206 @@ export const DashboardView: React.FC = () => {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: RIWAYAT BUKA & TUTUP SHIFT KASIR (AUDIT JAM TUTUP MALAM & BUKA PAGI) */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs space-y-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-xs">
+              <History className="w-4 h-4 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 leading-tight flex items-center gap-2 flex-wrap">
+                <span>Riwayat Buka & Tutup Shift Kasir</span>
+                <span className="text-[10px] font-mono font-bold uppercase bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded-full">
+                  Audit Jam Malam & Pagi
+                </span>
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    shift.isOpen
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : 'bg-rose-100 text-rose-800 border border-rose-300'
+                  }`}
+                >
+                  {shift.isOpen ? '🟢 Kasir Aktif' : '🔴 Toko Tutup'}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                Catatan jam berapa tutup shift malam, jam berapa mulai shift pagi, durasi kerja, dan setoran kasir ke Owner
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!shift.isOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsShiftModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Sun className="w-3.5 h-3.5 text-amber-200" />
+                <span>☀️ Buka Kasir Pagi</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsShiftModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-extrabold bg-gradient-to-r from-indigo-700 to-slate-800 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Moon className="w-3.5 h-3.5 text-amber-400" />
+                <span>🌙 Tutup Kasir Malam</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabel Riwayat Shift */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
+              <tr>
+                <th className="py-2.5 px-3">Shift & Petugas</th>
+                <th className="py-2.5 px-3">Jam Buka (Pagi/Mulai)</th>
+                <th className="py-2.5 px-3">Jam Tutup (Malam/Selesai)</th>
+                <th className="py-2.5 px-3">Durasi</th>
+                <th className="py-2.5 px-3 text-right">Modal Awal</th>
+                <th className="py-2.5 px-3 text-right">Fisik Laci</th>
+                <th className="py-2.5 px-3 text-center">Selisih</th>
+                <th className="py-2.5 px-3">Status Setoran / Sisa Laci</th>
+                <th className="py-2.5 px-3">Catatan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {shiftHistory && shiftHistory.length > 0 ? (
+                shiftHistory.map((rec) => {
+                  const isMatch = rec.difference === 0;
+                  const isPlus = rec.difference > 0;
+                  const isMinus = rec.difference < 0;
+
+                  return (
+                    <tr key={rec.id} className="hover:bg-slate-50/70 transition">
+                      {/* Shift & Petugas */}
+                      <td className="py-2.5 px-3">
+                        <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[9.5px] font-black uppercase ${
+                              rec.cashierSlot === 'owner'
+                                ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                : rec.cashierSlot === 'kasir_1'
+                                ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
+                                : 'bg-teal-100 text-teal-950 border border-teal-300'
+                            }`}
+                          >
+                            {rec.shiftNumber === 1 ? 'Shift 1' : rec.shiftNumber === 2 ? 'Shift 2' : 'Owner'}
+                          </span>
+                          <span>{rec.cashierName}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          {rec.shiftName}
+                        </div>
+                      </td>
+
+                      {/* Jam Buka */}
+                      <td className="py-2.5 px-3 font-mono text-slate-800 font-semibold">
+                        <div className="flex items-center gap-1 text-emerald-800">
+                          <Sun className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span>{rec.startTime}</span>
+                        </div>
+                      </td>
+
+                      {/* Jam Tutup */}
+                      <td className="py-2.5 px-3 font-mono text-slate-800 font-semibold">
+                        <div className="flex items-center gap-1 text-indigo-900">
+                          <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span>{rec.endTime}</span>
+                        </div>
+                      </td>
+
+                      {/* Durasi */}
+                      <td className="py-2.5 px-3 text-slate-600 font-mono font-bold text-[11px]">
+                        {rec.duration || '-'}
+                      </td>
+
+                      {/* Modal Awal */}
+                      <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                        Rp {rec.startingCash.toLocaleString('id-ID')}
+                      </td>
+
+                      {/* Fisik Laci */}
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                        Rp {rec.actualCash.toLocaleString('id-ID')}
+                      </td>
+
+                      {/* Selisih */}
+                      <td className="py-2.5 px-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                            isMatch
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : isPlus
+                              ? 'bg-amber-100 text-amber-900'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {isMatch
+                            ? 'Rp 0 (Pas)'
+                            : isPlus
+                            ? `+Rp ${rec.difference.toLocaleString('id-ID')}`
+                            : `-Rp ${Math.abs(rec.difference).toLocaleString('id-ID')}`}
+                        </span>
+                      </td>
+
+                      {/* Status Setor / Laci */}
+                      <td className="py-2.5 px-3">
+                        {rec.closeType === 'tutup_toko' ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-block px-1.5 py-0.2 rounded text-[9.5px] font-black bg-indigo-100 text-indigo-900 border border-indigo-200 uppercase">
+                              🌙 Toko Tutup Malam
+                            </span>
+                            {rec.depositAmount && rec.depositAmount > 0 ? (
+                              <div className="text-[10px] text-amber-900 font-bold font-mono">
+                                Setor: Rp {rec.depositAmount.toLocaleString('id-ID')}
+                              </div>
+                            ) : null}
+                            {rec.remainingCashInDrawer !== undefined ? (
+                              <div className="text-[10px] text-emerald-700 font-mono">
+                                Sisa Laci: Rp {rec.remainingCashInDrawer.toLocaleString('id-ID')}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <span className="inline-block px-1.5 py-0.2 rounded text-[9.5px] font-black bg-teal-100 text-teal-900 border border-teal-200 uppercase">
+                              🔄 Serah Terima Siang
+                            </span>
+                            <div className="text-[10px] text-slate-600 font-mono">
+                              Laci diteruskan ke shift baru
+                            </div>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Catatan */}
+                      <td className="py-2.5 px-3 text-slate-500 text-[11px] max-w-[200px] truncate" title={rec.note}>
+                        {rec.note || '-'}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={9} className="py-6 text-center text-slate-400">
+                    Belum ada riwayat buka/tutup shift yang terekam.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* ========================================================================= */}

@@ -9,6 +9,7 @@ import {
   DebtRecord,
   ReturnRecord,
   ShiftState,
+  ShiftRecord,
   PPOBPackage,
   StoreProfile,
   PrintOrder,
@@ -189,17 +190,62 @@ export const DEFAULT_CASHIER_PROFILES: Record<CashierSlot, CashierProfile> = {
 };
 
 export const INITIAL_SHIFT: ShiftState = {
-  shiftNumber: 1,
-  shiftName: 'Shift 1 (Pagi)',
-  cashierName: 'Rina (Kasir 1)',
-  cashierEmail: 'kasir1.pagi@jufat.com',
+  shiftNumber: 2,
+  shiftName: 'Shift 2 (Sore)',
+  cashierName: 'Siti (Kasir Sore)',
+  cashierEmail: 'kasir2.sore@jufat.com',
   role: 'kasir',
-  cashierSlot: 'kasir_1',
+  cashierSlot: 'kasir_2',
   isSwappedShift: false,
-  startTime: '08:00 WIB',
-  startingCash: 500000, // Rp 500.000 modal awal laci
+  startTime: '15:30 WIB',
+  startingCash: 500000,
   isOpen: true,
+  closedAt: '22:15 WIB · Semalam',
+  closedBy: 'Siti (Kasir Sore)',
+  closingCash: 500000,
+  closingNotes: 'Tutup shift malam. Uang fisik di laci pas Rp 500.000 untuk shift pagi.',
 };
+
+export const INITIAL_SHIFT_HISTORY: ShiftRecord[] = [
+  {
+    id: 'shift-rec-001',
+    shiftNumber: 1,
+    shiftName: 'Shift 1 (Pagi)',
+    cashierName: 'Miftah (Kasir Pagi)',
+    cashierSlot: 'kasir_1',
+    role: 'kasir',
+    startTime: '08:00 WIB',
+    endTime: '15:30 WIB',
+    duration: '7 jam 30 menit',
+    startingCash: 500000,
+    systemCash: 2150000,
+    actualCash: 2150000,
+    difference: 0,
+    remainingCashInDrawer: 2150000,
+    note: 'Serah terima lancar ke Shift 2',
+    closeType: 'serah_terima',
+  },
+  {
+    id: 'shift-rec-002',
+    shiftNumber: 2,
+    shiftName: 'Shift 2 (Sore/Malam)',
+    cashierName: 'Siti (Kasir Sore)',
+    cashierSlot: 'kasir_2',
+    role: 'kasir',
+    startTime: '15:30 WIB',
+    endTime: '22:15 WIB',
+    duration: '6 jam 45 menit',
+    startingCash: 2150000,
+    systemCash: 3820000,
+    actualCash: 3820000,
+    difference: 0,
+    depositAmount: 3320000,
+    depositRecipient: 'Brankas / Owner',
+    remainingCashInDrawer: 500000,
+    note: 'Tutup kasir malam. Setor Rp 3.320.000 ke brankas, sisa Rp 500.000 modal laci untuk shift pagi.',
+    closeType: 'tutup_toko',
+  },
+];
 
 export const INITIAL_MUTATIONS: CashMutation[] = [
   {
@@ -588,10 +634,66 @@ export const INITIAL_PPOB_PACKAGES: PPOBPackage[] = [
   { id: 'pkg-pln-200', category: 'pln', provider: 'PLN', name: 'Token PLN 200.000', hpp: 200500, price: 203000, desc: 'KWh sesuai tarif PLN' },
   { id: 'pkg-pln-500', category: 'pln', provider: 'PLN', name: 'Token PLN 500.000', hpp: 500500, price: 504000, desc: 'KWh sesuai tarif PLN' },
 
+  // ==========================================
+  // LISTRIK BULANAN (PLN PASCABAYAR)
+  // ==========================================
+  { id: 'pkg-plnpost-custom', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Bayar Tagihan Listrik Bulanan (Nominal Bebas)', hpp: 150000, price: 153000, desc: 'Input tagihan riil pelanggan + Admin Loket Rp 3.000' },
+  { id: 'pkg-plnpost-50k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 50.000', hpp: 50000, price: 53000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-100k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 100.000', hpp: 100000, price: 103000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-150k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 150.000', hpp: 150000, price: 153000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-200k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 200.000', hpp: 200000, price: 203000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-250k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 250.000', hpp: 250000, price: 253000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-300k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 300.000', hpp: 300000, price: 303000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-400k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 400.000', hpp: 400000, price: 403000, desc: 'Biaya admin loket PLN Rp 3.000' },
+  { id: 'pkg-plnpost-500k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 500.000', hpp: 500000, price: 503500, desc: 'Biaya admin loket PLN Rp 3.500' },
+  { id: 'pkg-plnpost-750k', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 750.000', hpp: 750000, price: 754000, desc: 'Biaya admin loket PLN Rp 4.000' },
+  { id: 'pkg-plnpost-1jt', category: 'pln_bulanan', provider: 'PLN Pascabayar', name: 'Tagihan Listrik Bulanan Rp 1.000.000', hpp: 100000, price: 1005000, desc: 'Biaya admin loket PLN Rp 5.000' },
+
+  // ==========================================
+  // PEMBAYARAN WIFI & INTERNET RUMAH
+  // ==========================================
+  // Indihome / Telkom
+  { id: 'pkg-wifi-indi-custom', category: 'wifi', provider: 'Indihome', name: 'Tagihan Indihome / Telkom (Nominal Bebas)', hpp: 300000, price: 303500, desc: 'Bayar tagihan riil Indihome + Admin Rp 3.500' },
+  { id: 'pkg-wifi-indi-30m', category: 'wifi', provider: 'Indihome', name: 'Indihome 1P Internet 30 Mbps', hpp: 280000, price: 283500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-indi-2p-30m', category: 'wifi', provider: 'Indihome', name: 'Indihome 2P Net + Phone 30 Mbps', hpp: 315000, price: 318500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-indi-2p-tv30m', category: 'wifi', provider: 'Indihome', name: 'Indihome 2P Net + TV 30 Mbps', hpp: 370000, price: 373500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-indi-50m', category: 'wifi', provider: 'Indihome', name: 'Indihome 1P Internet 50 Mbps', hpp: 420000, price: 423500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-indi-100m', category: 'wifi', provider: 'Indihome', name: 'Indihome 1P Internet 100 Mbps', hpp: 580000, price: 584000, desc: 'Biaya admin loket Rp 4.000' },
+
+  // Iconnet (PLN Icon+)
+  { id: 'pkg-wifi-icon-custom', category: 'wifi', provider: 'Iconnet', name: 'Tagihan Iconnet PLN (Nominal Bebas)', hpp: 230000, price: 233000, desc: 'Bayar tagihan riil Iconnet + Admin Rp 3.000' },
+  { id: 'pkg-wifi-icon-20m', category: 'wifi', provider: 'Iconnet', name: 'Iconnet 20 Mbps Bulanan', hpp: 215000, price: 218000, desc: 'Internet fiber PLN Icon+ · Admin Rp 3.000' },
+  { id: 'pkg-wifi-icon-35m', category: 'wifi', provider: 'Iconnet', name: 'Iconnet 35 Mbps Bulanan', hpp: 265000, price: 268000, desc: 'Internet fiber PLN Icon+ · Admin Rp 3.000' },
+  { id: 'pkg-wifi-icon-50m', category: 'wifi', provider: 'Iconnet', name: 'Iconnet 50 Mbps Bulanan', hpp: 345000, price: 348000, desc: 'Internet fiber PLN Icon+ · Admin Rp 3.000' },
+  { id: 'pkg-wifi-icon-100m', category: 'wifi', provider: 'Iconnet', name: 'Iconnet 100 Mbps Bulanan', hpp: 565000, price: 568500, desc: 'Internet fiber PLN Icon+ · Admin Rp 3.500' },
+
+  // Biznet Home
+  { id: 'pkg-wifi-biz-custom', category: 'wifi', provider: 'Biznet', name: 'Tagihan Biznet Home (Nominal Bebas)', hpp: 250000, price: 253500, desc: 'Bayar tagihan riil Biznet + Admin Rp 3.500' },
+  { id: 'pkg-wifi-biz-50m', category: 'wifi', provider: 'Biznet', name: 'Biznet Home Internet 1D 50 Mbps', hpp: 250000, price: 253500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-biz-100m', category: 'wifi', provider: 'Biznet', name: 'Biznet Home Internet 2D 100 Mbps', hpp: 375000, price: 378500, desc: 'Biaya admin loket Rp 3.500' },
+
+  // First Media
+  { id: 'pkg-wifi-fm-custom', category: 'wifi', provider: 'First Media', name: 'Tagihan First Media (Nominal Bebas)', hpp: 295000, price: 298500, desc: 'Bayar tagihan riil First Media + Admin Rp 3.500' },
+  { id: 'pkg-wifi-fm-30m', category: 'wifi', provider: 'First Media', name: 'First Media Combo Stream 30 Mbps', hpp: 285000, price: 288500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-fm-50m', category: 'wifi', provider: 'First Media', name: 'First Media Combo Dlite HD 50 Mbps', hpp: 395000, price: 398500, desc: 'Biaya admin loket Rp 3.500' },
+
+  // MyRepublic
+  { id: 'pkg-wifi-myrep-custom', category: 'wifi', provider: 'MyRepublic', name: 'Tagihan MyRepublic (Nominal Bebas)', hpp: 245000, price: 248000, desc: 'Bayar tagihan riil MyRepublic + Admin Rp 3.000' },
+  { id: 'pkg-wifi-myrep-30m', category: 'wifi', provider: 'MyRepublic', name: 'MyRepublic Value 30 Mbps', hpp: 245000, price: 248000, desc: 'Biaya admin loket Rp 3.000' },
+  { id: 'pkg-wifi-myrep-50m', category: 'wifi', provider: 'MyRepublic', name: 'MyRepublic Fast 50 Mbps', hpp: 320000, price: 323500, desc: 'Biaya admin loket Rp 3.500' },
+
+  // XL Satu Fiber / XL Home
+  { id: 'pkg-wifi-xl-30m', category: 'wifi', provider: 'XL Satu', name: 'XL Satu Fiber Lite 30 Mbps', hpp: 260000, price: 263000, desc: 'Biaya admin loket Rp 3.000' },
+  { id: 'pkg-wifi-xl-50m', category: 'wifi', provider: 'XL Satu', name: 'XL Satu Fiber Smart 50 Mbps', hpp: 320000, price: 323000, desc: 'Biaya admin loket Rp 3.000' },
+
+  // CBN & Provider Lainnya
+  { id: 'pkg-wifi-cbn-50m', category: 'wifi', provider: 'CBN Fiber', name: 'CBN Fiber 50 Mbps Bulanan', hpp: 299000, price: 302500, desc: 'Biaya admin loket Rp 3.500' },
+  { id: 'pkg-wifi-other-custom', category: 'wifi', provider: 'Semua Wifi', name: 'Bayar Tagihan Wifi Lainnya (Nominal Bebas)', hpp: 250000, price: 253500, desc: 'Sesuai nominal tagihan pelanggan + Admin Rp 3.500' },
+
   // BPJS & Tagihan
   { id: 'pkg-tag-bpjs', category: 'bpjs', provider: 'BPJS', name: 'Tagihan BPJS Kesehatan', hpp: 35000, price: 37500, desc: 'Biaya admin konter Rp 2.500' },
   { id: 'pkg-tag-pdam', category: 'pdam', provider: 'PDAM', name: 'Tagihan PDAM Air Bersih', hpp: 65000, price: 68000, desc: 'Biaya admin konter Rp 3.000' },
-  { id: 'pkg-tag-wifi', category: 'tagihan', provider: 'Indihome', name: 'Tagihan Indihome / Wifi', hpp: 280000, price: 283500, desc: 'Biaya admin konter Rp 3.500' },
+  { id: 'pkg-tag-wifi-gen', category: 'tagihan', provider: 'Indihome', name: 'Tagihan Indihome / Wifi', hpp: 280000, price: 283500, desc: 'Biaya admin konter Rp 3.500' },
   { id: 'pkg-tag-pln-post', category: 'tagihan', provider: 'PLN Pascabayar', name: 'Listrik Pascabayar Bulanan', hpp: 145000, price: 148000, desc: 'Biaya admin konter Rp 3.000' },
 
   // Top Up & Voucher Game

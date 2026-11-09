@@ -21,6 +21,8 @@ import {
   RefreshCw,
   Smartphone,
   Printer,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -395,30 +397,61 @@ export const Sidebar: React.FC = () => {
           </button>
         </div>
 
-        {/* Shift status & Tutup Shift button */}
-        <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-          <div className="text-[11px] leading-tight">
-            <div className="text-teal-100 font-semibold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse inline-block" />
-              <span>{shift.shiftName}</span>
+        {/* Shift status & Buka/Tutup Kasir action */}
+        {shift.isOpen ? (
+          <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+            <div className="text-[11px] leading-tight">
+              <div className="text-teal-100 font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse inline-block" />
+                <span>{shift.shiftName}</span>
+              </div>
+              <div className="text-[10px] text-teal-200/80 font-mono">
+                Buka: {shift.startTime}
+              </div>
             </div>
-            <div className="text-[10px] text-teal-200/80 font-mono">
-              Aktif sejak {shift.startTime}
-            </div>
-          </div>
 
-          <button
-            onClick={() => {
-              setIsShiftModalOpen(true);
-              setIsMobileSidebarOpen(false);
-            }}
-            className="px-2.5 py-1 text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer shrink-0"
-            title="Rekonsiliasi Kas & Tutup Shift"
-          >
-            <Power className="w-3 h-3" />
-            <span>Tutup Shift</span>
-          </button>
-        </div>
+            <button
+              onClick={() => {
+                setIsShiftModalOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              className="px-2.5 py-1 text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer shrink-0"
+              title="Rekonsiliasi Kas & Tutup Kasir"
+            >
+              <Power className="w-3 h-3" />
+              <span>Tutup Kasir</span>
+            </button>
+          </div>
+        ) : (
+          <div className="pt-2 border-t border-white/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] leading-tight">
+                <div className="text-amber-300 font-extrabold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
+                  <span>REGISTER: TUTUP (OFF)</span>
+                </div>
+                <div className="text-[10px] text-teal-200/90 font-mono">
+                  Tutup: {shift.closedAt || '22:15 WIB'}
+                </div>
+              </div>
+              <span className="text-[9px] bg-black/40 text-amber-200 px-1.5 py-0.5 rounded font-mono font-bold">
+                Standby
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                setIsShiftModalOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              className="w-full py-1.5 px-2 text-xs font-black bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:from-amber-300 hover:to-amber-200 text-amber-950 rounded-lg flex items-center justify-center gap-1.5 transition shadow-md cursor-pointer shrink-0 active:scale-95"
+              title="Buka Kasir & Mulai Shift Pagi"
+            >
+              <Sun className="w-3.5 h-3.5 text-amber-900" />
+              <span>☀️ Buka Kasir / Shift Pagi</span>
+            </button>
+          </div>
+        )}
 
         {/* Security badge: E2EE & 2FA */}
         <div className="pt-1 flex items-center justify-center gap-1.5 text-[10px] text-teal-100 font-medium bg-white/10 py-1 rounded-lg border border-white/15">

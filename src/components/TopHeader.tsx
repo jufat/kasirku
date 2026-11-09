@@ -14,6 +14,8 @@ import {
   Smartphone,
   PanelBottomClose,
   PanelBottomOpen,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -25,6 +27,7 @@ export const TopHeader: React.FC = () => {
     setIsCashMutationModalOpen,
     shift,
     toggleRole,
+    setIsShiftModalOpen,
     products,
     storeProfile,
     lastSavedTime,
@@ -141,11 +144,24 @@ export const TopHeader: React.FC = () => {
               Keluar Demo
             </span>
           </button>
-        ) : (
+        ) : shift.isOpen ? (
           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-950 font-bold shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>Toko Nyata (Live)</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Toko Buka ({shift.shiftName})</span>
           </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsShiftModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg text-rose-950 font-bold shadow-xs transition cursor-pointer active:scale-95"
+            title="Register kasir sedang TUTUP (Toko Tutup). Klik untuk Mulai Shift Pagi."
+          >
+            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span>Register: TUTUP</span>
+            <span className="bg-amber-400 text-amber-950 text-[10px] px-1.5 py-0.2 rounded font-extrabold ml-1">
+              ☀️ Buka Kasir
+            </span>
+          </button>
         )}
 
         {/* Auto-Save & Storage Safety Badge */}

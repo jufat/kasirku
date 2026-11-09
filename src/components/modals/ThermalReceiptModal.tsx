@@ -158,10 +158,19 @@ export const ThermalReceiptModal: React.FC = () => {
         ? '*** STRUK PEMBAYARAN PERCETAKAN ***'
         : '*** NOTA ORDER PERCETAKAN ***';
   } else if (ppobTx) {
-    receiptCategoryBadge = 'PPOB & PULSA';
+    receiptCategoryBadge =
+      ppobTx.category === 'pln_bulanan'
+        ? 'LISTRIK BULANAN (PLN)'
+        : ppobTx.category === 'wifi'
+        ? 'TAGIHAN WIFI & INTERNET'
+        : 'PPOB & PULSA';
     receiptTitle =
       ppobTx.category === 'game'
         ? '*** STRUK TOP UP & VOUCHER GAME ***'
+        : ppobTx.category === 'pln_bulanan'
+        ? '*** STRUK PEMBAYARAN LISTRIK BULANAN ***'
+        : ppobTx.category === 'wifi'
+        ? '*** STRUK PEMBAYARAN WIFI / INTERNET ***'
         : '*** STRUK TRANSAKSI PPOB & PULSA ***';
   } else if (agTx) {
     receiptCategoryBadge = 'TRANSFER & LOKET AGEN';
@@ -328,9 +337,21 @@ export const ThermalReceiptModal: React.FC = () => {
       lines.push(`No Ref    : ${ppobTx.refNo}`);
       lines.push(`Waktu     : ${ppobTx.date}`);
       lines.push(`Pelanggan : ${ppobTx.customerName}`);
-      lines.push(`Provider  : ${ppobTx.provider}`);
-      lines.push(`No Tujuan : ${ppobTx.targetNumber}`);
-      lines.push(`Paket     : ${ppobTx.packageName}`);
+      lines.push(
+        ppobTx.category === 'wifi'
+          ? `ISP/Wifi  : ${ppobTx.provider}`
+          : `Provider  : ${ppobTx.provider}`
+      );
+      lines.push(
+        ppobTx.category === 'game'
+          ? `ID Akun   : ${ppobTx.targetNumber}`
+          : ppobTx.category === 'pln' || ppobTx.category === 'pln_bulanan'
+          ? `ID Pel/Met: ${ppobTx.targetNumber}`
+          : ppobTx.category === 'wifi'
+          ? `ID Wifi   : ${ppobTx.targetNumber}`
+          : `No Tujuan : ${ppobTx.targetNumber}`
+      );
+      lines.push(`Paket/Tag : ${ppobTx.packageName}`);
       lines.push(divider);
       if (ppobTx.discount && ppobTx.discount > 0) {
         lines.push(`Diskon    : -Rp ${ppobTx.discount.toLocaleString('id-ID')}`);
@@ -868,18 +889,36 @@ export const ThermalReceiptModal: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Layanan   :</span>
                     <span className="font-bold uppercase">
-                      {ppobTx.category === 'game' ? 'TOP UP GAME' : ppobTx.category}
+                      {ppobTx.category === 'game'
+                        ? 'TOP UP GAME'
+                        : ppobTx.category === 'pln_bulanan'
+                        ? 'LISTRIK BULANAN (PLN)'
+                        : ppobTx.category === 'wifi'
+                        ? 'TAGIHAN WIFI'
+                        : ppobTx.category === 'pln'
+                        ? 'TOKEN LISTRIK'
+                        : ppobTx.category}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">
-                      {ppobTx.category === 'game' ? 'Game/App  :' : 'Provider  :'}
+                      {ppobTx.category === 'game'
+                        ? 'Game/App  :'
+                        : ppobTx.category === 'wifi'
+                        ? 'ISP/Wifi  :'
+                        : 'Provider  :'}
                     </span>
                     <span className="font-bold">{ppobTx.provider}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">
-                      {ppobTx.category === 'game' ? 'ID Akun   :' : 'No Tujuan :'}
+                      {ppobTx.category === 'game'
+                        ? 'ID Akun   :'
+                        : ppobTx.category === 'pln' || ppobTx.category === 'pln_bulanan'
+                        ? 'ID Pel/Met:'
+                        : ppobTx.category === 'wifi'
+                        ? 'ID Wifi/Pel:'
+                        : 'No Tujuan :'}
                     </span>
                     <span className="font-mono font-bold text-slate-900">{ppobTx.targetNumber}</span>
                   </div>

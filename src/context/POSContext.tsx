@@ -2,10 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   Product,
   CartItem,
+  CartItemType,
+  CartItemMetadata,
   POSTransaction,
   AgencyTransaction,
   AtmMiniTransaction,
   PPOBTransaction,
+  PPOBCategory,
   ServiceTicket,
   CashMutation,
   DebtRecord,
@@ -16,11 +19,13 @@ import {
   PPOBPackage,
   StoreProfile,
   PrintOrder,
+  PrintOrderItem,
   PrintOrderStatus,
   PrintServiceItem,
   SyncTransactionEvent,
   CashierSlot,
   CashierProfile,
+  ShiftRecord,
 } from '../types/pos';
 import * as XLSX from 'xlsx';
 import {
@@ -32,6 +37,7 @@ import {
   INITIAL_DEBTS,
   INITIAL_RETURNS,
   INITIAL_SHIFT,
+  INITIAL_SHIFT_HISTORY,
   INITIAL_CATEGORIES,
   INITIAL_PPOB_PACKAGES,
   INITIAL_STORE_PROFILE,
@@ -67,11 +73,41 @@ interface POSContextType {
   setSearchQuery: (q: string) => void;
   cart: CartItem[];
   addToCart: (product: Product) => void;
+  addPPOBToCart: (
+    pkg: { name: string; price: number; hpp: number; category: PPOBCategory; provider: string; desc?: string },
+    targetNumber: string,
+    customerName?: string,
+    period?: string,
+    adminFee?: number
+  ) => void;
+  addPrintItemToCart: (
+    item: PrintOrderItem,
+    customerName?: string,
+    customerPhone?: string,
+    fileOrNote?: string
+  ) => void;
+  addPrintOrderToCart: (
+    items: PrintOrderItem[],
+    customerName?: string,
+    customerPhone?: string,
+    fileOrNote?: string
+  ) => void;
+  addCustomCartItem: (item: {
+    name: string;
+    price: number;
+    hpp: number;
+    quantity?: number;
+    categoryName?: string;
+    itemType?: CartItemType;
+    metadata?: CartItemMetadata;
+  }) => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
   cartSubtotal: number;
   cartTotalCount: number;
+  isMasterCartModalOpen: boolean;
+  setIsMasterCartModalOpen: (open: boolean) => void;
 
   // Checkout & Auto-Journaling
   checkoutPOS: (
@@ -253,9 +289,10 @@ interface POSContextType {
   setIsBottomNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
   toggleBottomNav: () => void;
 
-  // Shift Drawer Closing & Standard Drawer Cash Setting
+  // Shift Drawer Closing, History & Standard Drawer Cash Setting
   standardDrawerCash: number;
   setStandardDrawerCash: (amount: number) => void;
+  shiftHistory: ShiftRecord[];
   closeShiftDrawer: (
     actualCash: number,
     note?: string,
@@ -263,7 +300,8 @@ interface POSContextType {
       depositAmount: number;
       depositRecipient: string;
       remainingCashForDrawer: number;
-    }
+    },
+    closeType?: 'tutup_toko' | 'serah_terima'
   ) => {
     systemCash: number;
     actualCash: number;
@@ -276,7 +314,8 @@ interface POSContextType {
     cashierName: string,
     slot?: CashierSlot,
     shiftTitle?: string,
-    isSwapped?: boolean
+    isSwapped?: boolean,
+    customStartTime?: string
   ) => void;
 
   // System Database
@@ -341,18 +380,38 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return INITIAL_PPOB_PACKAGES;
     try {
       const parsed: PPOBPackage[] = JSON.parse(saved);
-      const hasGame = parsed.some((p) => p.category === 'game');
+      let merged = [...parsed];
+      let needsSave = false;
+
+      const hasGame = merged.some((p) => p.category === 'game');
       if (!hasGame) {
         const gamePackages = INITIAL_PPOB_PACKAGES.filter((p) => p.category === 'game');
-        const merged = [...parsed, ...gamePackages];
+        merged = [...merged, ...gamePackages];
+        needsSave = true;
+      }
+
+      const hasPlnBulanan = merged.some((p) => p.category === 'pln_bulanan');
+      if (!hasPlnBulanan) {
+        const plnBulananPackages = INITIAL_PPOB_PACKAGES.filter((p) => p.category === 'pln_bulanan');
+        merged = [...merged, ...plnBulananPackages];
+        needsSave = true;
+      }
+
+      const hasWifi = merged.some((p) => p.category === 'wifi');
+      if (!hasWifi) {
+        const wifiPackages = INITIAL_PPOB_PACKAGES.filter((p) => p.category === 'wifi');
+        merged = [...merged, ...wifiPackages];
+        needsSave = true;
+      }
+
+      if (needsSave) {
         try {
           localStorage.setItem('jufat_ppob_packages', JSON.stringify(merged));
         } catch {
           // ignore
         }
-        return merged;
       }
-      return parsed;
+      return merged;
     } catch {
       return INITIAL_PPOB_PACKAGES;
     }
@@ -457,6 +516,24 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_SHIFT;
   });
 
+  const [shiftHistory, setShiftHistory] = useState<ShiftRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_shift_history');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return INITIAL_SHIFT_HISTORY;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_shift_history', JSON.stringify(shiftHistory));
+    } catch {
+      // ignore
+    }
+  }, [shiftHistory]);
+
   // Uang Laci yang Telah Ditentukan (Standard Drawer Cash - Default Rp 500.000)
   const [standardDrawerCash, setStandardDrawerCashState] = useState<number>(() => {
     try {
@@ -517,6 +594,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isCashMutationModalOpen, setIsCashMutationModalOpen] = useState(false);
+  const [isMasterCartModalOpen, setIsMasterCartModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isBottomNavVisible, setIsBottomNavVisible] = useState<boolean>(() => {
     try {
@@ -682,11 +760,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addToCart = (product: Product) => {
     if (product.stock <= 0) return;
     setCart((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id);
+      const existing = prev.find(
+        (item) => (!item.itemType || item.itemType === 'produk') && item.product.id === product.id
+      );
       if (existing) {
         if (existing.quantity >= product.stock) return prev;
         return prev.map((item) =>
-          item.product.id === product.id
+          (!item.itemType || item.itemType === 'produk') && item.product.id === product.id
             ? {
                 ...item,
                 quantity: item.quantity + 1,
@@ -698,6 +778,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [
         ...prev,
         {
+          id: product.id,
+          itemType: 'produk',
           product,
           quantity: 1,
           discount: 0,
@@ -707,6 +789,143 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const addPPOBToCart = (
+    pkg: { name: string; price: number; hpp: number; category: PPOBCategory; provider: string; desc?: string },
+    targetNumber: string,
+    customerName?: string,
+    period?: string,
+    adminFee?: number
+  ) => {
+    const itemId = `ppob-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const categoryLabel =
+      pkg.category === 'pln_bulanan'
+        ? 'Listrik Bulanan (PLN)'
+        : pkg.category === 'wifi'
+        ? 'Tagihan Wifi / Net'
+        : pkg.category === 'pln'
+        ? 'Token PLN'
+        : pkg.category === 'game'
+        ? 'Top Up Game'
+        : `PPOB ${pkg.category.toUpperCase()}`;
+
+    const virtualProduct: Product = {
+      id: itemId,
+      sku: `PPOB-${pkg.provider.slice(0, 4).toUpperCase().replace(/\s+/g, '')}`,
+      name: `${pkg.name} (${targetNumber})`,
+      category: categoryLabel,
+      hpp: pkg.hpp,
+      price: pkg.price,
+      stock: 9999,
+      minStock: 0,
+      unit: 'trx',
+    };
+
+    const cartItem: CartItem = {
+      id: itemId,
+      itemType: 'ppob',
+      product: virtualProduct,
+      quantity: 1,
+      discount: 0,
+      subtotal: pkg.price,
+      metadata: {
+        ppobCategory: pkg.category,
+        targetNumber,
+        provider: pkg.provider,
+        packageName: pkg.name,
+        period,
+        adminFee,
+        rawPrice: pkg.price,
+      },
+    };
+
+    setCart((prev) => [...prev, cartItem]);
+  };
+
+  const addPrintItemToCart = (
+    item: PrintOrderItem,
+    customerName?: string,
+    customerPhone?: string,
+    fileOrNote?: string
+  ) => {
+    const itemId = `prn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const virtualProduct: Product = {
+      id: itemId,
+      sku: `PRN-${item.category.slice(0, 4).toUpperCase()}`,
+      name: `${item.serviceName}${item.specNote ? ` [${item.specNote}]` : ''}`,
+      category: 'Percetakan & Copy',
+      hpp: Math.round(item.pricePerUnit * 0.4), // estimasi hpp bahan 40%
+      price: item.pricePerUnit,
+      stock: 9999,
+      minStock: 0,
+      unit: item.unit || 'lbr',
+    };
+
+    const cartItem: CartItem = {
+      id: itemId,
+      itemType: 'percetakan',
+      product: virtualProduct,
+      quantity: item.quantity,
+      discount: 0,
+      subtotal: item.subtotal,
+      metadata: {
+        printCategory: item.category,
+        specNote: item.specNote,
+        unit: item.unit,
+        customerPhone,
+        fileOrNote,
+      },
+    };
+
+    setCart((prev) => [...prev, cartItem]);
+  };
+
+  const addPrintOrderToCart = (
+    items: PrintOrderItem[],
+    customerName?: string,
+    customerPhone?: string,
+    fileOrNote?: string
+  ) => {
+    items.forEach((item) => {
+      addPrintItemToCart(item, customerName, customerPhone, fileOrNote);
+    });
+  };
+
+  const addCustomCartItem = (item: {
+    name: string;
+    price: number;
+    hpp: number;
+    quantity?: number;
+    categoryName?: string;
+    itemType?: CartItemType;
+    metadata?: CartItemMetadata;
+  }) => {
+    const itemId = `cst-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const qty = item.quantity || 1;
+    const virtualProduct: Product = {
+      id: itemId,
+      sku: `ITEM-${Math.floor(100 + Math.random() * 900)}`,
+      name: item.name,
+      category: item.categoryName || 'Item Tambahan',
+      hpp: item.hpp,
+      price: item.price,
+      stock: 9999,
+      minStock: 0,
+      unit: 'item',
+    };
+
+    const cartItem: CartItem = {
+      id: itemId,
+      itemType: item.itemType || 'produk',
+      product: virtualProduct,
+      quantity: qty,
+      discount: 0,
+      subtotal: item.price * qty,
+      metadata: item.metadata,
+    };
+
+    setCart((prev) => [...prev, cartItem]);
+  };
+
   const updateCartQuantity = (productId: string, quantity: number) => {
     if (quantity <= 0) {
       removeFromCart(productId);
@@ -714,8 +933,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setCart((prev) =>
       prev.map((item) => {
-        if (item.product.id === productId) {
-          const clampedQty = Math.min(quantity, item.product.stock);
+        const matches = (item.id && item.id === productId) || item.product.id === productId;
+        if (matches) {
+          const maxStock = (!item.itemType || item.itemType === 'produk') ? item.product.stock : 9999;
+          const clampedQty = Math.min(quantity, maxStock);
           return {
             ...item,
             quantity: clampedQty,
@@ -728,12 +949,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeFromCart = (productId: string) => {
-    setCart((prev) => prev.filter((item) => item.product.id !== productId));
+    setCart((prev) =>
+      prev.filter((item) => {
+        const matches = (item.id && item.id === productId) || item.product.id === productId;
+        return !matches;
+      })
+    );
   };
 
   const clearCart = () => setCart([]);
 
-  // Auto-Journaling Function for Cashier POS
+  // Auto-Journaling Function for Cashier POS / Master Cart
   const checkoutPOS = (
     paymentMethod: PaymentMethod,
     cashTendered: number,
@@ -774,6 +1000,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       : 0;
 
     const resolvedPaymentMethod: PaymentMethod = isPartial ? 'hutang' : paymentMethod;
+    const isMasterCart = cart.some((c) => c.itemType && c.itemType !== 'produk');
 
     const newTx: POSTransaction = {
       id: `tx-${Date.now()}`,
@@ -795,12 +1022,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       dueDate: remainingDebt > 0 ? (dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) : undefined,
       type: 'pos_penjualan',
       note,
+      isMasterCart,
     };
 
-    // 1. Reduce Stock for each item
+    // 1. Reduce Stock for regular retail products only
     setProducts((prev) =>
       prev.map((p) => {
-        const bought = cart.find((c) => c.product.id === p.id);
+        const bought = cart.find(
+          (c) => c.product.id === p.id && (!c.itemType || c.itemType === 'produk')
+        );
         if (bought) {
           return { ...p, stock: Math.max(0, p.stock - bought.quantity) };
         }
@@ -808,7 +1038,63 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    // 1b. Auto-journal PPOB items to PPOB transactions log
+    const ppobItems = cart.filter((c) => c.itemType === 'ppob');
+    if (ppobItems.length > 0) {
+      const newPpobTxs: PPOBTransaction[] = ppobItems.map((c, idx) => ({
+        id: `ppob-cart-${Date.now()}-${idx}`,
+        refNo: `PPOB-${invoiceNo.replace('INV-', '')}-${idx + 1}`,
+        date: new Date().toLocaleString('id-ID'),
+        category: c.metadata?.ppobCategory || 'tagihan',
+        provider: c.metadata?.provider || 'PPOB',
+        targetNumber: c.metadata?.targetNumber || '-',
+        packageName: c.metadata?.packageName || c.product.name,
+        hpp: c.product.hpp * c.quantity,
+        sellingPrice: c.subtotal,
+        profit: c.subtotal - (c.product.hpp * c.quantity),
+        customerName: customerName.trim() || 'Pelanggan PPOB',
+        paymentMethod: (resolvedPaymentMethod === 'hutang' ? 'hutang' : resolvedPaymentMethod === 'qris' ? 'qris' : 'tunai'),
+        status: 'sukses',
+        discount: c.discount,
+      }));
+      setPpobTransactions((prev) => [...newPpobTxs, ...prev]);
+    }
+
+    // 1c. Auto-journal Percetakan items to Print Orders log
+    const printItems = cart.filter((c) => c.itemType === 'percetakan');
+    if (printItems.length > 0) {
+      const newPrintOrder: PrintOrder = {
+        id: `PRT-${Date.now().toString().slice(-6)}`,
+        date: new Date().toLocaleString('id-ID'),
+        customerName: customerName.trim() || 'Pelanggan Umum',
+        customerPhone: customerPhone?.trim() || '-',
+        items: printItems.map((c) => ({
+          id: c.product.id,
+          serviceName: c.product.name,
+          category: (c.metadata?.printCategory as any) || 'print_dokumen',
+          quantity: c.quantity,
+          unit: c.metadata?.unit || c.product.unit || 'pcs',
+          pricePerUnit: c.product.price,
+          subtotal: c.subtotal,
+          specNote: c.metadata?.specNote,
+        })),
+        totalAmount: printItems.reduce((acc, c) => acc + c.subtotal, 0),
+        downPayment: resolvedPaymentMethod === 'hutang' ? (paidAmount || 0) : printItems.reduce((acc, c) => acc + c.subtotal, 0),
+        remainingAmount: resolvedPaymentMethod === 'hutang' ? Math.max(0, printItems.reduce((acc, c) => acc + c.subtotal, 0) - (paidAmount || 0)) : 0,
+        paymentMethod: resolvedPaymentMethod,
+        status: 'selesai',
+        fileOrNote: note || 'Order via Keranjang Besar',
+        dueDate: dueDate,
+      };
+      setPrintOrders((prev) => [newPrintOrder, ...prev]);
+    }
+
     // 2. Auto-journal to Cash Ledger & Real-Time Sync
+    const txPrefix = isMasterCart ? 'Penjualan Keranjang Besar' : 'Penjualan Kasir';
+    const txSyncTitle = isMasterCart
+      ? (isPartial ? 'Keranjang Besar (Bayar Sebagian DP)' : `Keranjang Besar (${cart.length} item)`)
+      : (isPartial ? 'Kasir (Bayar Sebagian DP)' : `Penjualan Kasir (${cart.length} item)`);
+
     if (actualPaid > 0) {
       if (paymentMethod === 'tunai' || isPartial) {
         const newRunning = drawerCashBalance + actualPaid;
@@ -818,8 +1104,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           type: 'masuk',
           category: 'penjualan_pos',
           description: isPartial
-            ? `Penjualan Kasir (Bayar Sebagian) ${invoiceNo} (${cart.length} item) - Diterima Rp ${actualPaid.toLocaleString('id-ID')}, Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')}`
-            : `Penjualan Kasir ${invoiceNo} (${cart.length} item: ${cart
+            ? `${txPrefix} (Bayar Sebagian) ${invoiceNo} (${cart.length} item) - Diterima Rp ${actualPaid.toLocaleString('id-ID')}, Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')}`
+            : `${txPrefix} ${invoiceNo} (${cart.length} item: ${cart
                 .map((i) => `${i.product.name.slice(0, 15)}..x${i.quantity}`)
                 .join(', ')})`,
           amount: actualPaid,
@@ -833,7 +1119,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `sync-${Date.now()}`,
           timestamp: nowTime,
           source: 'kasir',
-          actionTitle: isPartial ? `Kasir (Bayar Sebagian DP)` : `Penjualan Kasir (${cart.length} item)`,
+          actionTitle: txSyncTitle,
           customerName: customerName.trim() || 'Pelanggan',
           drawerCashDelta: actualPaid,
           digitalBalanceDelta: 0,
@@ -845,7 +1131,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           timestamp: nowTime,
           type: 'masuk',
           category: 'penjualan_pos',
-          description: `Penjualan QRIS Kasir ${invoiceNo} (${cart.length} item)`,
+          description: `${txPrefix} QRIS ${invoiceNo} (${cart.length} item)`,
           amount: actualPaid,
           paymentMethod: 'non_tunai',
           runningCashBalance: drawerCashBalance,
@@ -858,7 +1144,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `sync-${Date.now()}`,
           timestamp: nowTime,
           source: 'kasir',
-          actionTitle: `Penjualan QRIS Kasir (${cart.length} item)`,
+          actionTitle: `${txPrefix} QRIS (${cart.length} item)`,
           customerName: customerName.trim() || 'Pelanggan Umum',
           drawerCashDelta: 0,
           digitalBalanceDelta: actualPaid,
@@ -881,8 +1167,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), // default 7 days
         status: actualPaid > 0 ? 'cicilan' : 'belum_lunas',
         note: note?.trim() || (actualPaid > 0
-          ? `Kasbon Sisa Penjualan Kasir ${invoiceNo} (Sudah bayar Rp ${actualPaid.toLocaleString('id-ID')})`
-          : `Kasbon Penjualan Kasir ${invoiceNo}`),
+          ? `Kasbon Sisa ${txPrefix} ${invoiceNo} (Sudah bayar Rp ${actualPaid.toLocaleString('id-ID')})`
+          : `Kasbon ${txPrefix} ${invoiceNo}`),
       };
       setDebts((prev) => [newDebt, ...prev]);
 
@@ -891,7 +1177,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `sync-${Date.now()}`,
           timestamp: nowTime,
           source: 'kasir',
-          actionTitle: `Kasbon Penuh Kasir (${cart.length} item)`,
+          actionTitle: `Kasbon Penuh ${txPrefix} (${cart.length} item)`,
           customerName: customerName.trim() || 'Pelanggan Kasbon',
           drawerCashDelta: 0,
           digitalBalanceDelta: 0,
@@ -2092,7 +2378,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsReceiptModalOpen(false);
   };
 
-  // Shift Drawer Closing & Reconciliation (Dukungan Setoran Kasir)
+  // Shift Drawer Closing & Reconciliation (Dukungan Setoran Kasir & Tutup Toko Bukan 24 Jam)
   const closeShiftDrawer = (
     actualCash: number,
     note?: string,
@@ -2100,10 +2386,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       depositAmount: number;
       depositRecipient: string;
       remainingCashForDrawer: number;
-    }
+    },
+    closeType: 'tutup_toko' | 'serah_terima' = 'tutup_toko'
   ) => {
     const diff = actualCash - drawerCashBalance;
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const nowDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    const fullTimeStr = `${nowTime} WIB · ${nowDate}`;
 
     // 1. Catat rekonsiliasi selisih kas fisik jika ada selisih
     if (diff !== 0) {
@@ -2143,9 +2432,37 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setMutations((prev) => [depositMutation, ...prev]);
     }
 
+    // 3. Catat Riwayat Shift (Shift Record)
+    const newRecord: ShiftRecord = {
+      id: `shift-rec-${Date.now()}`,
+      shiftNumber: shift.shiftNumber,
+      shiftName: shift.shiftName,
+      cashierName: shift.cashierName,
+      cashierSlot: shift.cashierSlot,
+      role: shift.role,
+      startTime: shift.startTime,
+      endTime: fullTimeStr,
+      duration: `${shift.startTime} s/d ${nowTime} WIB`,
+      startingCash: shift.startingCash,
+      systemCash: drawerCashBalance,
+      actualCash,
+      difference: diff,
+      depositAmount: depositOptions?.depositAmount,
+      depositRecipient: depositOptions?.depositRecipient,
+      remainingCashInDrawer: finalRemainingCash,
+      note: note || (closeType === 'tutup_toko' ? 'Tutup kasir malam (Toko Tutup)' : 'Serah terima pergantian shift'),
+      closeType,
+    };
+    setShiftHistory((prev) => [newRecord, ...prev]);
+
+    // 4. Update Shift State: Register menjadi TUTUP (isOpen = false)
     setShift((prev) => ({
       ...prev,
       isOpen: false,
+      closedAt: fullTimeStr,
+      closedBy: shift.cashierName,
+      closingCash: finalRemainingCash,
+      closingNotes: note,
     }));
 
     return {
@@ -2162,10 +2479,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     cashierName: string,
     slot: CashierSlot = 'kasir_1',
     shiftTitle?: string,
-    isSwapped: boolean = false
+    isSwapped: boolean = false,
+    customStartTime?: string
   ) => {
     const nextShiftNum = shift.shiftNumber + 1;
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const nowDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    const fullStartTime = customStartTime || `${nowTime} WIB · ${nowDate}`;
     const profile = cashierProfiles[slot] || DEFAULT_CASHIER_PROFILES[slot];
     const finalName = cashierName.trim() || profile.name;
 
@@ -2185,9 +2505,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cashierSlot: slot,
       isSwappedShift: isSwapped,
       originalCashierName: profile.name,
-      startTime: `${nowTime} WIB`,
+      startTime: fullStartTime,
       startingCash,
       isOpen: true,
+      closedAt: shift.closedAt,
+      closedBy: shift.closedBy,
+      closingCash: shift.closingCash,
     };
 
     setShift(newShiftState);
@@ -2198,7 +2521,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: nowTime,
       type: 'masuk',
       category: 'modal_shift',
-      description: `Buka Kas Awal Laci ${newShiftState.shiftName} (${finalName}${isSwapped ? ' - Tukar Shift' : ''})`,
+      description: `Buka Kas Awal Laci ${newShiftState.shiftName} (${finalName}${isSwapped ? ' - Tukar Shift' : ''}) - Modal: Rp ${startingCash.toLocaleString('id-ID')}`,
       amount: startingCash,
       paymentMethod: 'tunai',
       runningCashBalance: startingCash,
@@ -2751,6 +3074,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleBottomNav,
         standardDrawerCash,
         setStandardDrawerCash,
+        shiftHistory,
         closeShiftDrawer,
         openNewShift,
         exportBackupJSON,

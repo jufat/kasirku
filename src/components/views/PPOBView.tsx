@@ -24,6 +24,11 @@ import {
   Banknote,
   QrCode,
   Receipt,
+  Globe,
+  Smartphone,
+  Building2,
+  Calculator,
+  ArrowRight,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { PPOBCategory, PPOBPackage, PPOBTransaction } from '../../types/pos';
@@ -38,6 +43,17 @@ const POPULAR_GAMES = [
   'Roblox',
   'Valorant',
   'Steam Wallet',
+] as const;
+
+const POPULAR_WIFI_PROVIDERS = [
+  'Semua Wifi',
+  'Indihome',
+  'Iconnet',
+  'Biznet',
+  'First Media',
+  'MyRepublic',
+  'XL Satu',
+  'CBN Fiber',
 ] as const;
 
 export const PPOBView: React.FC = () => {
@@ -67,6 +83,24 @@ export const PPOBView: React.FC = () => {
   const [gameZoneId, setGameZoneId] = useState('');
   const [gameSearchQuery, setGameSearchQuery] = useState('');
 
+  // Wifi specific state
+  const [selectedWifiProvider, setSelectedWifiProvider] = useState<string>('Semua Wifi');
+  const [wifiSearchQuery, setWifiSearchQuery] = useState('');
+  const wifiScrollRef = useRef<HTMLDivElement>(null);
+
+  // Listrik Bulanan & Tagihan Bebas state
+  const [plnPeriod, setPlnPeriod] = useState(() => {
+    const now = new Date();
+    return now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+  });
+
+  const [customPlnBillAmount, setCustomPlnBillAmount] = useState<number>(150000);
+  const [customPlnAdminFee, setCustomPlnAdminFee] = useState<number>(3000);
+
+  const [customWifiBillAmount, setCustomWifiBillAmount] = useState<number>(280000);
+  const [customWifiAdminFee, setCustomWifiAdminFee] = useState<number>(3500);
+  const [customWifiProvider, setCustomWifiProvider] = useState<string>('Indihome');
+
   const [successMessage, setSuccessMessage] = useState('');
   const [mobileTab, setMobileTab] = useState<'buy' | 'history'>('buy');
   const [lastTxForReceipt, setLastTxForReceipt] = useState<PPOBTransaction | null>(null);
@@ -87,6 +121,69 @@ export const PPOBView: React.FC = () => {
       const scrollAmount = direction === 'left' ? -200 : 200;
       gameScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
+  };
+
+  const scrollWifi = (direction: 'left' | 'right') => {
+    if (wifiScrollRef.current) {
+      const scrollAmount = direction === 'left' ? -200 : 200;
+      wifiScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  // Quick Pay Handlers for Custom Bill Amount
+  const handlePayCustomPlnBill = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phoneNumber.trim()) {
+      alert('Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!');
+      return;
+    }
+    const amount = Number(customPlnBillAmount) || 0;
+    const admin = Number(customPlnAdminFee) || 0;
+    if (amount <= 0) {
+      alert('Nominal tagihan listrik harus lebih dari Rp 0!');
+      return;
+    }
+
+    const customPkg: PPOBPackage = {
+      id: `custom-plnpost-${Date.now()}`,
+      category: 'pln_bulanan',
+      provider: 'PLN Pascabayar',
+      name: `Tagihan Listrik Rp ${amount.toLocaleString('id-ID')}`,
+      hpp: amount,
+      price: amount + admin,
+      desc: `Tagihan PLN Bulanan (${plnPeriod}) · Admin Loket Rp ${admin.toLocaleString('id-ID')}`,
+    };
+
+    handleInitiatePurchase(customPkg);
+  };
+
+  const handlePayCustomWifiBill = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phoneNumber.trim()) {
+      alert('Nomor Pelanggan / ID Sambungan Wifi wajib diisi!');
+      return;
+    }
+    const amount = Number(customWifiBillAmount) || 0;
+    const admin = Number(customWifiAdminFee) || 0;
+    if (amount <= 0) {
+      alert('Nominal tagihan wifi harus lebih dari Rp 0!');
+      return;
+    }
+
+    const providerName =
+      selectedWifiProvider !== 'Semua Wifi' ? selectedWifiProvider : customWifiProvider;
+
+    const customPkg: PPOBPackage = {
+      id: `custom-wifi-${Date.now()}`,
+      category: 'wifi',
+      provider: providerName,
+      name: `Tagihan ${providerName} Rp ${amount.toLocaleString('id-ID')}`,
+      hpp: amount,
+      price: amount + admin,
+      desc: `Tagihan Wifi & Internet ${providerName} · Admin Rp ${admin.toLocaleString('id-ID')}`,
+    };
+
+    handleInitiatePurchase(customPkg);
   };
 
   // Modals for Packages
@@ -199,7 +296,11 @@ export const PPOBView: React.FC = () => {
       if (!phoneNumber.trim()) {
         alert(
           category === 'pln'
-            ? 'Nomor Meteran / ID Pelanggan PLN wajib diisi!'
+            ? 'Nomor Meteran / ID Pelanggan PLN Prabayar wajib diisi!'
+            : category === 'pln_bulanan'
+            ? 'Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!'
+            : category === 'wifi'
+            ? 'Nomor Pelanggan / ID Sambungan Wifi wajib diisi!'
             : 'Nomor HP Pelanggan wajib diisi!'
         );
         return;
@@ -243,14 +344,30 @@ export const PPOBView: React.FC = () => {
         : gameUserId.trim();
     }
 
+    const providerLabel =
+      category === 'pln'
+        ? 'PLN Prepaid'
+        : category === 'pln_bulanan'
+        ? 'PLN Pascabayar'
+        : pkg.provider;
+
+    const defaultCustomerName =
+      category === 'game'
+        ? 'Player Game'
+        : category === 'pln_bulanan'
+        ? 'Pelanggan Listrik'
+        : category === 'wifi'
+        ? 'Pelanggan Wifi'
+        : 'Pelanggan PPOB';
+
     const tx = recordPPOBTransaction(
       category,
-      category === 'pln' ? 'PLN Prepaid' : pkg.provider,
+      providerLabel,
       target,
       pkg.name,
       pkg.hpp,
       finalPPOBPrice,
-      finalCustomerName || (category === 'game' ? 'Player Game' : 'Pelanggan PPOB'),
+      finalCustomerName || defaultCustomerName,
       ppobPaymentMethod,
       ppobCustomerPhone.trim() || target,
       ppobDueDate,
@@ -290,7 +407,17 @@ export const PPOBView: React.FC = () => {
       setPkgProvider('PLN');
       setPkgHpp(20500);
       setPkgPrice(23000);
-      setPkgDesc('Token listrik PLN');
+      setPkgDesc('Token listrik PLN (Prabayar)');
+    } else if (category === 'pln_bulanan') {
+      setPkgProvider('PLN Pascabayar');
+      setPkgHpp(100000);
+      setPkgPrice(103000);
+      setPkgDesc('Tagihan listrik bulanan · Admin Loket Rp 3.000');
+    } else if (category === 'wifi') {
+      setPkgProvider(selectedWifiProvider !== 'Semua Wifi' ? selectedWifiProvider : 'Indihome');
+      setPkgHpp(280000);
+      setPkgPrice(283500);
+      setPkgDesc('Tagihan bulanan Wifi · Admin Loket Rp 3.500');
     } else {
       setPkgProvider(selectedProvider);
       setPkgHpp(10000);
@@ -395,6 +522,20 @@ export const PPOBView: React.FC = () => {
     if (category === 'pln') {
       return pkg.category === 'pln';
     }
+    if (category === 'pln_bulanan') {
+      return pkg.category === 'pln_bulanan';
+    }
+    if (category === 'wifi') {
+      if (pkg.category !== 'wifi') return false;
+      const matchesProvider =
+        selectedWifiProvider === 'Semua Wifi' ||
+        pkg.provider.toLowerCase() === selectedWifiProvider.toLowerCase();
+      const matchesSearch =
+        !wifiSearchQuery.trim() ||
+        pkg.name.toLowerCase().includes(wifiSearchQuery.toLowerCase()) ||
+        pkg.provider.toLowerCase().includes(wifiSearchQuery.toLowerCase());
+      return matchesProvider && matchesSearch;
+    }
     if (category === 'bpjs') {
       return pkg.category === 'bpjs' || pkg.category === 'tagihan';
     }
@@ -464,10 +605,12 @@ export const PPOBView: React.FC = () => {
             >
               {[
                 { id: 'pulsa', label: 'Pulsa Reguler', icon: Phone },
-                { id: 'data', label: 'Paket Data / Kuota', icon: Wifi },
-                { id: 'pln', label: 'Token Listrik PLN', icon: Zap },
-                { id: 'game', label: 'Top Up Game & Voucher', icon: Gamepad2, highlight: true },
-                { id: 'bpjs', label: 'BPJS & Tagihan', icon: HeartPulse },
+                { id: 'data', label: 'Paket Data / Kuota', icon: Smartphone },
+                { id: 'pln', label: 'Token PLN (Prabayar)', icon: Zap },
+                { id: 'pln_bulanan', label: 'Listrik Bulanan (PLN)', icon: Receipt, highlight: 'amber' },
+                { id: 'wifi', label: 'Tagihan Wifi / Internet', icon: Wifi, highlight: 'sky' },
+                { id: 'game', label: 'Top Up Game & Voucher', icon: Gamepad2, highlight: 'violet' },
+                { id: 'bpjs', label: 'BPJS Kesehatan', icon: HeartPulse },
                 { id: 'pdam', label: 'PDAM & Utilitas', icon: Droplets },
               ].map((c) => {
                 const Icon = c.icon;
@@ -485,16 +628,34 @@ export const PPOBView: React.FC = () => {
                     }}
                     className={`px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition shrink-0 cursor-pointer shadow-2xs whitespace-nowrap select-none ${
                       active
-                        ? c.highlight
+                        ? c.highlight === 'violet'
                           ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-sm font-extrabold ring-2 ring-violet-300'
+                          : c.highlight === 'amber'
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-sm font-extrabold ring-2 ring-amber-300'
+                          : c.highlight === 'sky'
+                          ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-sm font-extrabold ring-2 ring-sky-300'
                           : 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-sm font-bold ring-2 ring-teal-300'
                         : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 font-medium'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${c.highlight && !active ? 'text-violet-600' : ''}`} />
+                    <Icon className={`w-4 h-4 ${
+                      c.highlight === 'violet' && !active
+                        ? 'text-violet-600'
+                        : c.highlight === 'amber' && !active
+                        ? 'text-amber-600'
+                        : c.highlight === 'sky' && !active
+                        ? 'text-sky-600'
+                        : ''
+                    }`} />
                     <span>{c.label}</span>
-                    {c.highlight && !active && (
-                      <span className="bg-amber-100 text-amber-900 text-[9px] px-1.5 py-0.2 rounded-full font-extrabold uppercase">
+                    {(c.id === 'pln_bulanan' || c.id === 'wifi' || c.id === 'game') && !active && (
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold uppercase ${
+                        c.id === 'pln_bulanan'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : c.id === 'wifi'
+                          ? 'bg-sky-100 text-sky-900 border border-sky-300'
+                          : 'bg-violet-100 text-violet-900 border border-violet-300'
+                      }`}>
                         Baru
                       </span>
                     )}
@@ -508,14 +669,14 @@ export const PPOBView: React.FC = () => {
               type="button"
               onClick={() => scrollCategories('right')}
               className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-white hover:bg-teal-50 border border-slate-300 rounded-full items-center justify-center shadow-md text-slate-700 hover:text-teal-700 transition cursor-pointer active:scale-95"
-              title="Geser menu ke kanan (Game, BPJS, PDAM)"
+              title="Geser menu ke kanan"
               aria-label="Geser menu ke kanan"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
-          {/* DYNAMIC FORM: When Game is Selected vs Pulsa/PLN */}
+          {/* DYNAMIC FORMS BY CATEGORY */}
           {category === 'game' ? (
             <div className="space-y-3 bg-white p-3.5 rounded-xl border border-violet-200/80 shadow-xs">
               {/* Game Selector Chips / Badges with Horizontal Scroll and Arrows */}
@@ -677,12 +838,387 @@ export const PPOBView: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : category === 'pln_bulanan' ? (
+            /* ============================================================== */
+            /* DYNAMIC FORM: PEMBAYARAN LISTRIK BULANAN (PLN PASCABAYAR)       */
+            /* ============================================================== */
+            <div className="space-y-3 bg-white p-3.5 rounded-xl border-2 border-amber-300 shadow-xs">
+              <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                    <Receipt className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-amber-950 uppercase tracking-tight">
+                      Loket Pembayaran Listrik Bulanan (PLN Pascabayar)
+                    </h4>
+                    <p className="text-[10.5px] text-slate-500">
+                      Bayar tagihan listrik bulanan resmi PLN untuk rumah tangga & usaha
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded font-black font-mono">
+                  PLN PASCABAYAR
+                </span>
+              </div>
+
+              {/* Input Nomor ID Pelanggan & Nama Pelanggan */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                <div className="md:col-span-2">
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    Nomor ID Pelanggan PLN / No Meteran (12 Digit) *
+                  </label>
+                  <input
+                    type="text"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Contoh: 512039182390"
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-amber-300 rounded-lg font-mono font-black text-slate-900 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                    Nama Pemilik Rekening / Pelanggan
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Contoh: Budi Santoso"
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Custom Bill Calculator Card for Listrik Bulanan */}
+              <form
+                onSubmit={handlePayCustomPlnBill}
+                className="bg-gradient-to-r from-amber-50 to-amber-100/60 p-3 rounded-xl border border-amber-300 space-y-2"
+              >
+                <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
+                  <span className="font-extrabold text-amber-950 text-xs flex items-center gap-1.5">
+                    <Calculator className="w-3.5 h-3.5 text-amber-700" />
+                    <span>⚡ Bayar Tagihan Listrik Sesuai Rekening (Nominal Bebas)</span>
+                  </span>
+                  <span className="text-[10px] text-amber-800 font-bold">
+                    Hitung Tagihan & Admin Otomatis
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
+                      Jumlah Tagihan PLN Pokok (Rp): *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min="1000"
+                        step="100"
+                        required
+                        value={customPlnBillAmount}
+                        onChange={(e) => setCustomPlnBillAmount(Number(e.target.value) || 0)}
+                        placeholder="Contoh: 187500"
+                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
+                      Biaya Admin Loket (Rp):
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        value={customPlnAdminFee}
+                        onChange={(e) => setCustomPlnAdminFee(Number(e.target.value) || 0)}
+                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
+                      Periode Bulan Tagihan:
+                    </label>
+                    <input
+                      type="text"
+                      value={plnPeriod}
+                      onChange={(e) => setPlnPeriod(e.target.value)}
+                      placeholder="Contoh: November 2026"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-amber-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Total Bayar Pelanggan:</span>
+                      <span className="font-mono font-black text-sm text-amber-950">
+                        Rp {(customPlnBillAmount + customPlnAdminFee).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="border-l border-amber-300 pl-3">
+                      <span className="text-[10px] text-slate-500 block">Untung Loket:</span>
+                      <span className="font-mono font-bold text-xs text-emerald-700">
+                        +Rp {customPlnAdminFee.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black rounded-lg shadow-sm flex items-center gap-1.5 text-xs cursor-pointer active:scale-95 transition"
+                  >
+                    <span>⚡ Lanjut Bayar Tagihan Listrik</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : category === 'wifi' ? (
+            /* ============================================================== */
+            /* DYNAMIC FORM: PEMBAYARAN TAGIHAN WIFI & INTERNET RUMAH          */
+            /* ============================================================== */
+            <div className="space-y-3 bg-white p-3.5 rounded-xl border-2 border-sky-300 shadow-xs">
+              <div className="flex items-center justify-between border-b border-sky-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-xs">
+                    <Wifi className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-sky-950 uppercase tracking-tight">
+                      Loket Pembayaran Tagihan Wifi & Internet Rumah
+                    </h4>
+                    <p className="text-[10.5px] text-slate-500">
+                      Indihome, Iconnet PLN, Biznet, First Media, MyRepublic, XL Satu, dll.
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[9.5px] bg-sky-100 text-sky-900 border border-sky-300 px-2 py-0.5 rounded font-black font-mono">
+                  MULTI PROVIDER WIFI
+                </span>
+              </div>
+
+              {/* Provider Selector Chips with Horizontal Scroll */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-extrabold text-sky-950 flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Pilih Provider Wifi:</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {filteredPackages.length} paket aktif
+                  </span>
+                </div>
+
+                <div className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => scrollWifi('left')}
+                    className="hidden sm:flex absolute -left-2 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white hover:bg-sky-50 border border-sky-200 rounded-full items-center justify-center shadow-xs text-sky-700 active:scale-95 transition cursor-pointer"
+                    title="Geser provider wifi ke kiri"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div
+                    ref={wifiScrollRef}
+                    className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-0.5 px-0.5 scroll-smooth touch-pan-x [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-slate-200/60 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-sky-400 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-sky-600"
+                  >
+                    {POPULAR_WIFI_PROVIDERS.map((providerName) => {
+                      const active = selectedWifiProvider === providerName;
+                      return (
+                        <button
+                          key={providerName}
+                          type="button"
+                          onClick={(e) => {
+                            setSelectedWifiProvider(providerName);
+                            if (providerName !== 'Semua Wifi') {
+                              setCustomWifiProvider(providerName);
+                            }
+                            e.currentTarget.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'nearest',
+                              inline: 'center',
+                            });
+                          }}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition shrink-0 cursor-pointer whitespace-nowrap select-none ${
+                            active
+                              ? 'bg-sky-700 text-white shadow-xs ring-1 ring-sky-400'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {providerName === 'Indihome' && '🔴 '}
+                          {providerName === 'Iconnet' && '⚡ '}
+                          {providerName === 'Biznet' && '🔵 '}
+                          {providerName === 'First Media' && '📺 '}
+                          {providerName === 'MyRepublic' && '🚀 '}
+                          {providerName === 'XL Satu' && '📶 '}
+                          {providerName === 'CBN Fiber' && '🌐 '}
+                          {providerName}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => scrollWifi('right')}
+                    className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white hover:bg-sky-50 border border-sky-200 rounded-full items-center justify-center shadow-xs text-sky-700 active:scale-95 transition cursor-pointer"
+                    title="Geser provider wifi ke kanan"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Input Nomor Pelanggan Wifi & Nama */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1 border-t border-slate-100">
+                <div className="md:col-span-2">
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    Nomor Pelanggan / ID Sambungan Wifi *
+                  </label>
+                  <input
+                    type="text"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Contoh: 121908239012 (No Sambungan Indihome/Iconnet/Biznet)"
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-sky-300 rounded-lg font-mono font-black text-slate-900 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                    Nama Pelanggan Wifi (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Contoh: Agus Pratama"
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Custom Bill Calculator Card for Wifi */}
+              <form
+                onSubmit={handlePayCustomWifiBill}
+                className="bg-gradient-to-r from-sky-50 to-blue-50 p-3 rounded-xl border border-sky-300 space-y-2"
+              >
+                <div className="flex items-center justify-between border-b border-sky-200 pb-1.5">
+                  <span className="font-extrabold text-sky-950 text-xs flex items-center gap-1.5">
+                    <Calculator className="w-3.5 h-3.5 text-sky-700" />
+                    <span>🌐 Bayar Tagihan Wifi Sesuai Nota (Nominal Bebas)</span>
+                  </span>
+                  <span className="text-[10px] text-sky-800 font-bold">
+                    Input Tagihan Riil ISP
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
+                      Provider Wifi:
+                    </label>
+                    <select
+                      value={customWifiProvider}
+                      onChange={(e) => setCustomWifiProvider(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-bold text-slate-800 focus:outline-none text-xs"
+                    >
+                      {POPULAR_WIFI_PROVIDERS.filter((p) => p !== 'Semua Wifi').map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
+                      Tagihan Pokok Wifi (Rp): *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min="1000"
+                        step="100"
+                        required
+                        value={customWifiBillAmount}
+                        onChange={(e) => setCustomWifiBillAmount(Number(e.target.value) || 0)}
+                        placeholder="Contoh: 312450"
+                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
+                      Biaya Admin Loket (Rp):
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        value={customWifiAdminFee}
+                        onChange={(e) => setCustomWifiAdminFee(Number(e.target.value) || 0)}
+                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-sky-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Total Bayar Pelanggan:</span>
+                      <span className="font-mono font-black text-sm text-sky-950">
+                        Rp {(customWifiBillAmount + customWifiAdminFee).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="border-l border-sky-300 pl-3">
+                      <span className="text-[10px] text-slate-500 block">Untung Loket:</span>
+                      <span className="font-mono font-bold text-xs text-emerald-700">
+                        +Rp {customWifiAdminFee.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black rounded-lg shadow-sm flex items-center gap-1.5 text-xs cursor-pointer active:scale-95 transition"
+                  >
+                    <span>🌐 Lanjut Bayar Tagihan Wifi</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </form>
+            </div>
           ) : (
-            /* Standard Phone / Meteran Input for Pulsa, Data, PLN, etc. */
+            /* Standard Phone / Meteran Input for Pulsa, Data, Token PLN, etc. */
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="md:col-span-2">
                 <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                  {category === 'pln' ? 'Nomor Meteran / ID Pelanggan PLN' : 'Nomor HP Pelanggan'}
+                  {category === 'pln' ? 'Nomor Meteran / ID Pelanggan Token PLN (Prabayar)' : 'Nomor HP Pelanggan'}
                 </label>
                 <div className="relative">
                   <input
@@ -713,7 +1249,7 @@ export const PPOBView: React.FC = () => {
                   className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-teal-500 focus:outline-none disabled:bg-slate-100"
                 >
                   {category === 'pln' ? (
-                    <option value="PLN">PLN Prepaid Listrik</option>
+                    <option value="PLN">PLN Prepaid (Token)</option>
                   ) : (
                     ['Telkomsel', 'Indosat', 'XL', 'Axis', 'Tri', 'Smartfren'].map((op) => (
                       <option key={op} value={op}>
@@ -733,7 +1269,13 @@ export const PPOBView: React.FC = () => {
             <span className="font-bold text-slate-800">
               {category === 'game'
                 ? `Katalog Top Up ${selectedGame}`
-                : `Katalog Paket ${category === 'pln' ? 'PLN' : selectedProvider}`}
+                : category === 'pln_bulanan'
+                ? 'Katalog Tagihan Listrik Bulanan (PLN Pascabayar)'
+                : category === 'wifi'
+                ? `Katalog Tagihan Wifi & Internet ${selectedWifiProvider !== 'Semua Wifi' ? selectedWifiProvider : ''}`
+                : category === 'pln'
+                ? 'Katalog Token Listrik PLN (Prabayar)'
+                : `Katalog Paket ${selectedProvider}`}
             </span>
             <span className="text-[11px] font-mono font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
               {filteredPackages.length} Item
@@ -787,12 +1329,20 @@ export const PPOBView: React.FC = () => {
               {filteredPackages.map((pkg) => {
                 const profit = pkg.price - pkg.hpp;
                 const isGame = pkg.category === 'game';
+                const isPlnBulanan = pkg.category === 'pln_bulanan';
+                const isWifi = pkg.category === 'wifi';
+                const isBill = isPlnBulanan || isWifi || pkg.category === 'bpjs' || pkg.category === 'pdam' || pkg.category === 'tagihan';
+
                 return (
                   <div
                     key={pkg.id}
                     className={`bg-white border rounded-xl p-3.5 transition flex flex-col justify-between group relative ${
                       isGame
                         ? 'border-violet-100 hover:border-violet-400 hover:shadow-md'
+                        : isPlnBulanan
+                        ? 'border-amber-200/90 hover:border-amber-500 hover:shadow-md bg-linear-to-b from-amber-50/20 to-white'
+                        : isWifi
+                        ? 'border-sky-200/90 hover:border-sky-500 hover:shadow-md bg-linear-to-b from-sky-50/20 to-white'
                         : 'border-slate-200 hover:border-emerald-500 hover:shadow-md'
                     }`}
                   >
@@ -803,6 +1353,10 @@ export const PPOBView: React.FC = () => {
                           className={`text-[10px] uppercase font-bold font-mono tracking-wider px-1.5 py-0.5 rounded ${
                             isGame
                               ? 'bg-violet-50 text-violet-800 border border-violet-200'
+                              : isPlnBulanan
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : isWifi
+                              ? 'bg-sky-100 text-sky-900 border border-sky-300'
                               : 'text-slate-500 bg-slate-50'
                           }`}
                         >
@@ -835,6 +1389,8 @@ export const PPOBView: React.FC = () => {
 
                       <h4 className="text-sm font-bold text-slate-900 leading-snug flex items-center gap-1 mt-1">
                         {isGame && <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                        {isPlnBulanan && <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                        {isWifi && <Globe className="w-3.5 h-3.5 text-sky-500 shrink-0" />}
                         <span>{pkg.name}</span>
                       </h4>
                       {pkg.desc && (
@@ -849,7 +1405,13 @@ export const PPOBView: React.FC = () => {
                         </div>
                         <div
                           className={`text-sm font-extrabold font-mono tabular-nums ${
-                            isGame ? 'text-violet-900' : 'text-emerald-800'
+                            isGame
+                              ? 'text-violet-900'
+                              : isPlnBulanan
+                              ? 'text-amber-900'
+                              : isWifi
+                              ? 'text-sky-900'
+                              : 'text-emerald-800'
                           }`}
                         >
                           Rp {pkg.price.toLocaleString('id-ID')}
@@ -864,11 +1426,15 @@ export const PPOBView: React.FC = () => {
                         onClick={() => handleInitiatePurchase(pkg)}
                         className={`px-3.5 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 ${
                           isGame
-                            ? 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
-                            : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
+                            ? 'bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
+                            : isPlnBulanan
+                            ? 'bg-linear-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500'
+                            : isWifi
+                            ? 'bg-linear-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500'
+                            : 'bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
                         }`}
                       >
-                        <span>{isGame ? 'Top Up' : 'Beli'}</span>
+                        <span>{isGame ? 'Top Up' : isBill ? 'Bayar' : 'Beli'}</span>
                       </button>
                     </div>
                   </div>
@@ -910,23 +1476,47 @@ export const PPOBView: React.FC = () => {
           ) : (
             ppobTransactions.map((tx) => {
               const isGameTx = tx.category === 'game';
+              const isPlnBulananTx = tx.category === 'pln_bulanan';
+              const isWifiTx = tx.category === 'wifi';
+
+              const txBorder = isGameTx
+                ? 'border-violet-200 hover:border-violet-400'
+                : isPlnBulananTx
+                ? 'border-amber-200 hover:border-amber-400'
+                : isWifiTx
+                ? 'border-sky-200 hover:border-sky-400'
+                : 'border-slate-200/80 hover:border-slate-400';
+
+              const catBadge = isGameTx
+                ? 'bg-violet-100 text-violet-800 border border-violet-200'
+                : isPlnBulananTx
+                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                : isWifiTx
+                ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                : 'bg-slate-100 text-slate-600';
+
+              const catLabel =
+                tx.category === 'game'
+                  ? 'GAME'
+                  : tx.category === 'pln_bulanan'
+                  ? 'LISTRIK BLN'
+                  : tx.category === 'wifi'
+                  ? 'WIFI / NET'
+                  : tx.category === 'pln'
+                  ? 'PLN TOKEN'
+                  : tx.category.toUpperCase();
+
               return (
                 <div
                   key={tx.id}
-                  className={`bg-white p-3 rounded-lg border shadow-xs space-y-1.5 text-xs group transition ${
-                    isGameTx ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200/80 hover:border-slate-400'
-                  }`}
+                  className={`bg-white p-3 rounded-lg border shadow-xs space-y-1.5 text-xs group transition ${txBorder}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0 pr-1">
                       <span
-                        className={`text-[9px] px-1 py-0.2 rounded font-bold uppercase shrink-0 ${
-                          isGameTx
-                            ? 'bg-violet-100 text-violet-800 border border-violet-200'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
+                        className={`text-[9px] px-1 py-0.2 rounded font-bold uppercase shrink-0 ${catBadge}`}
                       >
-                        {tx.category === 'game' ? 'GAME' : tx.category}
+                        {catLabel}
                       </span>
                       <span className="font-bold text-slate-800 truncate">{tx.packageName}</span>
                     </div>
@@ -1033,24 +1623,32 @@ export const PPOBView: React.FC = () => {
                       const newCat = e.target.value as PPOBCategory;
                       setPkgCategory(newCat);
                       if (newCat === 'game') setPkgProvider('Mobile Legends');
-                      if (newCat === 'pln') setPkgProvider('PLN');
-                      if (newCat === 'pulsa' || newCat === 'data') setPkgProvider('Telkomsel');
+                      else if (newCat === 'pln') setPkgProvider('PLN');
+                      else if (newCat === 'pln_bulanan') setPkgProvider('PLN Pascabayar');
+                      else if (newCat === 'wifi') setPkgProvider('Indihome');
+                      else if (newCat === 'pulsa' || newCat === 'data') setPkgProvider('Telkomsel');
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   >
                     <option value="game">🎮 Top Up & Voucher Game</option>
                     <option value="pulsa">📱 Pulsa Reguler</option>
                     <option value="data">🌐 Paket Data / Kuota</option>
-                    <option value="pln">⚡ Token Listrik PLN</option>
+                    <option value="pln">⚡ Token Listrik PLN (Prabayar)</option>
+                    <option value="pln_bulanan">⚡ Listrik Bulanan (PLN Pascabayar)</option>
+                    <option value="wifi">🌐 Pembayaran Wifi & Internet</option>
                     <option value="bpjs">🏥 BPJS Kesehatan</option>
                     <option value="pdam">💧 PDAM Air</option>
-                    <option value="tagihan">🧾 Tagihan Bulanan</option>
+                    <option value="tagihan">🧾 Tagihan Bulanan Lainnya</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    {pkgCategory === 'game' ? 'Nama Game / Voucher' : 'Operator / Provider'}
+                    {pkgCategory === 'game'
+                      ? 'Nama Game / Voucher'
+                      : pkgCategory === 'wifi'
+                      ? 'Provider Wifi / Internet'
+                      : 'Operator / Provider'}
                   </label>
                   {pkgCategory === 'game' ? (
                     <select
@@ -1065,13 +1663,26 @@ export const PPOBView: React.FC = () => {
                       ))}
                       <option value="Lainnya">Game Lainnya...</option>
                     </select>
+                  ) : pkgCategory === 'wifi' ? (
+                    <select
+                      value={pkgProvider}
+                      onChange={(e) => setPkgProvider(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    >
+                      {POPULAR_WIFI_PROVIDERS.filter((w) => w !== 'Semua Wifi').map((w) => (
+                        <option key={w} value={w}>
+                          {w}
+                        </option>
+                      ))}
+                      <option value="Lainnya">Provider Wifi Lainnya...</option>
+                    </select>
                   ) : (
                     <input
                       type="text"
                       required
                       value={pkgProvider}
                       onChange={(e) => setPkgProvider(e.target.value)}
-                      placeholder="Telkomsel, Indosat, PLN, dll."
+                      placeholder="Telkomsel, Indosat, PLN Pascabayar, dll."
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                     />
                   )}

@@ -14,11 +14,37 @@ export interface Product {
   barcode?: string;
 }
 
+export type CartItemType = 'produk' | 'ppob' | 'percetakan' | 'service';
+
+export interface CartItemMetadata {
+  // PPOB specific
+  ppobCategory?: PPOBCategory;
+  targetNumber?: string;
+  provider?: string;
+  packageName?: string;
+  period?: string;
+  adminFee?: number;
+  rawPrice?: number;
+  // Percetakan specific
+  printCategory?: string;
+  specNote?: string;
+  unit?: string;
+  customerPhone?: string;
+  fileOrNote?: string;
+  // Service specific
+  serviceTicketId?: string;
+  deviceModel?: string;
+  technicianName?: string;
+}
+
 export interface CartItem {
+  id?: string;
+  itemType?: CartItemType; // 'produk' | 'ppob' | 'percetakan' | 'service'
   product: Product;
   quantity: number;
   discount: number;
   subtotal: number;
+  metadata?: CartItemMetadata;
 }
 
 export type PaymentMethod = 'tunai' | 'qris' | 'transfer' | 'hutang';
@@ -43,6 +69,7 @@ export interface POSTransaction {
   dueDate?: string;
   type: 'pos_penjualan';
   note?: string;
+  isMasterCart?: boolean;
 }
 
 export type AgencyType =
@@ -107,7 +134,16 @@ export interface AtmMiniTransaction {
   note?: string;
 }
 
-export type PPOBCategory = 'pulsa' | 'data' | 'pln' | 'game' | 'bpjs' | 'pdam' | 'tagihan';
+export type PPOBCategory =
+  | 'pulsa'
+  | 'data'
+  | 'pln'
+  | 'pln_bulanan'
+  | 'wifi'
+  | 'game'
+  | 'bpjs'
+  | 'pdam'
+  | 'tagihan';
 
 export interface PPOBPackage {
   id: string;
@@ -224,6 +260,27 @@ export interface CashierProfile {
   email: string;
 }
 
+export interface ShiftRecord {
+  id: string;
+  shiftNumber: number;
+  shiftName: string;
+  cashierName: string;
+  cashierSlot: CashierSlot;
+  role: 'owner' | 'kasir';
+  startTime: string; // Jam buka (pagi/siang)
+  endTime: string;   // Jam tutup (malam/pergantian)
+  duration?: string; // Durasi shift
+  startingCash: number;
+  systemCash: number;
+  actualCash: number;
+  difference: number;
+  depositAmount?: number;
+  depositRecipient?: string;
+  remainingCashInDrawer: number;
+  note?: string;
+  closeType: 'tutup_toko' | 'serah_terima';
+}
+
 export interface ShiftState {
   shiftNumber: number;
   shiftName: string;
@@ -235,7 +292,12 @@ export interface ShiftState {
   originalCashierName?: string;
   startTime: string;
   startingCash: number; // Kas Awal di Laci
-  isOpen: boolean;
+  isOpen: boolean; // TRUE: Register Buka / Shift Aktif. FALSE: Register Tutup / Toko Tutup
+  closedAt?: string; // e.g. "22:15 WIB · 8 Nov 2026"
+  closedBy?: string; // e.g. "Siti (Kasir Sore)"
+  closingCash?: number; // e.g. 500000
+  closingNotes?: string;
+  lastShiftDuration?: string;
 }
 
 export interface StoreProfile {

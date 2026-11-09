@@ -211,10 +211,14 @@ export const PengaturanShiftView: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsShiftModalOpen(true)}
-            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+            className={`px-4 py-2 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer ${
+              shift.isOpen
+                ? 'bg-rose-600 hover:bg-rose-500'
+                : 'bg-amber-600 hover:bg-amber-500'
+            }`}
           >
             <Power className="w-4 h-4" />
-            <span>Tutup Shift Kasir</span>
+            <span>{shift.isOpen ? 'Tutup Shift Kasir' : '☀️ Buka Kasir / Shift Pagi'}</span>
           </button>
         </div>
       </div>
@@ -719,10 +723,10 @@ export const PengaturanShiftView: React.FC = () => {
             </div>
             <span
               className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                shift.isOpen ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                shift.isOpen ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
               }`}
             >
-              {shift.isOpen ? 'SHIFT AKTIF' : 'SHIFT DITUTUP'}
+              {shift.isOpen ? 'SHIFT AKTIF (BUKA)' : 'REGISTER TUTUP (STANDBY)'}
             </span>
           </div>
 
@@ -733,20 +737,26 @@ export const PengaturanShiftView: React.FC = () => {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Petugas / Kasir:</span>
-              <span className="font-semibold text-slate-800">{shift.cashierName}</span>
+              <span className="font-semibold text-slate-800">
+                {shift.isOpen ? shift.cashierName : shift.closedBy || shift.cashierName}
+              </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Email Akun:</span>
-              <span className="font-mono text-slate-700">{shift.cashierEmail}</span>
+              <span className="text-slate-500">Status Register:</span>
+              <span className="font-bold text-slate-700">
+                {shift.isOpen ? '🟢 Kasir Sedang Melayani' : '🔴 Toko Tutup Malam (Off)'}
+              </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Waktu Mulai:</span>
-              <span className="font-mono text-slate-700">{shift.startTime}</span>
+              <span className="text-slate-500">{shift.isOpen ? 'Jam Buka Pagi:' : 'Jam Tutup Malam:'}</span>
+              <span className="font-mono text-slate-700 font-bold">
+                {shift.isOpen ? shift.startTime : shift.closedAt || '22:15 WIB · Semalam'}
+              </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Modal Kas Awal Laci:</span>
+              <span className="text-slate-500">{shift.isOpen ? 'Modal Kas Awal Laci:' : 'Sisa Kas Laci Standby:'}</span>
               <span className="font-mono font-bold text-slate-900">
-                Rp {shift.startingCash.toLocaleString('id-ID')}
+                Rp {(shift.isOpen ? shift.startingCash : drawerCashBalance).toLocaleString('id-ID')}
               </span>
             </div>
             <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline font-bold">
