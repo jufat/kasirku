@@ -110,8 +110,12 @@ export const ThermalReceiptModal: React.FC = () => {
   let receiptCategoryBadge = 'STRUK TRANSAKSI';
   let receiptTitle = 'STRUK RESMI JU-FAT CELL';
   if (posTx) {
-    receiptCategoryBadge = 'KASIR POS PENJUALAN';
-    receiptTitle = '*** NOTA PENJUALAN KASIR ***';
+    receiptCategoryBadge = posTx.isMasterCart
+      ? 'KERANJANG BESAR MULTI-LAYANAN'
+      : 'KASIR POS PENJUALAN';
+    receiptTitle = posTx.isMasterCart
+      ? '*** STRUK GABUNGAN (1 PEMBAYARAN) ***'
+      : '*** NOTA PENJUALAN KASIR ***';
   } else if (atmTx) {
     if (isCardAtmTx) {
       receiptCategoryBadge = 'MESIN EDC MINI ATM';
@@ -204,8 +208,29 @@ export const ThermalReceiptModal: React.FC = () => {
       lines.push(`Pelanggan : ${posTx.customerName}`);
       lines.push(divider);
       posTx.items.forEach((item) => {
-        lines.push(`${item.product.name}`);
-        lines.push(`  ${item.quantity} x Rp ${item.product.price.toLocaleString('id-ID')} = Rp ${item.subtotal.toLocaleString('id-ID')}`);
+        const deptTag =
+          item.itemType === 'ppob'
+            ? '[PPOB] '
+            : item.itemType === 'percetakan'
+            ? '[CETAK] '
+            : item.itemType === 'service'
+            ? '[SERVIS] '
+            : item.itemType === 'atm_mini'
+            ? '[ATM MINI] '
+            : posTx.isMasterCart
+            ? '[KASIR] '
+            : '';
+        lines.push(`${deptTag}${item.product.name}`);
+        if (item.itemType === 'ppob' && item.metadata?.targetNumber) {
+          lines.push(`  Tujuan: ${item.metadata.targetNumber}${item.metadata.period ? ` (${item.metadata.period})` : ''}`);
+        } else if (item.itemType === 'percetakan' && item.metadata?.specNote) {
+          lines.push(`  Spec: ${item.metadata.specNote}`);
+        } else if (item.itemType === 'service' && item.metadata?.serviceTicketId) {
+          lines.push(`  Nota ${item.metadata.serviceTicketId}${item.metadata.customerName ? ` - ${item.metadata.customerName}` : ''}`);
+        } else if (item.itemType === 'atm_mini' && item.metadata) {
+          lines.push(`  Rek/HP: ${item.metadata.targetAccountOrPhone || item.metadata.bankName || '-'}`);
+        }
+        lines.push(`  ${item.quantity} ${item.product.unit || 'pcs'} x Rp ${item.product.price.toLocaleString('id-ID')} = Rp ${item.subtotal.toLocaleString('id-ID')}`);
       });
       lines.push(divider);
       if (posTx.discount > 0) lines.push(`Diskon    : -Rp ${posTx.discount.toLocaleString('id-ID')}`);
@@ -936,23 +961,57 @@ export const ThermalReceiptModal: React.FC = () => {
 
             {/* Rincian Item Transaksi */}
 
-            {/* A. POS Items */}
+            {/* A. POS / Master Cart Items */}
             {posTx && (
               <div className="space-y-1.5 py-0.5">
-                {posTx.items.map((item, idx) => (
-                  <div key={idx} className="space-y-0.5">
-                    <div className="font-bold text-slate-900">{item.product.name}</div>
-                    <div className="flex justify-between text-slate-600 text-[10px]">
-                      <span>
-                        {item.quantity} {item.product.unit || 'pcs'} x Rp{' '}
-                        {item.product.price.toLocaleString('id-ID')}
-                      </span>
-                      <span className="font-bold text-slate-900">
-                        Rp {item.subtotal.toLocaleString('id-ID')}
-                      </span>
+                {posTx.items.map((item, idx) => {
+                  const showDept = Boolean(posTx.isMasterCart || (item.itemType && item.itemType !== 'produk'));
+                  const deptLabel =
+                    item.itemType === 'ppob'
+                      ? 'PPOB'
+                      : item.itemType === 'percetakan'
+                      ? 'CETAK'
+                      : item.itemType === 'service'
+                      ? 'SERVIS'
+                      : item.itemType === 'atm_mini'
+                      ? 'ATM MINI'
+                      : 'KASIR';
+                  const detailText =
+                    item.itemType === 'ppob' && item.metadata?.targetNumber
+                      ? `Tujuan: ${item.metadata.targetNumber}${item.metadata.period ? ` · ${item.metadata.period}` : ''}`
+                      : item.itemType === 'percetakan' && item.metadata?.specNote
+                      ? `Spec: ${item.metadata.specNote}`
+                      : item.itemType === 'service' && item.metadata?.serviceTicketId
+                      ? `Nota: ${item.metadata.serviceTicketId}${item.metadata.customerName ? ` (${item.metadata.customerName})` : ''}`
+                      : item.itemType === 'atm_mini' && item.metadata
+                      ? `Tujuan: ${item.metadata.targetAccountOrPhone || item.metadata.bankName || '-'}`
+                      : null;
+
+                  return (
+                    <div key={idx} className="space-y-0.5">
+                      <div className="font-bold text-slate-900">
+                        {showDept && (
+                          <span className="inline-block mr-1 px-1 py-0 text-[9px] font-black bg-slate-200 text-slate-800 rounded">
+                            {deptLabel}
+                          </span>
+                        )}
+                        <span>{item.product.name}</span>
+                      </div>
+                      {detailText && (
+                        <div className="text-[9.5px] text-slate-500 pl-1">{detailText}</div>
+                      )}
+                      <div className="flex justify-between text-slate-600 text-[10px]">
+                        <span>
+                          {item.quantity} {item.product.unit || 'pcs'} x Rp{' '}
+                          {item.product.price.toLocaleString('id-ID')}
+                        </span>
+                        <span className="font-bold text-slate-900">
+                          Rp {item.subtotal.toLocaleString('id-ID')}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

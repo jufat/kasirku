@@ -7,6 +7,7 @@ import {
   POSTransaction,
   AgencyTransaction,
   AtmMiniTransaction,
+  AtmMiniType,
   PPOBTransaction,
   PPOBCategory,
   ServiceTicket,
@@ -92,6 +93,19 @@ interface POSContextType {
     customerPhone?: string,
     fileOrNote?: string
   ) => void;
+  addServiceToCart: (ticket: ServiceTicket, overrideRemaining?: number) => boolean;
+  addAtmMiniToCart: (payload: {
+    type: AtmMiniType;
+    bankName: string;
+    cardType: AtmMiniTransaction['cardType'];
+    cardNumberMasked: string;
+    customerName: string;
+    nominal: number;
+    adminEdcFee: number;
+    counterFee: number;
+    targetAccountOrPhone?: string;
+    note?: string;
+  }) => void;
   addCustomCartItem: (item: {
     name: string;
     price: number;
@@ -835,6 +849,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         period,
         adminFee,
         rawPrice: pkg.price,
+        customerName: customerName?.trim() || undefined,
       },
     };
 
@@ -871,8 +886,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         printCategory: item.category,
         specNote: item.specNote,
         unit: item.unit,
-        customerPhone,
-        fileOrNote,
+        customerName: customerName?.trim() || undefined,
+        customerPhone: customerPhone?.trim() || undefined,
+        fileOrNote: fileOrNote?.trim() || undefined,
       },
     };
 
@@ -885,9 +901,151 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     customerPhone?: string,
     fileOrNote?: string
   ) => {
-    items.forEach((item) => {
-      addPrintItemToCart(item, customerName, customerPhone, fileOrNote);
+    items.forEach((item, idx) => {
+      const itemId = `prn-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`;
+      const virtualProduct: Product = {
+        id: itemId,
+        sku: `PRN-${item.category.slice(0, 4).toUpperCase()}`,
+        name: `${item.serviceName}${item.specNote ? ` [${item.specNote}]` : ''}`,
+        category: 'Percetakan & Copy',
+        hpp: Math.round(item.pricePerUnit * 0.4),
+        price: item.pricePerUnit,
+        stock: 9999,
+        minStock: 0,
+        unit: item.unit || 'lbr',
+      };
+
+      const cartItem: CartItem = {
+        id: itemId,
+        itemType: 'percetakan',
+        product: virtualProduct,
+        quantity: item.quantity,
+        discount: 0,
+        subtotal: item.subtotal,
+        metadata: {
+          printCategory: item.category,
+          specNote: item.specNote,
+          unit: item.unit,
+          customerName: customerName?.trim() || undefined,
+          customerPhone: customerPhone?.trim() || undefined,
+          fileOrNote: fileOrNote?.trim() || undefined,
+        },
+      };
+
+      setCart((prev) => [...prev, cartItem]);
     });
+  };
+
+  const addServiceToCart = (ticket: ServiceTicket, overrideRemaining?: number): boolean => {
+    const alreadyInCart = cart.some(
+      (c) => c.itemType === 'service' && c.metadata?.serviceTicketId === ticket.id
+    );
+    if (alreadyInCart) return false;
+
+    const remaining =
+      overrideRemaining !== undefined
+        ? Math.max(0, overrideRemaining)
+        : Math.max(0, ticket.totalCost - ticket.downPayment);
+
+    const itemId = `srv-${ticket.id}`;
+    const virtualProduct: Product = {
+      id: itemId,
+      sku: ticket.id,
+      name: `Pelunasan Servis ${ticket.deviceModel} (${ticket.id})`,
+      category: 'Service HP',
+      hpp: Math.max(0, ticket.sparepartCost - ticket.downPayment),
+      price: remaining,
+      stock: 1,
+      minStock: 0,
+      unit: 'unit',
+    };
+
+    const cartItem: CartItem = {
+      id: itemId,
+      itemType: 'service',
+      product: virtualProduct,
+      quantity: 1,
+      discount: 0,
+      subtotal: remaining,
+      metadata: {
+        serviceTicketId: ticket.id,
+        deviceModel: ticket.deviceModel,
+        technicianName: ticket.technicianName,
+        problemDescription: ticket.problemDescription,
+        originalTotalCost: ticket.totalCost,
+        downPaymentPaid: ticket.downPayment,
+        customerName: ticket.customerName,
+        customerPhone: ticket.customerPhone,
+      },
+    };
+
+    setCart((prev) => [...prev, cartItem]);
+    return true;
+  };
+
+  const addAtmMiniToCart = (payload: {
+    type: AtmMiniType;
+    bankName: string;
+    cardType: AtmMiniTransaction['cardType'];
+    cardNumberMasked: string;
+    customerName: string;
+    nominal: number;
+    adminEdcFee: number;
+    counterFee: number;
+    targetAccountOrPhone?: string;
+    note?: string;
+  }) => {
+    const itemId = `atm-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const totalDebited = payload.nominal + payload.adminEdcFee + payload.counterFee;
+    const typeLabel =
+      payload.type === 'transfer_atm'
+        ? payload.cardType === 'QRIS' || payload.cardType === 'M-Banking'
+          ? 'Transfer Bank'
+          : 'Transfer EDC'
+        : payload.type === 'topup_ewallet_atm'
+        ? 'Top Up E-Wallet'
+        : payload.type === 'mbanking_atm'
+        ? 'Mobile Banking'
+        : payload.type === 'qris_atm'
+        ? 'Pembayaran QRIS'
+        : 'Layanan ATM Mini';
+
+    const virtualProduct: Product = {
+      id: itemId,
+      sku: `ATM-${payload.cardType.slice(0, 4).toUpperCase()}`,
+      name: `${typeLabel} ${payload.bankName}${
+        payload.targetAccountOrPhone ? ` (${payload.targetAccountOrPhone})` : ''
+      }`,
+      category: 'ATM Mini & Transfer',
+      hpp: payload.nominal + payload.adminEdcFee,
+      price: totalDebited,
+      stock: 1,
+      minStock: 0,
+      unit: 'trx',
+    };
+
+    const cartItem: CartItem = {
+      id: itemId,
+      itemType: 'atm_mini',
+      product: virtualProduct,
+      quantity: 1,
+      discount: 0,
+      subtotal: totalDebited,
+      metadata: {
+        atmType: payload.type,
+        bankName: payload.bankName,
+        cardType: payload.cardType,
+        cardNumberMasked: payload.cardNumberMasked,
+        customerName: payload.customerName?.trim() || undefined,
+        nominal: payload.nominal,
+        adminEdcFee: payload.adminEdcFee,
+        counterFee: payload.counterFee,
+        targetAccountOrPhone: payload.targetAccountOrPhone,
+        note: payload.note,
+      },
+    };
+
+    setCart((prev) => [...prev, cartItem]);
   };
 
   const addCustomCartItem = (item: {
@@ -1038,36 +1196,49 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    const netRatio = subtotal > 0 ? Math.max(0, subtotal - discountAmount) / subtotal : 1;
+
     // 1b. Auto-journal PPOB items to PPOB transactions log
     const ppobItems = cart.filter((c) => c.itemType === 'ppob');
     if (ppobItems.length > 0) {
-      const newPpobTxs: PPOBTransaction[] = ppobItems.map((c, idx) => ({
-        id: `ppob-cart-${Date.now()}-${idx}`,
-        refNo: `PPOB-${invoiceNo.replace('INV-', '')}-${idx + 1}`,
-        date: new Date().toLocaleString('id-ID'),
-        category: c.metadata?.ppobCategory || 'tagihan',
-        provider: c.metadata?.provider || 'PPOB',
-        targetNumber: c.metadata?.targetNumber || '-',
-        packageName: c.metadata?.packageName || c.product.name,
-        hpp: c.product.hpp * c.quantity,
-        sellingPrice: c.subtotal,
-        profit: c.subtotal - (c.product.hpp * c.quantity),
-        customerName: customerName.trim() || 'Pelanggan PPOB',
-        paymentMethod: (resolvedPaymentMethod === 'hutang' ? 'hutang' : resolvedPaymentMethod === 'qris' ? 'qris' : 'tunai'),
-        status: 'sukses',
-        discount: c.discount,
-      }));
+      const newPpobTxs: PPOBTransaction[] = ppobItems.map((c, idx) => {
+        const netSelling = finalTotal === 0 ? 0 : Math.round(c.subtotal * netRatio);
+        const hppTotal = c.product.hpp * c.quantity;
+        return {
+          id: `ppob-cart-${Date.now()}-${idx}`,
+          refNo: `PPOB-${invoiceNo.replace('INV-', '')}-${idx + 1}`,
+          date: new Date().toLocaleString('id-ID'),
+          category: c.metadata?.ppobCategory || 'tagihan',
+          provider: c.metadata?.provider || 'PPOB',
+          targetNumber: c.metadata?.targetNumber || '-',
+          packageName: c.metadata?.packageName || c.product.name,
+          hpp: hppTotal,
+          sellingPrice: netSelling,
+          profit: netSelling - hppTotal,
+          customerName: customerName.trim() || c.metadata?.customerName || 'Pelanggan PPOB',
+          paymentMethod: (resolvedPaymentMethod === 'hutang' ? 'hutang' : resolvedPaymentMethod === 'qris' ? 'qris' : 'tunai'),
+          status: 'sukses',
+          discount: Math.max(0, c.subtotal - netSelling) || c.discount,
+          masterCartInvoiceNo: invoiceNo,
+        };
+      });
       setPpobTransactions((prev) => [...newPpobTxs, ...prev]);
     }
 
     // 1c. Auto-journal Percetakan items to Print Orders log
     const printItems = cart.filter((c) => c.itemType === 'percetakan');
     if (printItems.length > 0) {
+      const printRawSum = printItems.reduce((acc, c) => acc + c.subtotal, 0);
+      const printNetTotal = finalTotal === 0 ? 0 : Math.round(printRawSum * netRatio);
+      const printFileNote =
+        printItems.find((p) => p.metadata?.fileOrNote)?.metadata?.fileOrNote ||
+        note ||
+        `Order via Keranjang Besar (${invoiceNo})`;
       const newPrintOrder: PrintOrder = {
         id: `PRT-${Date.now().toString().slice(-6)}`,
         date: new Date().toLocaleString('id-ID'),
-        customerName: customerName.trim() || 'Pelanggan Umum',
-        customerPhone: customerPhone?.trim() || '-',
+        customerName: customerName.trim() || printItems.find((p) => p.metadata?.customerName)?.metadata?.customerName || 'Pelanggan Umum',
+        customerPhone: customerPhone?.trim() || printItems.find((p) => p.metadata?.customerPhone)?.metadata?.customerPhone || '-',
         items: printItems.map((c) => ({
           id: c.product.id,
           serviceName: c.product.name,
@@ -1078,15 +1249,95 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           subtotal: c.subtotal,
           specNote: c.metadata?.specNote,
         })),
-        totalAmount: printItems.reduce((acc, c) => acc + c.subtotal, 0),
-        downPayment: resolvedPaymentMethod === 'hutang' ? (paidAmount || 0) : printItems.reduce((acc, c) => acc + c.subtotal, 0),
-        remainingAmount: resolvedPaymentMethod === 'hutang' ? Math.max(0, printItems.reduce((acc, c) => acc + c.subtotal, 0) - (paidAmount || 0)) : 0,
+        totalAmount: printNetTotal,
+        discount: Math.max(0, printRawSum - printNetTotal) || undefined,
+        downPayment: resolvedPaymentMethod === 'hutang' ? 0 : printNetTotal,
+        remainingAmount: resolvedPaymentMethod === 'hutang' ? printNetTotal : 0,
         paymentMethod: resolvedPaymentMethod,
         status: 'selesai',
-        fileOrNote: note || 'Order via Keranjang Besar',
+        fileOrNote: printFileNote,
         dueDate: dueDate,
+        masterCartInvoiceNo: invoiceNo,
       };
       setPrintOrders((prev) => [newPrintOrder, ...prev]);
+    }
+
+    // 1d. Auto-journal Service HP items (mark ticket as 'diambil')
+    const serviceItems = cart.filter((c) => c.itemType === 'service' && c.metadata?.serviceTicketId);
+    if (serviceItems.length > 0) {
+      const serviceTicketIds = new Set(serviceItems.map((s) => s.metadata?.serviceTicketId));
+      setServices((prev) =>
+        prev.map((s) => {
+          if (!serviceTicketIds.has(s.id)) return s;
+          const matchingCart = serviceItems.find((ci) => ci.metadata?.serviceTicketId === s.id);
+          const origRemaining = Math.max(0, s.totalCost - s.downPayment);
+          const itemNet =
+            finalTotal === 0
+              ? 0
+              : Math.round((matchingCart?.subtotal ?? origRemaining) * netRatio);
+          const extraDiscount = Math.max(0, origRemaining - itemNet);
+          return {
+            ...s,
+            status: 'diambil',
+            dateCompleted: new Date().toLocaleString('id-ID'),
+            discount: extraDiscount > 0 ? (s.discount || 0) + extraDiscount : s.discount,
+            totalCost: s.downPayment + itemNet,
+            downPayment: s.downPayment + itemNet,
+            remainingDebt: 0,
+            masterCartInvoiceNo: invoiceNo,
+            technicianNote: `${s.technicianNote ? s.technicianNote + ' · ' : ''}Diambil via Keranjang Besar ${invoiceNo}`.trim(),
+          };
+        })
+      );
+    }
+
+    // 1e. Auto-journal ATM Mini items & deduct digital bank balance for outbound transfers
+    const atmItems = cart.filter((c) => c.itemType === 'atm_mini' && c.metadata);
+    if (atmItems.length > 0) {
+      const newAtmTxs: AtmMiniTransaction[] = atmItems.map((c, idx) => {
+        const m = c.metadata!;
+        const nominalVal = m.nominal || 0;
+        const adminVal = m.adminEdcFee || 0;
+        const itemNet = finalTotal === 0 ? 0 : Math.round(c.subtotal * netRatio);
+        const effCounter = finalTotal === 0 ? 0 : Math.max(0, itemNet - nominalVal - adminVal);
+        const traceNo = `TRC-${Math.floor(100000 + Math.random() * 900000)}`;
+        return {
+          id: `atm-cart-${Date.now()}-${idx}`,
+          terminalId:
+            m.cardType === 'M-Banking' || m.cardType === 'E-Wallet' || m.cardType === 'QRIS'
+              ? 'DIGI-JUFAT-01'
+              : 'EDC-JUFAT-01',
+          traceNo,
+          approvalCode: `AP${Math.floor(100000 + Math.random() * 900000)}`,
+          date: new Date().toLocaleString('id-ID'),
+          type: m.atmType || 'transfer_atm',
+          bankName: m.bankName || 'BRI',
+          cardType: m.cardType || 'GPN',
+          cardNumberMasked: m.cardNumberMasked || '-',
+          customerName: customerName.trim() || m.customerName || 'Nasabah',
+          targetAccountOrPhone: m.targetAccountOrPhone,
+          nominal: nominalVal,
+          adminEdcFee: adminVal,
+          counterFee: effCounter,
+          totalDebited: itemNet,
+          cashHandedOrReceived: itemNet,
+          paymentMethod: resolvedPaymentMethod === 'hutang' ? 'hutang' : resolvedPaymentMethod === 'qris' ? 'qris' : 'tunai',
+          discount: Math.max(0, (m.counterFee || 0) - effCounter) || undefined,
+          status: 'sukses',
+          note: `${m.note ? m.note + ' · ' : ''}Via Keranjang Besar ${invoiceNo}`.trim(),
+          masterCartInvoiceNo: invoiceNo,
+        };
+      });
+      setAtmMiniTransactions((prev) => [...newAtmTxs, ...prev]);
+
+      // Outbound transfer/topup reduces store's digital bank operational balance by nominal + bank admin
+      const totalDigitalOut = atmItems.reduce(
+        (sum, c) => sum + (c.metadata?.nominal || 0) + (c.metadata?.adminEdcFee || 0),
+        0
+      );
+      if (totalDigitalOut > 0) {
+        setDigitalBalance((prev) => Math.max(0, prev - totalDigitalOut));
+      }
     }
 
     // 2. Auto-journal to Cash Ledger & Real-Time Sync
@@ -1125,13 +1376,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           digitalBalanceDelta: 0,
           note: `Struk ${invoiceNo} · Masuk Kas Fisik Laci +Rp ${actualPaid.toLocaleString('id-ID')}${remainingDebt > 0 ? ` (Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')})` : ''}`,
         });
-      } else if (paymentMethod === 'qris') {
+      } else if (paymentMethod === 'qris' || paymentMethod === 'transfer') {
+        const methodUpper = paymentMethod === 'qris' ? 'QRIS' : 'Transfer Bank';
         const newMutation: CashMutation = {
           id: `mut-${Date.now()}`,
           timestamp: nowTime,
           type: 'masuk',
           category: 'penjualan_pos',
-          description: `${txPrefix} QRIS ${invoiceNo} (${cart.length} item)`,
+          description: `${txPrefix} ${methodUpper} ${invoiceNo} (${cart.length} item)`,
           amount: actualPaid,
           paymentMethod: 'non_tunai',
           runningCashBalance: drawerCashBalance,
@@ -1144,11 +1396,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `sync-${Date.now()}`,
           timestamp: nowTime,
           source: 'kasir',
-          actionTitle: `${txPrefix} QRIS (${cart.length} item)`,
+          actionTitle: `${txPrefix} ${methodUpper} (${cart.length} item)`,
           customerName: customerName.trim() || 'Pelanggan Umum',
           drawerCashDelta: 0,
           digitalBalanceDelta: actualPaid,
-          note: `Struk ${invoiceNo} · Masuk Saldo Digital Bank/QRIS +Rp ${actualPaid.toLocaleString('id-ID')}`,
+          note: `Struk ${invoiceNo} · Masuk Saldo Digital ${methodUpper} +Rp ${actualPaid.toLocaleString('id-ID')}`,
         });
       }
     }
@@ -3008,11 +3260,19 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSearchQuery,
         cart,
         addToCart,
+        addPPOBToCart,
+        addPrintItemToCart,
+        addPrintOrderToCart,
+        addServiceToCart,
+        addAtmMiniToCart,
+        addCustomCartItem,
         updateCartQuantity,
         removeFromCart,
         clearCart,
         cartSubtotal,
         cartTotalCount,
+        isMasterCartModalOpen,
+        setIsMasterCartModalOpen,
         checkoutPOS,
         agencyTransactions,
         recordAgencyTransaction,

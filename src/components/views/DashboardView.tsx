@@ -57,6 +57,7 @@ import {
   Cell,
 } from 'recharts';
 import { usePOS } from '../../context/POSContext';
+import { POSTransaction } from '../../types/pos';
 
 type TimeframeType = 'harian' | 'mingguan' | 'bulanan' | 'tahunan';
 type PresetType = 'hari_ini' | '7_hari' | 'bulan_ini' | '30_hari' | 'tahun_ini' | 'kustom';
@@ -307,8 +308,20 @@ export const DashboardView: React.FC = () => {
     }
   };
 
+  // Helper: hitung hanya porsi retail Kasir agar transaksi Keranjang Besar tidak terhitung ganda
+  // (karena item PPOB/Percetakan/Service/ATM Mini juga terjurnal ke log masing-masing divisi)
+  const getRetailPortionOfPOS = (t: POSTransaction): number => {
+    if (!t.isMasterCart) return t.total;
+    const retailSub = t.items
+      .filter((i) => !i.itemType || i.itemType === 'produk')
+      .reduce((s, i) => s + i.subtotal, 0);
+    if (retailSub <= 0 || t.total <= 0) return 0;
+    const ratio = t.subtotal > 0 ? Math.min(1, t.total / t.subtotal) : 1;
+    return Math.round(retailSub * ratio);
+  };
+
   // Metrics calculation
-  const totalSalesPOS = transactions.reduce((acc: number, t) => acc + t.total, 0);
+  const totalSalesPOS = transactions.reduce((acc: number, t) => acc + getRetailPortionOfPOS(t), 0);
 
   // Laba & Transaksi Perbankan (Gabungan Agency Transfer & Mini ATM / EDC)
   const agencyFee = (agencyTransactions || []).reduce((acc: number, a) => acc + a.counterFee, 0);
@@ -370,7 +383,7 @@ export const DashboardView: React.FC = () => {
 
   // Today Sales breakdown across all store channels
   const todayPOSTx = transactions.filter((t) => isDateToday(t.date));
-  const todayPOSSales = todayPOSTx.reduce((acc, t) => acc + t.total, 0);
+  const todayPOSSales = todayPOSTx.reduce((acc, t) => acc + getRetailPortionOfPOS(t), 0);
 
   const todayPPOBTx = ppobTransactions.filter((p) => isDateToday(p.date));
   const todayPPOBSales = todayPPOBTx.reduce((acc, p) => acc + p.sellingPrice, 0);

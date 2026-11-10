@@ -29,6 +29,7 @@ import {
   Building2,
   Calculator,
   ArrowRight,
+  ShoppingCart,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { PPOBCategory, PPOBPackage, PPOBTransaction } from '../../types/pos';
@@ -46,7 +47,6 @@ const POPULAR_GAMES = [
 ] as const;
 
 const POPULAR_WIFI_PROVIDERS = [
-  'Semua Wifi',
   'Indihome',
   'Iconnet',
   'Biznet',
@@ -54,7 +54,21 @@ const POPULAR_WIFI_PROVIDERS = [
   'MyRepublic',
   'XL Satu',
   'CBN Fiber',
+  'Lainnya',
 ] as const;
+
+const sanitizeRupiahInput = (raw: string): string => {
+  const withoutTrailingCents = raw.replace(/,0{1,2}\s*$/, '');
+  return withoutTrailingCents.replace(/[^\d.]/g, '');
+};
+
+const parseExactRupiah = (raw: string): number => {
+  const withoutTrailingCents = raw.replace(/,0{1,2}\s*$/, '');
+  const digits = withoutTrailingCents.replace(/\D/g, '');
+  if (!digits) return 0;
+  const parsed = parseInt(digits, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export const PPOBView: React.FC = () => {
   const {
@@ -68,6 +82,9 @@ export const PPOBView: React.FC = () => {
     updatePPOBTransaction,
     deletePPOBTransaction,
     openReceipt,
+    addPPOBToCart,
+    setIsMasterCartModalOpen,
+    cartTotalCount,
   } = usePOS();
 
   const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
@@ -84,8 +101,6 @@ export const PPOBView: React.FC = () => {
   const [gameSearchQuery, setGameSearchQuery] = useState('');
 
   // Wifi specific state
-  const [selectedWifiProvider, setSelectedWifiProvider] = useState<string>('Semua Wifi');
-  const [wifiSearchQuery, setWifiSearchQuery] = useState('');
   const wifiScrollRef = useRef<HTMLDivElement>(null);
 
   // Listrik Bulanan & Tagihan Bebas state
@@ -94,12 +109,17 @@ export const PPOBView: React.FC = () => {
     return now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
   });
 
-  const [customPlnBillAmount, setCustomPlnBillAmount] = useState<number>(150000);
-  const [customPlnAdminFee, setCustomPlnAdminFee] = useState<number>(3000);
+  const [customPlnBillInput, setCustomPlnBillInput] = useState<string>('150.000');
+  const [customPlnAdminInput, setCustomPlnAdminInput] = useState<string>('3.000');
+  const customPlnBillAmount = parseExactRupiah(customPlnBillInput);
+  const customPlnAdminFee = parseExactRupiah(customPlnAdminInput);
 
-  const [customWifiBillAmount, setCustomWifiBillAmount] = useState<number>(280000);
-  const [customWifiAdminFee, setCustomWifiAdminFee] = useState<number>(3500);
+  const [customWifiBillInput, setCustomWifiBillInput] = useState<string>('280.000');
+  const [customWifiAdminInput, setCustomWifiAdminInput] = useState<string>('3.500');
+  const customWifiBillAmount = parseExactRupiah(customWifiBillInput);
+  const customWifiAdminFee = parseExactRupiah(customWifiAdminInput);
   const [customWifiProvider, setCustomWifiProvider] = useState<string>('Indihome');
+  const [customWifiOtherName, setCustomWifiOtherName] = useState<string>('');
 
   const [successMessage, setSuccessMessage] = useState('');
   const [mobileTab, setMobileTab] = useState<'buy' | 'history'>('buy');
@@ -157,6 +177,11 @@ export const PPOBView: React.FC = () => {
     handleInitiatePurchase(customPkg);
   };
 
+  const resolvedWifiProvider =
+    customWifiProvider === 'Lainnya'
+      ? customWifiOtherName.trim() || 'Wifi / Internet Lainnya'
+      : customWifiProvider;
+
   const handlePayCustomWifiBill = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber.trim()) {
@@ -170,8 +195,7 @@ export const PPOBView: React.FC = () => {
       return;
     }
 
-    const providerName =
-      selectedWifiProvider !== 'Semua Wifi' ? selectedWifiProvider : customWifiProvider;
+    const providerName = resolvedWifiProvider;
 
     const customPkg: PPOBPackage = {
       id: `custom-wifi-${Date.now()}`,
@@ -186,6 +210,61 @@ export const PPOBView: React.FC = () => {
     handleInitiatePurchase(customPkg);
   };
 
+  const resolveTargetForCart = (pkg: PPOBPackage): string | null => {
+    if (pkg.category === 'game' || category === 'game') {
+      if (!gameUserId.trim()) {
+        alert('User ID / Player ID Game wajib diisi sebelum masuk Keranjang Besar!');
+        return null;
+      }
+      return gameZoneId.trim()
+        ? `${gameUserId.trim()} (${gameZoneId.trim()})`
+        : gameUserId.trim();
+    }
+    if (!phoneNumber.trim()) {
+      alert(
+        category === 'pln'
+          ? 'Nomor Meteran / ID Pelanggan PLN Prabayar wajib diisi!'
+          : category === 'pln_bulanan'
+          ? 'Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!'
+          : category === 'wifi'
+          ? 'Nomor Pelanggan / ID Sambungan Wifi wajib diisi!'
+          : 'Nomor HP / Tujuan Pelanggan wajib diisi!'
+      );
+      return null;
+    }
+    return phoneNumber.trim();
+  };
+
+  const handleAddPPOBToMasterCart = (pkg: PPOBPackage, overrideDiscount: number = 0) => {
+    const target = resolveTargetForCart(pkg);
+    if (!target) return;
+
+    const discountedPrice = Math.max(0, pkg.price - overrideDiscount);
+    if (discountedPrice === 0 && !isOwner) {
+      alert('Transaksi PPOB Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      return;
+    }
+
+    const periodVal = pkg.category === 'pln_bulanan' ? plnPeriod : undefined;
+    addPPOBToCart(
+      {
+        name: pkg.name,
+        price: discountedPrice,
+        hpp: pkg.hpp,
+        category: pkg.category,
+        provider: pkg.provider,
+        desc: pkg.desc,
+      },
+      target,
+      customerName.trim() || undefined,
+      periodVal
+    );
+    setSuccessMessage(
+      `"${pkg.name}" (${target}) ditambahkan ke Keranjang Besar — siap digabung dengan menu lain!`
+    );
+    setLastTxForReceipt(null);
+  };
+
   // Modals for Packages
   const [packageModalMode, setPackageModalMode] = useState<'add' | 'edit' | null>(null);
   const [editingPackage, setEditingPackage] = useState<PPOBPackage | null>(null);
@@ -195,8 +274,14 @@ export const PPOBView: React.FC = () => {
   const [pkgName, setPkgName] = useState('');
   const [pkgCategory, setPkgCategory] = useState<PPOBCategory>('pulsa');
   const [pkgProvider, setPkgProvider] = useState('Telkomsel');
-  const [pkgHpp, setPkgHpp] = useState(5000);
-  const [pkgPrice, setPkgPrice] = useState(7000);
+  const [pkgHppInput, setPkgHppInput] = useState<string>('5.000');
+  const [pkgPriceInput, setPkgPriceInput] = useState<string>('7.000');
+  const pkgHpp = parseExactRupiah(pkgHppInput);
+  const pkgPrice = parseExactRupiah(pkgPriceInput);
+  const setPkgHpp = (val: number) =>
+    setPkgHppInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '0');
+  const setPkgPrice = (val: number) =>
+    setPkgPriceInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '0');
   const [pkgDesc, setPkgDesc] = useState('');
 
   // Modals for Transaction edit/delete
@@ -206,7 +291,10 @@ export const PPOBView: React.FC = () => {
   // Form states for Transaction Edit Modal
   const [txTargetNumber, setTxTargetNumber] = useState('');
   const [txCustomerName, setTxCustomerName] = useState('');
-  const [txSellingPrice, setTxSellingPrice] = useState(0);
+  const [txSellingPriceInput, setTxSellingPriceInput] = useState<string>('0');
+  const txSellingPrice = parseExactRupiah(txSellingPriceInput);
+  const setTxSellingPrice = (val: number) =>
+    setTxSellingPriceInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '0');
 
   // Auto detect provider based on Indonesian phone prefixes
   const handlePhoneChange = (val: string) => {
@@ -268,8 +356,14 @@ export const PPOBView: React.FC = () => {
   // PPOB Interactive Payment / Checkout Modal
   const [selectedPackageForCheckout, setSelectedPackageForCheckout] = useState<PPOBPackage | null>(null);
   const [ppobPaymentMethod, setPpobPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
-  const [ppobCashReceived, setPpobCashReceived] = useState<number>(0);
-  const [ppobDiscount, setPpobDiscount] = useState<number>(0);
+  const [ppobCashReceivedInput, setPpobCashReceivedInput] = useState<string>('');
+  const [ppobDiscountInput, setPpobDiscountInput] = useState<string>('');
+  const ppobCashReceived = parseExactRupiah(ppobCashReceivedInput);
+  const ppobDiscount = parseExactRupiah(ppobDiscountInput);
+  const setPpobCashReceived = (val: number) =>
+    setPpobCashReceivedInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '');
+  const setPpobDiscount = (val: number) =>
+    setPpobDiscountInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '');
   const [ppobCustomerPhone, setPpobCustomerPhone] = useState('');
   const [ppobDebtorName, setPpobDebtorName] = useState('');
   const [ppobKasbonError, setPpobKasbonError] = useState<string | null>(null);
@@ -414,7 +508,7 @@ export const PPOBView: React.FC = () => {
       setPkgPrice(103000);
       setPkgDesc('Tagihan listrik bulanan · Admin Loket Rp 3.000');
     } else if (category === 'wifi') {
-      setPkgProvider(selectedWifiProvider !== 'Semua Wifi' ? selectedWifiProvider : 'Indihome');
+      setPkgProvider(resolvedWifiProvider);
       setPkgHpp(280000);
       setPkgPrice(283500);
       setPkgDesc('Tagihan bulanan Wifi · Admin Loket Rp 3.500');
@@ -522,19 +616,8 @@ export const PPOBView: React.FC = () => {
     if (category === 'pln') {
       return pkg.category === 'pln';
     }
-    if (category === 'pln_bulanan') {
-      return pkg.category === 'pln_bulanan';
-    }
-    if (category === 'wifi') {
-      if (pkg.category !== 'wifi') return false;
-      const matchesProvider =
-        selectedWifiProvider === 'Semua Wifi' ||
-        pkg.provider.toLowerCase() === selectedWifiProvider.toLowerCase();
-      const matchesSearch =
-        !wifiSearchQuery.trim() ||
-        pkg.name.toLowerCase().includes(wifiSearchQuery.toLowerCase()) ||
-        pkg.provider.toLowerCase().includes(wifiSearchQuery.toLowerCase());
-      return matchesProvider && matchesSearch;
+    if (category === 'pln_bulanan' || category === 'wifi') {
+      return [];
     }
     if (category === 'bpjs') {
       return pkg.category === 'bpjs' || pkg.category === 'tagihan';
@@ -546,45 +629,51 @@ export const PPOBView: React.FC = () => {
   });
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#f8f9fa]">
+    <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0 bg-[#f8f9fa]">
       {/* Mobile Tab Switcher */}
       <div className="md:hidden flex items-center bg-white border-b border-slate-200 p-2 shrink-0">
         <div className="grid grid-cols-2 w-full p-1 bg-slate-100 rounded-xl gap-1">
           <button
             type="button"
             onClick={() => setMobileTab('buy')}
-            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap ${
               mobileTab === 'buy'
                 ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
                 : 'text-slate-600 hover:text-slate-900 font-semibold'
             }`}
           >
-            <Zap className="w-4 h-4 text-teal-600" />
+            <Zap className="w-4 h-4 text-teal-600 shrink-0" />
             <span>Pilih Paket & Isi</span>
           </button>
           <button
             type="button"
             onClick={() => setMobileTab('history')}
-            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+            className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap ${
               mobileTab === 'history'
                 ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
                 : 'text-slate-600 hover:text-slate-900 font-semibold'
             }`}
           >
-            <Clock className="w-4 h-4 text-teal-600" />
+            <Clock className="w-4 h-4 text-teal-600 shrink-0" />
             <span>Riwayat ({ppobTransactions.length})</span>
           </button>
         </div>
       </div>
 
-      {/* Left Column: Selection & Package Grid */}
+      {/* Left Column: Selection & Package Grid (Unified Top-to-Bottom Scroll) */}
       <div
         className={`${
           mobileTab === 'buy' ? 'flex' : 'hidden'
-        } md:flex flex-1 flex-col h-full md:border-r border-slate-200 bg-white overflow-hidden min-w-0`}
+        } md:flex flex-1 min-h-0 md:h-full flex-col md:border-r border-slate-200 bg-white overflow-y-auto min-w-0`}
       >
         {/* Category & Input Bar */}
-        <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50 space-y-3">
+        <div
+          className={`p-3 sm:p-4 space-y-2.5 shrink-0 ${
+            category === 'pln_bulanan' || category === 'wifi'
+              ? 'bg-slate-50/70'
+              : 'border-b border-slate-200 bg-slate-50'
+          }`}
+        >
           {/* Category Tabs with Restored & Visible Horizontal Scroll + Quick Arrows */}
           <div className="relative group">
             {/* Left Scroll Arrow */}
@@ -821,19 +910,19 @@ export const PPOBView: React.FC = () => {
               </div>
 
               {/* Search or Quick Note */}
-              <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-slate-500">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-[11px] text-slate-500">
                 <div className="flex items-center gap-1.5 text-violet-800 font-medium">
                   <ShieldCheck className="w-3.5 h-3.5 text-violet-600 shrink-0" />
                   <span>Top up instan resmi & otomatis masuk langsung ke akun pemain.</span>
                 </div>
-                <div className="relative w-44 shrink-0">
+                <div className="relative w-full sm:w-48 shrink-0">
                   <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={gameSearchQuery}
                     onChange={(e) => setGameSearchQuery(e.target.value)}
                     placeholder="Cari item / nominal..."
-                    className="w-full pl-7 pr-2 py-1 text-xs bg-slate-100 rounded-md border border-slate-200 focus:bg-white focus:outline-none"
+                    className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-100 rounded-md border border-slate-200 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -842,148 +931,185 @@ export const PPOBView: React.FC = () => {
             /* ============================================================== */
             /* DYNAMIC FORM: PEMBAYARAN LISTRIK BULANAN (PLN PASCABAYAR)       */
             /* ============================================================== */
-            <div className="space-y-3 bg-white p-3.5 rounded-xl border-2 border-amber-300 shadow-xs">
-              <div className="flex items-center justify-between border-b border-amber-100 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+            <div className="bg-white rounded-xl border border-amber-300 shadow-2xs overflow-hidden">
+              <div className="p-3 sm:p-3.5 space-y-2.5">
+                <div className="flex items-center gap-2.5 border-b border-amber-100 pb-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
                     <Receipt className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h4 className="text-xs font-black text-amber-950 uppercase tracking-tight">
-                      Loket Pembayaran Listrik Bulanan (PLN Pascabayar)
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-black text-amber-950 tracking-tight truncate">
+                      Listrik Bulanan · PLN Pascabayar
                     </h4>
-                    <p className="text-[10.5px] text-slate-500">
-                      Bayar tagihan listrik bulanan resmi PLN untuk rumah tangga & usaha
+                    <p className="text-[10.5px] text-slate-500 truncate">
+                      Bayar tagihan listrik bulanan resmi rumah tangga & usaha
                     </p>
                   </div>
                 </div>
-                <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded font-black font-mono">
-                  PLN PASCABAYAR
-                </span>
-              </div>
 
-              {/* Input Nomor ID Pelanggan & Nama Pelanggan */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                <div className="md:col-span-2">
-                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
-                    Nomor ID Pelanggan PLN / No Meteran (12 Digit) *
-                  </label>
-                  <input
-                    type="text"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="Contoh: 512039182390"
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-amber-300 rounded-lg font-mono font-black text-slate-900 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
-                  />
-                </div>
+                {/* Input Nomor ID Pelanggan & Nama Pelanggan */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Nomor ID Pelanggan PLN / No Meteran *
+                    </label>
+                    <input
+                      type="text"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="Contoh: 512039182390"
+                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-amber-300 rounded-lg font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
+                    />
+                  </div>
 
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    Nama Pemilik Rekening / Pelanggan
-                  </label>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Budi Santoso"
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
-                  />
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Nama Pelanggan (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Contoh: Budi Santoso"
+                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Quick Custom Bill Calculator Card for Listrik Bulanan */}
+              {/* Quick Custom Bill Calculator Section */}
               <form
                 onSubmit={handlePayCustomPlnBill}
-                className="bg-gradient-to-r from-amber-50 to-amber-100/60 p-3 rounded-xl border border-amber-300 space-y-2"
+                className="bg-amber-50/70 p-3 sm:p-3.5 border-t border-amber-200/80 space-y-2.5"
               >
-                <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-extrabold text-amber-950 text-xs flex items-center gap-1.5">
-                    <Calculator className="w-3.5 h-3.5 text-amber-700" />
-                    <span>⚡ Bayar Tagihan Listrik Sesuai Rekening (Nominal Bebas)</span>
+                    <Calculator className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <span>Input Tagihan Nominal Bebas</span>
                   </span>
-                  <span className="text-[10px] text-amber-800 font-bold">
-                    Hitung Tagihan & Admin Otomatis
+                  <span className="text-[10.5px] text-amber-800 font-semibold">
+                    Bebas angka · Tanpa pembulatan
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                   <div>
-                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
-                      Jumlah Tagihan PLN Pokok (Rp): *
+                    <label className="text-[10.5px] font-bold text-slate-700 flex items-center justify-between gap-1 mb-1">
+                      <span>Tagihan Pokok (Rp) *</span>
+                      {customPlnBillAmount > 0 && (
+                        <span className="font-mono tabular-nums text-[10px] text-amber-800">
+                          = Rp {customPlnBillAmount.toLocaleString('id-ID')}
+                        </span>
+                      )}
                     </label>
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
                         Rp
                       </span>
                       <input
-                        type="number"
-                        min="1000"
-                        step="100"
+                        type="text"
+                        inputMode="numeric"
                         required
-                        value={customPlnBillAmount}
-                        onChange={(e) => setCustomPlnBillAmount(Number(e.target.value) || 0)}
-                        placeholder="Contoh: 187500"
-                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
+                        value={customPlnBillInput}
+                        onChange={(e) => setCustomPlnBillInput(sanitizeRupiahInput(e.target.value))}
+                        placeholder="Cth: 157.200 atau 15335"
+                        className="w-full pl-8 pr-2.5 py-2 bg-white border border-amber-300 rounded-lg font-mono tabular-nums font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
-                      Biaya Admin Loket (Rp):
+                    <label className="text-[10.5px] font-bold text-slate-700 flex items-center justify-between gap-1 mb-1">
+                      <span>Admin Loket (Rp)</span>
+                      <span className="font-mono tabular-nums text-[10px] text-emerald-700">
+                        = Rp {customPlnAdminFee.toLocaleString('id-ID')}
+                      </span>
                     </label>
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
                         Rp
                       </span>
                       <input
-                        type="number"
-                        min="0"
-                        step="500"
-                        value={customPlnAdminFee}
-                        onChange={(e) => setCustomPlnAdminFee(Number(e.target.value) || 0)}
-                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
+                        type="text"
+                        inputMode="numeric"
+                        value={customPlnAdminInput}
+                        onChange={(e) => setCustomPlnAdminInput(sanitizeRupiahInput(e.target.value))}
+                        placeholder="0 (bebas, cth: 2500)"
+                        className="w-full pl-8 pr-2.5 py-2 bg-white border border-amber-300 rounded-lg font-mono tabular-nums font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
                       />
                     </div>
                   </div>
 
                   <div>
                     <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
-                      Periode Bulan Tagihan:
+                      Periode Tagihan
                     </label>
                     <input
                       type="text"
                       value={plnPeriod}
                       onChange={(e) => setPlnPeriod(e.target.value)}
                       placeholder="Contoh: November 2026"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none text-xs"
+                      className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
                     />
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-amber-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 text-xs">
+                <div className="pt-2 border-t border-amber-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-4 text-xs">
                     <div>
-                      <span className="text-[10px] text-slate-500 block">Total Bayar Pelanggan:</span>
-                      <span className="font-mono font-black text-sm text-amber-950">
+                      <span className="text-[10px] text-slate-500 block">Total Bayar Pelanggan</span>
+                      <span className="font-mono tabular-nums font-black text-sm text-amber-950">
                         Rp {(customPlnBillAmount + customPlnAdminFee).toLocaleString('id-ID')}
                       </span>
                     </div>
-                    <div className="border-l border-amber-300 pl-3">
-                      <span className="text-[10px] text-slate-500 block">Untung Loket:</span>
-                      <span className="font-mono font-bold text-xs text-emerald-700">
+                    <div className="h-7 w-px bg-amber-200" />
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Untung Loket</span>
+                      <span className="font-mono tabular-nums font-bold text-xs text-emerald-700">
                         +Rp {customPlnAdminFee.toLocaleString('id-ID')}
                       </span>
                     </div>
                   </div>
 
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black rounded-lg shadow-sm flex items-center gap-1.5 text-xs cursor-pointer active:scale-95 transition"
-                  >
-                    <span>⚡ Lanjut Bayar Tagihan Listrik</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!phoneNumber.trim()) {
+                          alert('Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!');
+                          return;
+                        }
+                        const amount = Number(customPlnBillAmount) || 0;
+                        const admin = Number(customPlnAdminFee) || 0;
+                        if (amount <= 0) {
+                          alert('Nominal tagihan listrik harus lebih dari Rp 0!');
+                          return;
+                        }
+                        handleAddPPOBToMasterCart({
+                          id: `custom-plnpost-${Date.now()}`,
+                          category: 'pln_bulanan',
+                          provider: 'PLN Pascabayar',
+                          name: `Tagihan Listrik Rp ${amount.toLocaleString('id-ID')}`,
+                          hpp: amount,
+                          price: amount + admin,
+                          desc: `Tagihan PLN Bulanan (${plnPeriod}) · Admin Loket Rp ${admin.toLocaleString('id-ID')}`,
+                        });
+                      }}
+                      className="px-3 py-2 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 font-bold rounded-lg flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95 transition whitespace-nowrap shrink-0"
+                      title="Masukkan tagihan ini ke Keranjang Besar agar bisa digabung dengan belanja lain"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      <span>+ Keranjang</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black rounded-lg shadow-xs flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95 transition whitespace-nowrap"
+                    >
+                      <span>Bayar Listrik</span>
+                      <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -991,35 +1117,31 @@ export const PPOBView: React.FC = () => {
             /* ============================================================== */
             /* DYNAMIC FORM: PEMBAYARAN TAGIHAN WIFI & INTERNET RUMAH          */
             /* ============================================================== */
-            <div className="space-y-3 bg-white p-3.5 rounded-xl border-2 border-sky-300 shadow-xs">
-              <div className="flex items-center justify-between border-b border-sky-100 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-xs">
+            <div className="bg-white rounded-xl border border-sky-300 shadow-2xs overflow-hidden">
+              <div className="p-3 sm:p-3.5 space-y-2.5">
+                <div className="flex items-center gap-2.5 border-b border-sky-100 pb-2">
+                  <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0">
                     <Wifi className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h4 className="text-xs font-black text-sky-950 uppercase tracking-tight">
-                      Loket Pembayaran Tagihan Wifi & Internet Rumah
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-black text-sky-950 tracking-tight truncate">
+                      Tagihan Wifi & Internet Rumah
                     </h4>
-                    <p className="text-[10.5px] text-slate-500">
-                      Indihome, Iconnet PLN, Biznet, First Media, MyRepublic, XL Satu, dll.
+                    <p className="text-[10.5px] text-slate-500 truncate">
+                      Indihome · Iconnet · Biznet · First Media · MyRepublic · XL Satu
                     </p>
                   </div>
                 </div>
-                <span className="text-[9.5px] bg-sky-100 text-sky-900 border border-sky-300 px-2 py-0.5 rounded font-black font-mono">
-                  MULTI PROVIDER WIFI
-                </span>
-              </div>
 
               {/* Provider Selector Chips with Horizontal Scroll */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-1.5 gap-2">
                   <label className="text-[11px] font-extrabold text-sky-950 flex items-center gap-1">
                     <Globe className="w-3.5 h-3.5 text-sky-600" />
                     <span>Pilih Provider Wifi:</span>
                   </label>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    {filteredPackages.length} paket aktif
+                  <span className="text-[10.5px] text-sky-800 font-semibold truncate">
+                    {resolvedWifiProvider}
                   </span>
                 </div>
 
@@ -1038,16 +1160,13 @@ export const PPOBView: React.FC = () => {
                     className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-0.5 px-0.5 scroll-smooth touch-pan-x [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-slate-200/60 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-sky-400 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-sky-600"
                   >
                     {POPULAR_WIFI_PROVIDERS.map((providerName) => {
-                      const active = selectedWifiProvider === providerName;
+                      const active = customWifiProvider === providerName;
                       return (
                         <button
                           key={providerName}
                           type="button"
                           onClick={(e) => {
-                            setSelectedWifiProvider(providerName);
-                            if (providerName !== 'Semua Wifi') {
-                              setCustomWifiProvider(providerName);
-                            }
+                            setCustomWifiProvider(providerName);
                             e.currentTarget.scrollIntoView({
                               behavior: 'smooth',
                               block: 'nearest',
@@ -1112,104 +1231,155 @@ export const PPOBView: React.FC = () => {
                   />
                 </div>
               </div>
+            </div>
 
               {/* Quick Custom Bill Calculator Card for Wifi */}
               <form
                 onSubmit={handlePayCustomWifiBill}
-                className="bg-gradient-to-r from-sky-50 to-blue-50 p-3 rounded-xl border border-sky-300 space-y-2"
+                className="bg-sky-50/70 p-3 sm:p-3.5 border-t border-sky-200/80 space-y-2.5"
               >
-                <div className="flex items-center justify-between border-b border-sky-200 pb-1.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-extrabold text-sky-950 text-xs flex items-center gap-1.5">
-                    <Calculator className="w-3.5 h-3.5 text-sky-700" />
-                    <span>🌐 Bayar Tagihan Wifi Sesuai Nota (Nominal Bebas)</span>
+                    <Calculator className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+                    <span>Input Tagihan Wifi Nominal Bebas</span>
                   </span>
-                  <span className="text-[10px] text-sky-800 font-bold">
-                    Input Tagihan Riil ISP
+                  <span className="text-[10.5px] text-sky-800 font-semibold">
+                    Bebas angka · Tanpa pembulatan
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                   <div>
                     <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
-                      Provider Wifi:
+                      Provider Wifi
                     </label>
                     <select
                       value={customWifiProvider}
                       onChange={(e) => setCustomWifiProvider(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-bold text-slate-800 focus:outline-none text-xs"
+                      className="w-full px-2.5 py-2 bg-white border border-sky-300 rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
                     >
-                      {POPULAR_WIFI_PROVIDERS.filter((p) => p !== 'Semua Wifi').map((p) => (
+                      {POPULAR_WIFI_PROVIDERS.map((p) => (
                         <option key={p} value={p}>
                           {p}
                         </option>
                       ))}
                     </select>
+                    {customWifiProvider === 'Lainnya' && (
+                      <input
+                        type="text"
+                        value={customWifiOtherName}
+                        onChange={(e) => setCustomWifiOtherName(e.target.value)}
+                        placeholder="Ketik nama ISP / Wifi..."
+                        className="mt-1.5 w-full px-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
+                      />
+                    )}
                   </div>
 
                   <div>
-                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
-                      Tagihan Pokok Wifi (Rp): *
+                    <label className="text-[10.5px] font-bold text-slate-700 flex items-center justify-between gap-1 mb-1">
+                      <span>Tagihan Pokok (Rp) *</span>
+                      {customWifiBillAmount > 0 && (
+                        <span className="font-mono tabular-nums text-[10px] text-sky-800">
+                          = Rp {customWifiBillAmount.toLocaleString('id-ID')}
+                        </span>
+                      )}
                     </label>
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
                         Rp
                       </span>
                       <input
-                        type="number"
-                        min="1000"
-                        step="100"
+                        type="text"
+                        inputMode="numeric"
                         required
-                        value={customWifiBillAmount}
-                        onChange={(e) => setCustomWifiBillAmount(Number(e.target.value) || 0)}
-                        placeholder="Contoh: 312450"
-                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
+                        value={customWifiBillInput}
+                        onChange={(e) => setCustomWifiBillInput(sanitizeRupiahInput(e.target.value))}
+                        placeholder="Cth: 157.200 atau 15335"
+                        className="w-full pl-8 pr-2.5 py-2 bg-white border border-sky-300 rounded-lg font-mono tabular-nums font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-[10.5px] font-bold text-slate-700 block mb-1">
-                      Biaya Admin Loket (Rp):
+                    <label className="text-[10.5px] font-bold text-slate-700 flex items-center justify-between gap-1 mb-1">
+                      <span>Admin Loket (Rp)</span>
+                      <span className="font-mono tabular-nums text-[10px] text-emerald-700">
+                        = Rp {customWifiAdminFee.toLocaleString('id-ID')}
+                      </span>
                     </label>
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono font-bold text-xs">
                         Rp
                       </span>
                       <input
-                        type="number"
-                        min="0"
-                        step="500"
-                        value={customWifiAdminFee}
-                        onChange={(e) => setCustomWifiAdminFee(Number(e.target.value) || 0)}
-                        className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-sky-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
+                        type="text"
+                        inputMode="numeric"
+                        value={customWifiAdminInput}
+                        onChange={(e) => setCustomWifiAdminInput(sanitizeRupiahInput(e.target.value))}
+                        placeholder="0 (bebas, cth: 2500)"
+                        className="w-full pl-8 pr-2.5 py-2 bg-white border border-sky-300 rounded-lg font-mono tabular-nums font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-sky-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 text-xs">
+                <div className="pt-2 border-t border-sky-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-4 text-xs">
                     <div>
-                      <span className="text-[10px] text-slate-500 block">Total Bayar Pelanggan:</span>
-                      <span className="font-mono font-black text-sm text-sky-950">
+                      <span className="text-[10px] text-slate-500 block">Total Bayar Pelanggan</span>
+                      <span className="font-mono tabular-nums font-black text-sm text-sky-950">
                         Rp {(customWifiBillAmount + customWifiAdminFee).toLocaleString('id-ID')}
                       </span>
                     </div>
-                    <div className="border-l border-sky-300 pl-3">
-                      <span className="text-[10px] text-slate-500 block">Untung Loket:</span>
-                      <span className="font-mono font-bold text-xs text-emerald-700">
+                    <div className="h-7 w-px bg-sky-200" />
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Untung Loket</span>
+                      <span className="font-mono tabular-nums font-bold text-xs text-emerald-700">
                         +Rp {customWifiAdminFee.toLocaleString('id-ID')}
                       </span>
                     </div>
                   </div>
 
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black rounded-lg shadow-sm flex items-center gap-1.5 text-xs cursor-pointer active:scale-95 transition"
-                  >
-                    <span>🌐 Lanjut Bayar Tagihan Wifi</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!phoneNumber.trim()) {
+                          alert('Nomor Pelanggan / ID Sambungan Wifi wajib diisi!');
+                          return;
+                        }
+                        const amount = Number(customWifiBillAmount) || 0;
+                        const admin = Number(customWifiAdminFee) || 0;
+                        if (amount <= 0) {
+                          alert('Nominal tagihan wifi harus lebih dari Rp 0!');
+                          return;
+                        }
+                        const providerName = resolvedWifiProvider;
+                        handleAddPPOBToMasterCart({
+                          id: `custom-wifi-${Date.now()}`,
+                          category: 'wifi',
+                          provider: providerName,
+                          name: `Tagihan ${providerName} Rp ${amount.toLocaleString('id-ID')}`,
+                          hpp: amount,
+                          price: amount + admin,
+                          desc: `Tagihan Wifi & Internet ${providerName} · Admin Rp ${admin.toLocaleString('id-ID')}`,
+                        });
+                      }}
+                      className="px-3 py-2 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 font-bold rounded-lg flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95 transition whitespace-nowrap shrink-0"
+                      title="Masukkan tagihan wifi ini ke Keranjang Besar agar bisa digabung dengan belanja lain"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      <span>+ Keranjang</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black rounded-lg shadow-xs flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95 transition whitespace-nowrap"
+                    >
+                      <span>Bayar Wifi</span>
+                      <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -1263,195 +1433,200 @@ export const PPOBView: React.FC = () => {
           )}
         </div>
 
-        {/* Action Header for Packages */}
-        <div className="px-4 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-bold text-slate-800">
-              {category === 'game'
-                ? `Katalog Top Up ${selectedGame}`
-                : category === 'pln_bulanan'
-                ? 'Katalog Tagihan Listrik Bulanan (PLN Pascabayar)'
-                : category === 'wifi'
-                ? `Katalog Tagihan Wifi & Internet ${selectedWifiProvider !== 'Semua Wifi' ? selectedWifiProvider : ''}`
-                : category === 'pln'
-                ? 'Katalog Token Listrik PLN (Prabayar)'
-                : `Katalog Paket ${selectedProvider}`}
-            </span>
-            <span className="text-[11px] font-mono font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
-              {filteredPackages.length} Item
-            </span>
-          </div>
-
-          <button
-            onClick={openAddPackageModal}
-            className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tambah Paket</span>
-          </button>
-        </div>
-
         {/* Success Banner */}
         {successMessage && (
-          <div className="mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center justify-between gap-2 font-medium animate-fadeIn">
-            <div className="flex items-center gap-2">
+          <div className="mx-3 sm:mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center justify-between gap-2 font-medium animate-fadeIn flex-wrap shrink-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{successMessage}</span>
             </div>
-            {lastTxForReceipt && (
-              <button
-                type="button"
-                onClick={() => openReceipt(lastTxForReceipt)}
-                className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-md flex items-center gap-1 text-[11px] shrink-0 cursor-pointer shadow-xs"
-              >
-                <Printer className="w-3 h-3 text-amber-300" />
-                <span>Cetak Struk</span>
-              </button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {cartTotalCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsMasterCartModalOpen(true)}
+                  className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-md flex items-center gap-1 text-[11px] cursor-pointer shadow-xs whitespace-nowrap"
+                >
+                  <ShoppingCart className="w-3 h-3 text-amber-300" />
+                  <span>Buka Keranjang Besar ({cartTotalCount})</span>
+                </button>
+              )}
+              {lastTxForReceipt && (
+                <button
+                  type="button"
+                  onClick={() => openReceipt(lastTxForReceipt)}
+                  className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-md flex items-center gap-1 text-[11px] shrink-0 cursor-pointer shadow-xs whitespace-nowrap"
+                >
+                  <Printer className="w-3 h-3 text-amber-300" />
+                  <span>Cetak Struk</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Denom Cards Grid */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {filteredPackages.length === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
-              <Gamepad2 className="w-10 h-10 text-slate-300" />
-              <p className="text-xs font-medium">Belum ada item / paket untuk kategori ini</p>
+        {/* Package Catalog Header & Grid (Hidden for Listrik Bulanan & Wifi custom nominal entry) */}
+        {category !== 'pln_bulanan' && category !== 'wifi' ? (
+          <>
+            {/* Action Header for Packages */}
+            <div className="px-3 sm:px-4 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-xs font-bold text-slate-800 truncate">
+                  {category === 'game'
+                    ? `Katalog Top Up ${selectedGame}`
+                    : category === 'pln'
+                    ? 'Katalog Token Listrik PLN'
+                    : `Katalog Paket ${selectedProvider}`}
+                </h3>
+                <p className="text-[11px] font-mono tabular-nums text-slate-500">
+                  {filteredPackages.length} paket tersedia
+                </p>
+              </div>
+
               <button
                 onClick={openAddPackageModal}
-                className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
+                className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
               >
-                + Tambah Item/Paket Baru
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>Tambah Paket</span>
               </button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredPackages.map((pkg) => {
-                const profit = pkg.price - pkg.hpp;
-                const isGame = pkg.category === 'game';
-                const isPlnBulanan = pkg.category === 'pln_bulanan';
-                const isWifi = pkg.category === 'wifi';
-                const isBill = isPlnBulanan || isWifi || pkg.category === 'bpjs' || pkg.category === 'pdam' || pkg.category === 'tagihan';
 
-                return (
-                  <div
-                    key={pkg.id}
-                    className={`bg-white border rounded-xl p-3.5 transition flex flex-col justify-between group relative ${
-                      isGame
-                        ? 'border-violet-100 hover:border-violet-400 hover:shadow-md'
-                        : isPlnBulanan
-                        ? 'border-amber-200/90 hover:border-amber-500 hover:shadow-md bg-linear-to-b from-amber-50/20 to-white'
-                        : isWifi
-                        ? 'border-sky-200/90 hover:border-sky-500 hover:shadow-md bg-linear-to-b from-sky-50/20 to-white'
-                        : 'border-slate-200 hover:border-emerald-500 hover:shadow-md'
-                    }`}
+            {/* Denom Cards Grid (Natural flow inside top-to-bottom scroller with mobile bottom clearance) */}
+            <div className="p-3 sm:p-4 pb-24 md:pb-6 shrink-0">
+              {filteredPackages.length === 0 ? (
+                <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
+                  <Gamepad2 className="w-10 h-10 text-slate-300" />
+                  <p className="text-xs font-medium">Belum ada item / paket untuk kategori ini</p>
+                  <button
+                    onClick={openAddPackageModal}
+                    className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
                   >
-                    <div>
-                      {/* Top Header of Card: Provider & Action Buttons */}
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span
-                          className={`text-[10px] uppercase font-bold font-mono tracking-wider px-1.5 py-0.5 rounded ${
-                            isGame
-                              ? 'bg-violet-50 text-violet-800 border border-violet-200'
-                              : isPlnBulanan
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : isWifi
-                              ? 'bg-sky-100 text-sky-900 border border-sky-300'
-                              : 'text-slate-500 bg-slate-50'
-                          }`}
-                        >
-                          {pkg.provider}
-                        </span>
+                    + Tambah Item/Paket Baru
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredPackages.map((pkg) => {
+                    const profit = pkg.price - pkg.hpp;
+                    const isGame = pkg.category === 'game';
+                    const isBill = pkg.category === 'bpjs' || pkg.category === 'pdam' || pkg.category === 'tagihan';
 
-                        {/* Edit & Hapus Buttons for Package */}
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => openEditPackageModal(pkg, e)}
-                            className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition cursor-pointer"
-                            title="Edit Paket"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPackageToDelete(pkg);
-                            }}
-                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
-                            title="Hapus Paket"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <h4 className="text-sm font-bold text-slate-900 leading-snug flex items-center gap-1 mt-1">
-                        {isGame && <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-                        {isPlnBulanan && <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-                        {isWifi && <Globe className="w-3.5 h-3.5 text-sky-500 shrink-0" />}
-                        <span>{pkg.name}</span>
-                      </h4>
-                      {pkg.desc && (
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{pkg.desc}</p>
-                      )}
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-end justify-between">
-                      <div>
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          Modal: Rp {pkg.hpp.toLocaleString('id-ID')}
-                        </div>
-                        <div
-                          className={`text-sm font-extrabold font-mono tabular-nums ${
-                            isGame
-                              ? 'text-violet-900'
-                              : isPlnBulanan
-                              ? 'text-amber-900'
-                              : isWifi
-                              ? 'text-sky-900'
-                              : 'text-emerald-800'
-                          }`}
-                        >
-                          Rp {pkg.price.toLocaleString('id-ID')}
-                        </div>
-                        <div className="text-[10px] text-emerald-600 font-bold font-mono">
-                          Laba +Rp {profit.toLocaleString('id-ID')}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleInitiatePurchase(pkg)}
-                        className={`px-3.5 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 ${
+                    return (
+                      <div
+                        key={pkg.id}
+                        className={`bg-white border rounded-xl p-3.5 transition flex flex-col justify-between group relative ${
                           isGame
-                            ? 'bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
-                            : isPlnBulanan
-                            ? 'bg-linear-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500'
-                            : isWifi
-                            ? 'bg-linear-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500'
-                            : 'bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
+                            ? 'border-violet-100 hover:border-violet-400 hover:shadow-md'
+                            : 'border-slate-200 hover:border-emerald-500 hover:shadow-md'
                         }`}
                       >
-                        <span>{isGame ? 'Top Up' : isBill ? 'Bayar' : 'Beli'}</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                        <div>
+                          {/* Top Header of Card: Provider & Action Buttons */}
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span
+                              className={`text-[10px] uppercase font-bold font-mono tracking-wider px-1.5 py-0.5 rounded ${
+                                isGame
+                                  ? 'bg-violet-50 text-violet-800 border border-violet-200'
+                                  : 'text-slate-500 bg-slate-50'
+                              }`}
+                            >
+                              {pkg.provider}
+                            </span>
+
+                            {/* Edit & Hapus Buttons for Package */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={(e) => openEditPackageModal(pkg, e)}
+                                className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition cursor-pointer"
+                                title="Edit Paket"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPackageToDelete(pkg);
+                                }}
+                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                                title="Hapus Paket"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <h4 className="text-sm font-bold text-slate-900 leading-snug flex items-center gap-1 mt-1">
+                            {isGame && <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                            <span>{pkg.name}</span>
+                          </h4>
+                          {pkg.desc && (
+                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{pkg.desc}</p>
+                          )}
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-end justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-[11px] text-slate-400 font-mono tabular-nums">
+                              Modal: Rp {pkg.hpp.toLocaleString('id-ID')}
+                            </div>
+                            <div
+                              className={`text-sm font-extrabold font-mono tabular-nums ${
+                                isGame ? 'text-violet-900' : 'text-emerald-800'
+                              }`}
+                            >
+                              Rp {pkg.price.toLocaleString('id-ID')}
+                            </div>
+                            <div className="text-[10px] text-emerald-600 font-bold font-mono tabular-nums">
+                              Laba +Rp {profit.toLocaleString('id-ID')}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleAddPPOBToMasterCart(pkg)}
+                              className="px-2 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[11px] font-bold rounded-lg transition flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                              title="Gabungkan item ini ke Keranjang Besar untuk bayar sekaligus"
+                            >
+                              <ShoppingCart className="w-3 h-3 text-teal-600" />
+                              <span>+ Keranjang</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleInitiatePurchase(pkg)}
+                              className={`px-3 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap ${
+                                isGame
+                                  ? 'bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
+                                  : 'bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
+                              }`}
+                            >
+                              <span>{isGame ? 'Top Up' : isBill ? 'Bayar' : 'Beli'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          <div className="h-24 md:h-6 shrink-0" />
+        )}
       </div>
 
       {/* Right Column: PPOB Live Transaction Log */}
       <div
         className={`${
           mobileTab === 'history' ? 'flex' : 'hidden'
-        } md:flex w-full md:w-84 bg-slate-50 flex-col h-full md:border-l border-slate-200 overflow-hidden shrink-0`}
+        } md:flex flex-1 min-h-0 md:flex-none w-full md:w-84 bg-slate-50 flex-col md:h-full md:border-l border-slate-200 overflow-hidden shrink-0`}
       >
-        <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
+        <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
           <div>
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-500" />
@@ -1459,12 +1634,12 @@ export const PPOBView: React.FC = () => {
             </h4>
             <p className="text-[11px] text-slate-500">Pulsa, Game, Token & Tagihan</p>
           </div>
-          <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+          <span className="text-[11px] font-mono tabular-nums font-bold text-slate-600">
             {ppobTransactions.length} Total
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-24 md:pb-6 space-y-2.5">
           {ppobTransactions.length === 0 ? (
             <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-1.5">
               <Zap className="w-8 h-8 text-slate-300" />
@@ -1634,8 +1809,6 @@ export const PPOBView: React.FC = () => {
                     <option value="pulsa">📱 Pulsa Reguler</option>
                     <option value="data">🌐 Paket Data / Kuota</option>
                     <option value="pln">⚡ Token Listrik PLN (Prabayar)</option>
-                    <option value="pln_bulanan">⚡ Listrik Bulanan (PLN Pascabayar)</option>
-                    <option value="wifi">🌐 Pembayaran Wifi & Internet</option>
                     <option value="bpjs">🏥 BPJS Kesehatan</option>
                     <option value="pdam">💧 PDAM Air</option>
                     <option value="tagihan">🧾 Tagihan Bulanan Lainnya</option>
@@ -1644,11 +1817,7 @@ export const PPOBView: React.FC = () => {
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    {pkgCategory === 'game'
-                      ? 'Nama Game / Voucher'
-                      : pkgCategory === 'wifi'
-                      ? 'Provider Wifi / Internet'
-                      : 'Operator / Provider'}
+                    {pkgCategory === 'game' ? 'Nama Game / Voucher' : 'Operator / Provider'}
                   </label>
                   {pkgCategory === 'game' ? (
                     <select
@@ -1662,19 +1831,6 @@ export const PPOBView: React.FC = () => {
                         </option>
                       ))}
                       <option value="Lainnya">Game Lainnya...</option>
-                    </select>
-                  ) : pkgCategory === 'wifi' ? (
-                    <select
-                      value={pkgProvider}
-                      onChange={(e) => setPkgProvider(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
-                    >
-                      {POPULAR_WIFI_PROVIDERS.filter((w) => w !== 'Semua Wifi').map((w) => (
-                        <option key={w} value={w}>
-                          {w}
-                        </option>
-                      ))}
-                      <option value="Lainnya">Provider Wifi Lainnya...</option>
                     </select>
                   ) : (
                     <input
@@ -1695,12 +1851,12 @@ export const PPOBView: React.FC = () => {
                     Harga Beli / HPP (Rp) *
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    step="any"
-                    min="0"
-                    value={pkgHpp}
-                    onChange={(e) => setPkgHpp(Number(e.target.value) || 0)}
+                    value={pkgHppInput}
+                    onChange={(e) => setPkgHppInput(sanitizeRupiahInput(e.target.value))}
+                    placeholder="Cth: 157.200 atau 15335"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-semibold focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
@@ -1708,12 +1864,12 @@ export const PPOBView: React.FC = () => {
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Harga Jual (Rp) *</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    step="any"
-                    min="0"
-                    value={pkgPrice}
-                    onChange={(e) => setPkgPrice(Number(e.target.value) || 0)}
+                    value={pkgPriceInput}
+                    onChange={(e) => setPkgPriceInput(sanitizeRupiahInput(e.target.value))}
+                    placeholder="Cth: 157.200 atau 15335"
                     className="w-full px-3 py-2 bg-slate-50 border border-emerald-300 rounded-lg font-mono text-right font-bold text-emerald-800 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
@@ -1862,10 +2018,12 @@ export const PPOBView: React.FC = () => {
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Harga Jual (Rp) *</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  value={txSellingPrice}
-                  onChange={(e) => setTxSellingPrice(Number(e.target.value) || 0)}
+                  value={txSellingPriceInput}
+                  onChange={(e) => setTxSellingPriceInput(sanitizeRupiahInput(e.target.value))}
+                  placeholder="Cth: 157.200 atau 15335"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-bold text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                 />
               </div>
@@ -2082,19 +2240,19 @@ export const PPOBView: React.FC = () => {
                     <div className="flex items-center gap-1 font-mono">
                       <span className="text-slate-400 font-bold">Rp</span>
                       <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={ppobDiscount || ''}
+                        type="text"
+                        inputMode="numeric"
+                        value={ppobDiscountInput}
                         onChange={(e) => {
-                          const val = Number(e.target.value) || 0;
+                          const sanitized = sanitizeRupiahInput(e.target.value);
+                          const val = parseExactRupiah(sanitized);
                           if (!isOwner && val >= selectedPackageForCheckout.price) {
                             alert('Hanya OWNER yang dapat menetapkan pembayaran PPOB Rp 0!');
-                            setPpobDiscount(Math.max(0, selectedPackageForCheckout.price - 500));
-                            setPpobCashReceived(500);
+                            setPpobDiscount(Math.max(0, selectedPackageForCheckout.price - 1));
+                            setPpobCashReceived(selectedPackageForCheckout.price > 0 ? 1 : 0);
                             return;
                           }
-                          setPpobDiscount(val);
+                          setPpobDiscountInput(sanitized);
                           setPpobCashReceived(Math.max(0, selectedPackageForCheckout.price - val));
                         }}
                         placeholder="0"
@@ -2160,12 +2318,12 @@ export const PPOBView: React.FC = () => {
                       Rp
                     </span>
                     <input
-                      type="number"
-                      min="0"
-                      value={ppobCashReceived || ''}
-                      onChange={(e) => setPpobCashReceived(Number(e.target.value) || 0)}
+                      type="text"
+                      inputMode="numeric"
+                      value={ppobCashReceivedInput}
+                      onChange={(e) => setPpobCashReceivedInput(sanitizeRupiahInput(e.target.value))}
                       className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      placeholder={finalPPOBPrice.toString()}
+                      placeholder={finalPPOBPrice.toLocaleString('id-ID')}
                     />
                   </div>
 
@@ -2321,18 +2479,31 @@ export const PPOBView: React.FC = () => {
             </div>
 
             {/* Modal Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setSelectedPackageForCheckout(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                className="py-2.5 px-3 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  if (!selectedPackageForCheckout) return;
+                  handleAddPPOBToMasterCart(selectedPackageForCheckout, ppobDiscount);
+                  setSelectedPackageForCheckout(null);
+                }}
+                className="py-2.5 px-3 text-xs font-bold text-teal-800 bg-teal-50 border border-teal-300 rounded-xl hover:bg-teal-100 transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                title="Masukkan paket ini ke Keranjang Besar"
+              >
+                <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
+                <span>+ Gabung Keranjang</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleConfirmPurchase}
-                className={`flex-2 py-2.5 px-4 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                className={`flex-1 py-2.5 px-4 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                   finalPPOBPrice === 0 && isOwner
                     ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 ring-2 ring-amber-400/50 hover:brightness-105'
                     : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white'

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShoppingCart,
   Zap,
@@ -23,6 +23,7 @@ import {
   Printer,
   Sun,
   Moon,
+  Clock,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -43,6 +44,35 @@ export const Sidebar: React.FC = () => {
     isSyncing,
     printOrders,
   } = usePOS();
+
+  const [sidebarClock, setSidebarClock] = useState<{ date: string; time: string }>({
+    date: '',
+    time: '',
+  });
+
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      const date = now.toLocaleDateString('id-ID', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      const time = now
+        .toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })
+        .replace(/\./g, ':');
+      setSidebarClock({ date, time: `${time} WIB` });
+    };
+    updateClock();
+    const timer = setInterval(updateClock, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
   const activePrintOrdersCount = printOrders.filter(
@@ -395,6 +425,19 @@ export const Sidebar: React.FC = () => {
               ? '👤 SHIFT 1'
               : '👤 SHIFT 2'}
           </button>
+        </div>
+
+        {/* Live Digital Clock */}
+        <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px]">
+          <div className="flex items-center gap-1.5 text-teal-100/90 min-w-0">
+            <Clock className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+            <span className="truncate font-medium">
+              {sidebarClock.date || 'Memuat tanggal...'}
+            </span>
+          </div>
+          <span className="font-mono tabular-nums font-extrabold text-white whitespace-nowrap shrink-0">
+            {sidebarClock.time || '--:--:-- WIB'}
+          </span>
         </div>
 
         {/* Shift status & Buka/Tutup Kasir action */}

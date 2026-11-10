@@ -34,6 +34,7 @@ import {
   Eye,
   EyeOff,
   History,
+  ShoppingCart,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import {
@@ -419,6 +420,10 @@ export const PercetakanView: React.FC = () => {
     updatePrintService,
     deletePrintService,
     resetPrintServices,
+    addPrintItemToCart,
+    addPrintOrderToCart,
+    setIsMasterCartModalOpen,
+    cartTotalCount,
   } = usePOS();
 
   const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
@@ -803,6 +808,55 @@ export const PercetakanView: React.FC = () => {
     setCalcSpecNote('');
   };
 
+  // Send currently calculated item directly into global Master Cart
+  const handleSendActivePrintItemToMasterCart = () => {
+    if (calcQty <= 0) {
+      alert('Jumlah (Qty) minimal 1!');
+      return;
+    }
+    const newItem: PrintOrderItem = {
+      id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      serviceName: activeCalcService.name,
+      category: activeCalcService.category as PrintServiceCategory,
+      quantity: calcQty,
+      unit: activeCalcService.unit,
+      pricePerUnit: effectiveUnitPrice,
+      basePrice: activeCalcService.price,
+      isCustomPrice: isCustomOverridden,
+      subtotal: calcSubtotal,
+      specNote: calcSpecNote.trim() || undefined,
+    };
+    addPrintItemToCart(
+      newItem,
+      customerName !== 'Pelanggan Umum' ? customerName : undefined,
+      customerPhone || undefined,
+      fileOrNote || undefined
+    );
+    setCalcSpecNote('');
+    setSuccessToast(
+      `"${newItem.serviceName}" (${newItem.quantity} ${newItem.unit}) dimasukkan ke Keranjang Besar!`
+    );
+    setTimeout(() => setSuccessToast(''), 5000);
+  };
+
+  // Send entire Step 2 print order bundle into global Master Cart
+  const handleSendOrderItemsToMasterCart = () => {
+    if (orderItems.length === 0) return;
+    addPrintOrderToCart(
+      orderItems,
+      customerName !== 'Pelanggan Umum' ? customerName : undefined,
+      customerPhone || undefined,
+      fileOrNote || undefined
+    );
+    const count = orderItems.length;
+    setOrderItems([]);
+    setDiscountAmount(0);
+    setSuccessToast(
+      `${count} item percetakan dipindahkan ke Keranjang Besar — siap digabung dengan kasir / PPOB / servis!`
+    );
+    setTimeout(() => setSuccessToast(''), 5000);
+  };
+
   // Quick 1-click adder for popular items
   const handleAddQuickItem = (serviceQuery: string, defaultQty: number = 1) => {
     const srv =
@@ -1081,9 +1135,21 @@ export const PercetakanView: React.FC = () => {
         {/* Content Body */}
         <div className="p-3.5 sm:p-4 space-y-4 flex-1 pb-32 sm:pb-8">
           {successToast && (
-            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs rounded-xl flex items-center gap-2 font-bold animate-fade-in shadow-2xs">
-              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{successToast}</span>
+            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs rounded-xl flex items-center justify-between gap-2 font-bold animate-fade-in shadow-2xs flex-wrap">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{successToast}</span>
+              </div>
+              {cartTotalCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsMasterCartModalOpen(true)}
+                  className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                >
+                  <ShoppingCart className="w-3 h-3 text-amber-300" />
+                  <span>Buka Keranjang Besar ({cartTotalCount})</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -1296,21 +1362,32 @@ export const PercetakanView: React.FC = () => {
               />
 
               {/* Add Calculated Item Button */}
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
                 <div className="text-xs">
                   <span className="text-[10px] text-slate-500 block">Subtotal:</span>
                   <span className="font-mono font-extrabold text-teal-800 text-sm">
                     Rp {calcSubtotal.toLocaleString('id-ID')}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleAddCalculatedToOrder}
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4 stroke-[2.5]" />
-                  <span>Masukkan Tagihan</span>
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSendActivePrintItemToMasterCart}
+                    className="px-3 py-2 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+                    title="Masukkan item cetak ini ke Keranjang Besar untuk digabung dengan belanja kasir/PPOB"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
+                    <span>+ Keranjang</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddCalculatedToOrder}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>Masukkan Tagihan</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1319,19 +1396,30 @@ export const PercetakanView: React.FC = () => {
           {/* STEP 2: DAFTAR ITEM TAGIHAN / KERANJANG CETAK             */}
           {/* ========================================================= */}
           <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2.5 shadow-2xs">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
                 <Receipt className="w-3.5 h-3.5 text-teal-600" />
                 <span>2. Keranjang Tagihan ({orderItems.length})</span>
               </span>
               {orderItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setOrderItems([])}
-                  className="text-[11px] text-rose-600 hover:underline font-bold cursor-pointer"
-                >
-                  Kosongkan
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendOrderItemsToMasterCart}
+                    className="px-2 py-1 text-[11px] bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-lg font-bold cursor-pointer flex items-center gap-1 whitespace-nowrap"
+                    title="Gabungkan semua item cetak ini ke Keranjang Besar"
+                  >
+                    <ShoppingCart className="w-3 h-3 text-teal-600" />
+                    <span>+ Gabung Keranjang Besar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderItems([])}
+                    className="text-[11px] text-rose-600 hover:underline font-bold cursor-pointer"
+                  >
+                    Kosongkan
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1774,6 +1862,17 @@ export const PercetakanView: React.FC = () => {
                   : `BAYAR & CETAK STRUK (Rp ${totalOrderAmount.toLocaleString('id-ID')})`}
               </span>
             </button>
+
+            {orderItems.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSendOrderItemsToMasterCart}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/40 transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+              >
+                <ShoppingCart className="w-4 h-4 text-amber-300" />
+                <span>+ Gabung ke Keranjang Besar (1 Pembayaran Semua Menu)</span>
+              </button>
+            )}
           </div>
 
           {/* Inline Live Receipt Preview (Saat toggle aktif) */}

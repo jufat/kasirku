@@ -31,6 +31,7 @@ import {
   Tag,
   Crown,
   Percent,
+  ShoppingCart,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType, AtmMiniTransaction } from '../../types/pos';
@@ -110,6 +111,9 @@ export const AtmMiniView: React.FC = () => {
     drawerCashBalance,
     digitalBalance,
     shift,
+    addAtmMiniToCart,
+    setIsMasterCartModalOpen,
+    cartTotalCount,
   } = usePOS();
 
   const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
@@ -310,6 +314,94 @@ export const AtmMiniView: React.FC = () => {
     setAtmMiniDebtorName(customerName.trim());
     setAtmMiniKasbonError(null);
     setIsPaymentModalOpen(true);
+  };
+
+  // Helper: Gabungkan transaksi Transfer/TopUp/M-Banking/QRIS ke Keranjang Besar
+  const handleAddTransferToMasterCart = (closeModal: boolean = false) => {
+    if (primaryTab !== 'transfer_topup') return;
+    if (nominal <= 0) {
+      alert('Nominal transaksi harus lebih dari Rp 0!');
+      return;
+    }
+    if (effectiveCounterFee === 0 && !isOwner && counterFeeDiscount > 0) {
+      alert('Jasa Konter Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      return;
+    }
+    if (transferChannel === 'kartu_debit' && !targetAccountOrPhone.trim()) {
+      alert('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
+      return;
+    }
+    if (transferChannel === 'ewallet' && !targetAccountOrPhone.trim()) {
+      alert('Nomor handphone akun e-wallet tujuan wajib diisi!');
+      return;
+    }
+    if (transferChannel === 'mbanking' && !targetAccountOrPhone.trim()) {
+      alert('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
+      return;
+    }
+
+    let providerName = bankName;
+    let actualCardType: AtmMiniTransaction['cardType'] = cardType;
+    let maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
+    let destination: string | undefined = undefined;
+
+    if (transferChannel === 'kartu_debit') {
+      providerName = bankName;
+      actualCardType = cardType;
+      maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
+      destination = targetAccountOrPhone;
+    } else if (transferChannel === 'ewallet') {
+      providerName = ewalletProvider;
+      actualCardType = 'E-Wallet';
+      maskedIdentifier = `EW-${ewalletProvider.toUpperCase()} · ${targetAccountOrPhone}`;
+      destination = `${targetAccountOrPhone} (${ewalletProvider})`;
+    } else if (transferChannel === 'mbanking') {
+      providerName = mbankingApp;
+      actualCardType = 'M-Banking';
+      maskedIdentifier = `APP ${mbankingApp.split(' ')[0]} · ${
+        cardNumberLast4.trim() ? 'Kode: ' + cardNumberLast4.trim() : 'Cardless'
+      }`;
+      destination = targetAccountOrPhone
+        ? `${targetAccountOrPhone} [${mbankingType.split(' ')[0]}]`
+        : mbankingType;
+    } else {
+      providerName = qrisProvider.split(' ')[0] + ' ' + (qrisProvider.split(' ')[1] || '');
+      actualCardType = 'QRIS';
+      maskedIdentifier = qrisRrn || `RRN-${Math.floor(100000 + Math.random() * 900000)}`;
+      destination = `QRIS · ${qrisType}`;
+    }
+
+    const resolvedDisplayName =
+      customerName.trim() ||
+      (activeMode === 'qris_atm'
+        ? 'Pelanggan QRIS'
+        : activeMode === 'mbanking_atm'
+        ? 'Nasabah M-Banking'
+        : isCurrentChannelCard
+        ? 'Nasabah EDC'
+        : 'Nasabah');
+
+    addAtmMiniToCart({
+      type: activeMode,
+      bankName: providerName,
+      cardType: actualCardType,
+      cardNumberMasked: maskedIdentifier,
+      customerName: resolvedDisplayName,
+      nominal,
+      adminEdcFee,
+      counterFee: effectiveCounterFee,
+      targetAccountOrPhone: destination,
+      note: note.trim() || undefined,
+    });
+
+    if (closeModal) setIsPaymentModalOpen(false);
+    setTargetAccountOrPhone('');
+    setNote('');
+    setCounterFeeDiscount(0);
+    setToastMessage(
+      `Layanan ${providerName} Rp ${totalDebited.toLocaleString('id-ID')} masuk ke Keranjang Besar — siap digabung dengan menu lain!`
+    );
+    setTimeout(() => setToastMessage(''), 5500);
   };
 
   // Step 2: Confirm and process transaction + open thermal receipt
@@ -682,9 +774,21 @@ export const AtmMiniView: React.FC = () => {
           </div>
 
           {toastMessage && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 font-bold animate-fade-in">
-              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{toastMessage}</span>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between gap-2 font-bold animate-fade-in flex-wrap">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{toastMessage}</span>
+              </div>
+              {cartTotalCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsMasterCartModalOpen(true)}
+                  className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                >
+                  <ShoppingCart className="w-3 h-3 text-amber-300" />
+                  <span>Buka Keranjang Besar ({cartTotalCount})</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -1618,6 +1722,18 @@ export const AtmMiniView: React.FC = () => {
                 : 'Scan QRIS & Selesaikan Pembayaran'}
             </span>
           </button>
+
+          {primaryTab === 'transfer_topup' && (
+            <button
+              type="button"
+              onClick={() => handleAddTransferToMasterCart(false)}
+              className="w-full py-2.5 px-4 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 font-bold text-xs rounded-xl shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+              title="Gabungkan transaksi transfer / top up ini dengan belanja kasir, PPOB, atau percetakan dalam 1 pembayaran"
+            >
+              <ShoppingCart className="w-4 h-4 text-teal-600" />
+              <span>+ Gabung ke Keranjang Besar (Bayar Sekaligus Menu Lain)</span>
+            </button>
+          )}
         </form>
       </div>
 
@@ -2312,18 +2428,28 @@ export const AtmMiniView: React.FC = () => {
             </div>
 
             {/* Modal Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2.5">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setIsPaymentModalOpen(false)}
-                className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                className="py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
               >
-                Kembali / Ubah Input
+                Kembali
               </button>
+              {primaryTab === 'transfer_topup' && (
+                <button
+                  type="button"
+                  onClick={() => handleAddTransferToMasterCart(true)}
+                  className="py-2.5 px-3 bg-teal-50 hover:bg-teal-100 border border-teal-300 text-teal-800 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
+                  <span>+ Gabung Keranjang</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleConfirmAndExecuteTransaction}
-                className="flex-2 py-2.5 px-4 bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                className="flex-1 py-2.5 px-4 bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 <CheckCircle className="w-4 h-4 text-amber-300" />
                 <span>Konfirmasi & Selesaikan Transaksi</span>

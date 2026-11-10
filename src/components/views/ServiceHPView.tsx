@@ -22,13 +22,24 @@ import {
   Crown,
   Percent,
   Gift,
+  ShoppingCart,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { ServiceTicket, ServiceStatus } from '../../types/pos';
 
 export const ServiceHPView: React.FC = () => {
-  const { shift, services, addServiceTicket, updateServiceStatus, deleteServiceTicket, openReceipt } =
-    usePOS();
+  const {
+    shift,
+    services,
+    addServiceTicket,
+    updateServiceStatus,
+    deleteServiceTicket,
+    openReceipt,
+    cart,
+    addServiceToCart,
+    setIsMasterCartModalOpen,
+    cartTotalCount,
+  } = usePOS();
 
   const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
@@ -314,6 +325,36 @@ export const ServiceHPView: React.FC = () => {
         </button>
       </div>
 
+      {/* Toast Feedback Banner + Master Cart Shortcut */}
+      {toastMessage && (
+        <div className="mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs rounded-xl flex items-center justify-between gap-2 font-bold shadow-2xs flex-wrap">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {cartTotalCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsMasterCartModalOpen(true)}
+                className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs whitespace-nowrap"
+              >
+                <ShoppingCart className="w-3 h-3 text-amber-300" />
+                <span>Buka Keranjang Besar ({cartTotalCount})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setToastMessage('')}
+              className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
+              title="Tutup"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Service Tickets Grid */}
       <div className="flex-1 overflow-y-auto p-4">
         {filteredServices.length === 0 ? (
@@ -451,16 +492,52 @@ export const ServiceHPView: React.FC = () => {
                         </button>
                       )}
 
-                      {ticket.status === 'selesai' && (
-                        <button
-                          onClick={() => handleOpenSettleModal(ticket)}
-                          className="px-3 py-1.5 text-xs font-bold bg-purple-700 hover:bg-purple-600 text-white rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
-                          title="Lunasi sisa biaya (Tunai/QRIS/Kasbon) & serahkan ke pelanggan"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5 text-amber-300" />
-                          <span>Pelunasan & Diambil</span>
-                        </button>
-                      )}
+                      {ticket.status === 'selesai' && (() => {
+                        const isInMasterCart = cart.some(
+                          (c) => c.itemType === 'service' && c.metadata?.serviceTicketId === ticket.id
+                        );
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isInMasterCart) {
+                                  setIsMasterCartModalOpen(true);
+                                  return;
+                                }
+                                const added = addServiceToCart(ticket);
+                                if (added) {
+                                  setToastMessage(
+                                    `Pelunasan servis ${ticket.id} (${ticket.deviceModel}) ditambahkan ke Keranjang Besar!`
+                                  );
+                                  setTimeout(() => setToastMessage(''), 5000);
+                                }
+                              }}
+                              className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border transition cursor-pointer flex items-center gap-1 whitespace-nowrap ${
+                                isInMasterCart
+                                  ? 'bg-teal-50 border-teal-400 text-teal-800 hover:bg-teal-100'
+                                  : 'bg-white border-teal-300 text-teal-800 hover:bg-teal-50'
+                              }`}
+                              title={
+                                isInMasterCart
+                                  ? 'Sudah ada di Keranjang Besar (klik untuk buka)'
+                                  : 'Gabungkan pelunasan servis ini ke Keranjang Besar'
+                              }
+                            >
+                              <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
+                              <span>{isInMasterCart ? 'Di Keranjang' : '+ Keranjang'}</span>
+                            </button>
+                            <button
+                              onClick={() => handleOpenSettleModal(ticket)}
+                              className="px-3 py-1.5 text-xs font-bold bg-purple-700 hover:bg-purple-600 text-white rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                              title="Lunasi sisa biaya (Tunai/QRIS/Kasbon) & serahkan ke pelanggan"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5 text-amber-300" />
+                              <span>Pelunasan & Diambil</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {ticket.status === 'diambil' && (
                         <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
@@ -1220,18 +1297,44 @@ export const ServiceHPView: React.FC = () => {
             </div>
 
             {/* Modal Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setSettlingTicket(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                className="py-2.5 px-3 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  if (!settlingTicket) return;
+                  const baseRemaining = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
+                  const actualRemaining = Math.max(0, baseRemaining - settleServiceDiscount);
+                  if (actualRemaining === 0 && !isOwner) {
+                    alert('Pelunasan servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                    return;
+                  }
+                  const added = addServiceToCart(settlingTicket, actualRemaining);
+                  setSettlingTicket(null);
+                  if (added) {
+                    setToastMessage(
+                      `Pelunasan servis ${settlingTicket.id} (${settlingTicket.deviceModel}) ditambahkan ke Keranjang Besar!`
+                    );
+                  } else {
+                    setIsMasterCartModalOpen(true);
+                  }
+                }}
+                className="py-2.5 px-3 text-xs font-bold text-teal-800 bg-teal-50 border border-teal-300 rounded-xl hover:bg-teal-100 transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                title="Masukkan pelunasan servis ini ke Keranjang Besar"
+              >
+                <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
+                <span>+ Gabung Keranjang</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleConfirmSettle}
-                className={`flex-2 py-2.5 px-4 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                className={`flex-1 py-2.5 px-4 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                   Math.max(
                     0,
                     settlingTicket.totalCost - settlingTicket.downPayment - settleServiceDiscount

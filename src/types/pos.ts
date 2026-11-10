@@ -14,7 +14,7 @@ export interface Product {
   barcode?: string;
 }
 
-export type CartItemType = 'produk' | 'ppob' | 'percetakan' | 'service';
+export type CartItemType = 'produk' | 'ppob' | 'percetakan' | 'service' | 'atm_mini';
 
 export interface CartItemMetadata {
   // PPOB specific
@@ -29,12 +29,26 @@ export interface CartItemMetadata {
   printCategory?: string;
   specNote?: string;
   unit?: string;
+  customerName?: string;
   customerPhone?: string;
   fileOrNote?: string;
   // Service specific
   serviceTicketId?: string;
   deviceModel?: string;
   technicianName?: string;
+  problemDescription?: string;
+  originalTotalCost?: number;
+  downPaymentPaid?: number;
+  // ATM Mini specific
+  atmType?: AtmMiniType;
+  bankName?: string;
+  cardType?: AtmMiniTransaction['cardType'];
+  cardNumberMasked?: string;
+  nominal?: number;
+  adminEdcFee?: number;
+  counterFee?: number;
+  targetAccountOrPhone?: string;
+  note?: string;
 }
 
 export interface CartItem {
@@ -132,6 +146,7 @@ export interface AtmMiniTransaction {
   status: 'sukses' | 'gagal';
   discount?: number;
   note?: string;
+  masterCartInvoiceNo?: string;
 }
 
 export type PPOBCategory =
@@ -170,6 +185,7 @@ export interface PPOBTransaction {
   paymentMethod: 'tunai' | 'qris' | 'hutang';
   status: 'sukses' | 'proses';
   discount?: number;
+  masterCartInvoiceNo?: string;
 }
 
 export type ServiceStatus = 'antrean' | 'proses' | 'selesai' | 'diambil';
@@ -195,6 +211,7 @@ export interface ServiceTicket {
   remainingDebt?: number;
   isPartialPayment?: boolean;
   dueDate?: string;
+  masterCartInvoiceNo?: string;
 }
 
 export type CashMutationCategory =
@@ -369,6 +386,7 @@ export interface PrintOrder {
   paidAmount?: number;
   isPartialPayment?: boolean;
   dueDate?: string;
+  masterCartInvoiceNo?: string;
 }
 
 export interface SyncTransactionEvent {

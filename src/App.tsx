@@ -17,6 +17,7 @@ import { ThermalReceiptModal } from './components/modals/ThermalReceiptModal';
 import { ShiftClosingModal } from './components/modals/ShiftClosingModal';
 import { CashMutationModal } from './components/modals/CashMutationModal';
 import { DataSyncModal } from './components/modals/DataSyncModal';
+import { MasterCartModal } from './components/modals/MasterCartModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 const AppContent: React.FC = () => {
@@ -79,6 +80,7 @@ const AppContent: React.FC = () => {
       <ShiftClosingModal />
       <CashMutationModal />
       <DataSyncModal />
+      <MasterCartModal />
     </div>
   );
 };
