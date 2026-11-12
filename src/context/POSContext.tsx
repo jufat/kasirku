@@ -166,7 +166,7 @@ interface POSContextType {
     paymentMethod?: 'tunai' | 'qris' | 'hutang',
     customerPhone?: string,
     dueDate?: string,
-    adminDeductionType?: 'tambah_transfer' | 'potong_tunai',
+    adminDeductionType?: 'tambah_transfer' | 'potong_tunai' | 'tunai_konter',
     discount?: number,
     paidAmount?: number
   ) => AtmMiniTransaction;
@@ -1533,7 +1533,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: 'tunai' | 'qris' | 'hutang' = 'tunai',
     customerPhone?: string,
     dueDate?: string,
-    adminDeductionType: 'tambah_transfer' | 'potong_tunai' = 'tambah_transfer',
+    adminDeductionType: 'tambah_transfer' | 'potong_tunai' | 'tunai_konter' = 'tambah_transfer',
     discount?: number,
     paidAmount?: number
   ): AtmMiniTransaction => {
@@ -1541,19 +1541,32 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const approvalCode = `APPR-${Math.floor(100000 + Math.random() * 900000)}`;
     const totalAdmin = adminEdcFee + counterFee;
     const isPotongTunai = type === 'tarik_tunai_atm' && adminDeductionType === 'potong_tunai';
+    const isTunaiKonter = type === 'tarik_tunai_atm' && adminDeductionType === 'tunai_konter';
 
     // Perhitungan debet transfer & uang tunai diserahkan:
     // Skenario 1 (tambah_transfer): Nasabah kirim 103.000, fisik diserahkan 100.000 -> Laci keluar 100.000
     // Skenario 2 (potong_tunai): Nasabah kirim 100.000, fisik diserahkan 97.000 -> Laci keluar 97.000
-    const totalDebited = isPotongTunai ? nominal : nominal + totalAdmin;
+    // Skenario 3 (tunai_konter): Nasabah kirim/debet 100.000, fisik diserahkan 100.000 -> Laci keluar 100.000,
+    //   dan biaya admin totalAdmin dibayar tunai di konter -> Masuk Uang Laci (+totalAdmin)
+    const totalDebited = isPotongTunai || isTunaiKonter ? nominal : nominal + totalAdmin;
     const cashHandedOrReceived =
       type === 'tarik_tunai_atm'
         ? (isPotongTunai ? Math.max(0, nominal - totalAdmin) : nominal)
         : totalDebited;
 
-    const isPartial = paidAmount !== undefined && paidAmount < totalDebited && paidAmount >= 0;
-    const actualPaid = isPartial ? paidAmount : (paymentMethod === 'hutang' ? 0 : totalDebited);
-    const remainingDebt = isPartial ? Math.max(0, totalDebited - actualPaid) : (paymentMethod === 'hutang' ? totalDebited : 0);
+    const counterCollectionTarget = isTunaiKonter ? totalAdmin : totalDebited;
+    const isPartial =
+      paidAmount !== undefined && paidAmount > 0 && paidAmount < counterCollectionTarget;
+    const actualPaid = isPartial
+      ? paidAmount
+      : paymentMethod === 'hutang'
+      ? 0
+      : counterCollectionTarget;
+    const remainingDebt = isPartial
+      ? Math.max(0, counterCollectionTarget - actualPaid)
+      : paymentMethod === 'hutang'
+      ? counterCollectionTarget
+      : 0;
 
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
@@ -1595,12 +1608,16 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         date: new Date().toISOString().slice(0, 10),
         customerName: customerName.trim() || 'Nasabah EDC',
         customerPhone: customerPhone?.trim() || targetAccountOrPhone || '-',
-        totalAmount: totalDebited,
+        totalAmount: counterCollectionTarget,
         paidAmount: actualPaid,
         remainingAmount: remainingDebt,
         dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
         status: actualPaid > 0 ? 'cicilan' : 'belum_lunas',
-        note: isPartial
+        note: isTunaiKonter
+          ? isPartial
+            ? `Kasbon Sisa Admin Tarik Tunai [${bankName}] Ref:${traceNo} (Bayar Admin Tunai Rp ${actualPaid.toLocaleString('id-ID')})${note ? ' - ' + note : ''}`
+            : `Kasbon Admin Tarik Tunai [${bankName}] Ref:${traceNo}${note ? ' - ' + note : ''}`
+          : isPartial
           ? `Kasbon Sisa Mini ATM ${type.replace(/_/g, ' ').toUpperCase()} [${bankName}] Ref:${traceNo} (DP Rp ${actualPaid.toLocaleString('id-ID')})${note ? ' - ' + note : ''}`
           : `Kasbon Mini ATM ${type.replace(/_/g, ' ').toUpperCase()} [${bankName}] Ref:${traceNo}${note ? ' - ' + note : ''}`,
       };
@@ -1609,54 +1626,128 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 2. Auto-Journaling Kas Laci & Inter-Module Synchronization:
     if (type === 'tarik_tunai_atm') {
-      // Uang fisik yang benar-benar keluar dari laci kasir:
-      // Jika tambah_transfer: keluar Rp 100.000 (nasabah kirim Rp 103.000)
-      // Jika potong_tunai: keluar Rp 97.000 (nasabah kirim Rp 100.000 pas)
       const cashOutFromDrawer = cashHandedOrReceived;
+      const channelLabel =
+        cardType === 'E-Wallet' || cardType === 'M-Banking' || cardType === 'QRIS'
+          ? cardType
+          : 'EDC';
+
       const mutationKeluar: CashMutation = {
         id: `mut-${Date.now()}-out`,
         timestamp: nowTime,
         type: 'keluar',
         category: 'jasa_transfer',
-        description: isPotongTunai
-          ? `Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName}) - Admin Rp ${totalAdmin.toLocaleString('id-ID')} dipotong tunai (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`
-          : `Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName}) - Nasabah kirim Rp ${totalDebited.toLocaleString('id-ID')} (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`,
+        description: isTunaiKonter
+          ? `Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Diserahkan pokok Rp ${cashOutFromDrawer.toLocaleString('id-ID')} (Admin Rp ${totalAdmin.toLocaleString('id-ID')} bayar tunai di konter)`
+          : isPotongTunai
+          ? `Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Admin Rp ${totalAdmin.toLocaleString('id-ID')} dipotong tunai (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`
+          : `Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Nasabah kirim Rp ${totalDebited.toLocaleString('id-ID')} (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`,
         amount: cashOutFromDrawer,
         paymentMethod: 'tunai',
         runningCashBalance: drawerCashBalance - cashOutFromDrawer,
         recordedBy: shift.cashierName,
       };
 
-      // Catat mutasi laba jasa secara terpisah di jurnal non_tunai (karena dana diterima digital di rekening agen)
-      // agar tidak mendistorsi uang fisik laci kasir!
-      const mutationLaba: CashMutation = {
-        id: `mut-${Date.now()}-fee`,
-        timestamp: nowTime,
-        type: 'masuk',
-        category: 'jasa_transfer',
-        description: `Laba Jasa Tarik Tunai EDC ${bankName} [${traceNo}] (${customerName})`,
-        amount: counterFee,
-        paymentMethod: 'non_tunai',
-        runningCashBalance: drawerCashBalance - cashOutFromDrawer,
-        recordedBy: shift.cashierName,
-      };
+      if (isTunaiKonter) {
+        if (paymentMethod === 'qris') {
+          const mutationAdminNonTunai: CashMutation = {
+            id: `mut-${Date.now() + 1}-fee`,
+            timestamp: nowTime,
+            type: 'masuk',
+            category: 'jasa_transfer',
+            description: `Admin Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] via QRIS (${customerName})`,
+            amount: totalAdmin,
+            paymentMethod: 'non_tunai',
+            runningCashBalance: drawerCashBalance - cashOutFromDrawer,
+            recordedBy: shift.cashierName,
+          };
+          setMutations((prev) => [mutationKeluar, mutationAdminNonTunai, ...prev]);
+          setDigitalBalance((prev) => prev + totalDebited + totalAdmin);
 
-      setMutations((prev) => [mutationKeluar, mutationLaba, ...prev]);
+          setLastSyncEvent({
+            id: `sync-${Date.now()}`,
+            timestamp: nowTime,
+            source: 'atm_mini',
+            actionTitle: `Tarik Tunai ${channelLabel} ${bankName} (Admin QRIS)`,
+            customerName: customerName.trim() || 'Nasabah',
+            drawerCashDelta: -cashOutFromDrawer,
+            digitalBalanceDelta: totalDebited + totalAdmin,
+            note: `Ref: ${traceNo} · Kas Laci: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} | Saldo Digital Bank: +Rp ${(totalDebited + totalAdmin).toLocaleString('id-ID')}`,
+          });
+        } else {
+          // Admin dibayar TUNAI di konter -> Masuk Uang Laci!
+          const cashAdminMasukLaci = actualPaid;
+          const mutationsToAdd: CashMutation[] = [];
 
-      // Saldo digital di rekening penampung agen bertambah dari debet kartu / transfer nasabah
-      setDigitalBalance((prev) => prev + totalDebited);
+          if (cashAdminMasukLaci > 0) {
+            const mutationAdminTunaiMasuk: CashMutation = {
+              id: `mut-${Date.now() + 1}-adm`,
+              timestamp: nowTime,
+              type: 'masuk',
+              category: 'jasa_transfer',
+              description: isPartial
+                ? `Admin Tunai (Bayar Sebagian) Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Masuk Uang Laci Rp ${cashAdminMasukLaci.toLocaleString('id-ID')}, Sisa Kasbon Rp ${remainingDebt.toLocaleString('id-ID')}`
+                : `Bayar Admin Tunai Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Masuk Uang Laci (EDC/App Rp ${adminEdcFee.toLocaleString('id-ID')} + Jasa Rp ${counterFee.toLocaleString('id-ID')})`,
+              amount: cashAdminMasukLaci,
+              paymentMethod: 'tunai',
+              runningCashBalance: drawerCashBalance - cashOutFromDrawer + cashAdminMasukLaci,
+              recordedBy: shift.cashierName,
+            };
+            mutationsToAdd.push(mutationAdminTunaiMasuk);
+          }
 
-      // Real-Time Inter-Module Sync Event
-      setLastSyncEvent({
-        id: `sync-${Date.now()}`,
-        timestamp: nowTime,
-        source: 'atm_mini',
-        actionTitle: `Tarik Tunai EDC ${bankName}`,
-        customerName: customerName.trim() || 'Nasabah EDC',
-        drawerCashDelta: -cashOutFromDrawer,
-        digitalBalanceDelta: totalDebited,
-        note: `Ref: ${traceNo} · Kas Laci: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} | Saldo Digital Bank: +Rp ${totalDebited.toLocaleString('id-ID')}`,
-      });
+          mutationsToAdd.push(mutationKeluar);
+          setMutations((prev) => [...mutationsToAdd, ...prev]);
+
+          // Saldo digital bank bertambah hanya sebesar pokok penarikan
+          setDigitalBalance((prev) => prev + totalDebited);
+
+          const netDrawerDelta = cashAdminMasukLaci - cashOutFromDrawer;
+          setLastSyncEvent({
+            id: `sync-${Date.now()}`,
+            timestamp: nowTime,
+            source: 'atm_mini',
+            actionTitle: `Tarik Tunai ${channelLabel} ${bankName} (Admin Tunai Konter)`,
+            customerName: customerName.trim() || 'Nasabah',
+            drawerCashDelta: netDrawerDelta,
+            digitalBalanceDelta: totalDebited,
+            note:
+              cashAdminMasukLaci > 0
+                ? `Ref: ${traceNo} · Uang Tarikan: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} & Admin Masuk Laci: +Rp ${cashAdminMasukLaci.toLocaleString('id-ID')} (Net Laci ${netDrawerDelta >= 0 ? '+' : '-'}Rp ${Math.abs(netDrawerDelta).toLocaleString('id-ID')}) | Digital: +Rp ${totalDebited.toLocaleString('id-ID')}`
+                : `Ref: ${traceNo} · Uang Tarikan: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} (Admin Kasbon Rp ${remainingDebt.toLocaleString('id-ID')}) | Digital: +Rp ${totalDebited.toLocaleString('id-ID')}`,
+          });
+        }
+      } else {
+        // Skenario 1 & 2: tambah_transfer atau potong_tunai
+        const mutationLaba: CashMutation = {
+          id: `mut-${Date.now() + 1}-fee`,
+          timestamp: nowTime,
+          type: 'masuk',
+          category: 'jasa_transfer',
+          description: `Laba Jasa Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName})`,
+          amount: counterFee,
+          paymentMethod: 'non_tunai',
+          runningCashBalance: drawerCashBalance - cashOutFromDrawer,
+          recordedBy: shift.cashierName,
+        };
+
+        setMutations((prev) => [mutationKeluar, mutationLaba, ...prev]);
+
+        // Saldo digital di rekening penampung agen bertambah dari debet kartu / transfer nasabah
+        setDigitalBalance((prev) => prev + totalDebited);
+
+        // Real-Time Inter-Module Sync Event
+        setLastSyncEvent({
+          id: `sync-${Date.now()}`,
+          timestamp: nowTime,
+          source: 'atm_mini',
+          actionTitle: `Tarik Tunai ${channelLabel} ${bankName}`,
+          customerName: customerName.trim() || 'Nasabah EDC',
+          drawerCashDelta: -cashOutFromDrawer,
+          digitalBalanceDelta: totalDebited,
+          note: `Ref: ${traceNo} · Kas Laci: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} | Saldo Digital Bank: +Rp ${totalDebited.toLocaleString('id-ID')}`,
+        });
+      }
     } else {
       const serviceName =
         type === 'transfer_atm'

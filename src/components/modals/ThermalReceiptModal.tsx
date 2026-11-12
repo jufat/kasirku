@@ -278,17 +278,37 @@ export const ThermalReceiptModal: React.FC = () => {
       if (atmTx.discount && atmTx.discount > 0) {
         lines.push(`Diskon Jasa: -Rp ${atmTx.discount.toLocaleString('id-ID')}`);
       }
+      const atmTotalAdmin = atmTx.adminEdcFee + atmTx.counterFee;
+      const isAtmTunaiKonter = atmTx.type === 'tarik_tunai_atm' && atmTx.adminDeductionType === 'tunai_konter';
       lines.push(
         atmTx.totalDebited === 0
           ? `TOTAL     : Rp 0 (${isCardAtmTx ? 'BEBAS BIAYA OWNER' : 'GRATIS OWNER'})`
+          : isAtmTunaiKonter
+          ? `DEBET/TRF : Rp ${atmTx.totalDebited.toLocaleString('id-ID')}`
           : `TOTAL     : Rp ${atmTx.totalDebited.toLocaleString('id-ID')}`
       );
       if (atmTx.type === 'tarik_tunai_atm') {
-        lines.push(
-          `Tunai Diberikan: Rp ${atmTx.cashHandedOrReceived.toLocaleString('id-ID')}${
-            atmTx.adminDeductionType === 'potong_tunai' ? ' (Potong Admin)' : ''
-          }`
-        );
+        if (isAtmTunaiKonter) {
+          lines.push(`Admin Konter: Rp ${atmTotalAdmin.toLocaleString('id-ID')} (TUNAI DI KONTER)`);
+          lines.push(`Tunai Diberikan: Rp ${atmTx.cashHandedOrReceived.toLocaleString('id-ID')} (Penuh)`);
+          if (atmTx.isPartialPayment || (atmTx.remainingDebt && atmTx.remainingDebt > 0)) {
+            lines.push(`Bayar Admin : Rp ${(atmTx.paidAmount || 0).toLocaleString('id-ID')}`);
+            lines.push(`Sisa Kasbon : Rp ${(atmTx.remainingDebt || 0).toLocaleString('id-ID')}`);
+            if (atmTx.dueDate) lines.push(`Jatuh Tempo : ${atmTx.dueDate}`);
+            lines.push(`Status      : BAYAR SEBAGIAN (KASBON ADMIN)`);
+          } else if (atmTx.paymentMethod === 'hutang') {
+            lines.push(`Status      : KASBON ADMIN PENUH`);
+            if (atmTx.dueDate) lines.push(`Jatuh Tempo : ${atmTx.dueDate}`);
+          } else {
+            lines.push(`Status      : LUNAS (ADMIN MASUK LACI)`);
+          }
+        } else {
+          lines.push(
+            `Tunai Diberikan: Rp ${atmTx.cashHandedOrReceived.toLocaleString('id-ID')}${
+              atmTx.adminDeductionType === 'potong_tunai' ? ' (Potong Admin)' : ''
+            }`
+          );
+        }
       } else if (atmTx.isPartialPayment || (atmTx.remainingDebt && atmTx.remainingDebt > 0)) {
         lines.push(`Bayar Tunai: Rp ${(atmTx.paidAmount || 0).toLocaleString('id-ID')}`);
         lines.push(`Sisa Kasbon: Rp ${(atmTx.remainingDebt || 0).toLocaleString('id-ID')}`);
@@ -1355,7 +1375,11 @@ export const ThermalReceiptModal: React.FC = () => {
                     </div>
                   ) : null}
                   <div className="flex justify-between font-black text-slate-900 text-sm">
-                    <span>TOTAL TRANSAKSI:</span>
+                    <span>
+                      {atmTx.type === 'tarik_tunai_atm' && atmTx.adminDeductionType === 'tunai_konter'
+                        ? 'DEBET / TRANSFER POKOK:'
+                        : 'TOTAL TRANSAKSI:'}
+                    </span>
                     <span className="font-mono">
                       {atmTx.totalDebited === 0
                         ? 'Rp 0 (BEBAS BIAYA OWNER)'
@@ -1363,14 +1387,52 @@ export const ThermalReceiptModal: React.FC = () => {
                     </span>
                   </div>
                   {atmTx.type === 'tarik_tunai_atm' ? (
-                    <div className="flex justify-between text-emerald-800 font-black text-[11px] bg-emerald-50/80 p-1 rounded border border-emerald-200">
-                      <span>Uang Fisik Diterima Nasabah:</span>
-                      <span className="font-mono">
-                        Rp {atmTx.cashHandedOrReceived.toLocaleString('id-ID')}
-                        {atmTx.adminDeductionType === 'potong_tunai' && (
-                          <span className="text-[9px] font-normal text-amber-800 ml-1">(Potong Admin)</span>
-                        )}
-                      </span>
+                    <div className="space-y-1">
+                      {atmTx.adminDeductionType === 'tunai_konter' && (
+                        <div className="flex justify-between text-teal-900 font-bold text-[11px] bg-teal-50 p-1 rounded border border-teal-200">
+                          <span>Admin Bayar Tunai (Konter):</span>
+                          <span className="font-mono font-black">
+                            Rp {(atmTx.adminEdcFee + atmTx.counterFee).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-emerald-800 font-black text-[11px] bg-emerald-50/80 p-1 rounded border border-emerald-200">
+                        <span>Uang Fisik Diterima Nasabah:</span>
+                        <span className="font-mono">
+                          Rp {atmTx.cashHandedOrReceived.toLocaleString('id-ID')}
+                          {atmTx.adminDeductionType === 'potong_tunai' && (
+                            <span className="text-[9px] font-normal text-amber-800 ml-1">(Potong Admin)</span>
+                          )}
+                          {atmTx.adminDeductionType === 'tunai_konter' && (
+                            <span className="text-[9px] font-normal text-teal-800 ml-1">(Admin Tunai)</span>
+                          )}
+                        </span>
+                      </div>
+                      {atmTx.adminDeductionType === 'tunai_konter' && (atmTx.isPartialPayment || (atmTx.remainingDebt && atmTx.remainingDebt > 0)) && (
+                        <div className="space-y-0.5 bg-amber-50 p-1.5 rounded-lg border border-amber-300 mt-1">
+                          <div className="flex justify-between text-emerald-800 text-[10.5px]">
+                            <span>Bayar Admin Tunai:</span>
+                            <span className="font-mono font-bold">
+                              Rp {(atmTx.paidAmount || 0).toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-rose-700 font-black text-[11px]">
+                            <span>Sisa Kasbon Admin:</span>
+                            <span className="font-mono">
+                              Rp {(atmTx.remainingDebt || 0).toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          {atmTx.dueDate && (
+                            <div className="flex justify-between text-slate-500 text-[9.5px]">
+                              <span>Jatuh Tempo:</span>
+                              <span>{atmTx.dueDate}</span>
+                            </div>
+                          )}
+                          <div className="text-center font-black text-[10px] text-amber-900 bg-amber-100/90 py-0.5 rounded mt-0.5">
+                            STATUS: BAYAR SEBAGIAN (KASBON ADMIN)
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : atmTx.isPartialPayment || (atmTx.remainingDebt && atmTx.remainingDebt > 0) ? (
                     <div className="space-y-0.5 bg-amber-50 p-1.5 rounded-lg border border-amber-300 mt-1">
@@ -1406,7 +1468,9 @@ export const ThermalReceiptModal: React.FC = () => {
                   )}
                   {(!atmTx.isPartialPayment && !(atmTx.remainingDebt && atmTx.remainingDebt > 0)) && (
                     <div className="text-center text-[10px] text-emerald-800 font-extrabold bg-emerald-50 py-1 rounded mt-1 border border-emerald-300">
-                      {isCardAtmTx
+                      {atmTx.type === 'tarik_tunai_atm' && atmTx.adminDeductionType === 'tunai_konter'
+                        ? 'STATUS: BERHASIL (ADMIN TUNAI MASUK LACI)'
+                        : isCardAtmTx
                         ? 'STATUS: TRANSAKSI BERHASIL (APPROVED EDC)'
                         : 'STATUS: TRANSAKSI BERHASIL (SUKSES)'}
                     </div>

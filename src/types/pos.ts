@@ -142,7 +142,7 @@ export interface AtmMiniTransaction {
   remainingDebt?: number;
   isPartialPayment?: boolean;
   dueDate?: string;
-  adminDeductionType?: 'tambah_transfer' | 'potong_tunai';
+  adminDeductionType?: 'tambah_transfer' | 'potong_tunai' | 'tunai_konter';
   status: 'sukses' | 'gagal';
   discount?: number;
   note?: string;

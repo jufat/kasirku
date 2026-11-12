@@ -161,7 +161,8 @@ export const AtmMiniView: React.FC = () => {
   // Skema Admin Tarik Tunai:
   // 'tambah_transfer': nasabah kirim 103.000, fisik diserahkan 100.000 (laci keluar 100.000)
   // 'potong_tunai': nasabah kirim 100.000, fisik diserahkan 97.000 (laci keluar 97.000)
-  const [adminDeductionType, setAdminDeductionType] = useState<'tambah_transfer' | 'potong_tunai'>('tambah_transfer');
+  // 'tunai_konter': nasabah kirim/debet 100.000, fisik diserahkan 100.000 (laci keluar 100.000), admin bayar tunai di konter -> masuk uang laci (+totalAdmin)
+  const [adminDeductionType, setAdminDeductionType] = useState<'tambah_transfer' | 'potong_tunai' | 'tunai_konter'>('tambah_transfer');
 
   // Active mode mapped to AtmMiniType
   const activeMode: AtmMiniType =
@@ -269,11 +270,14 @@ export const AtmMiniView: React.FC = () => {
   const effectiveCounterFee = Math.max(0, counterFee - counterFeeDiscount);
   const totalAdmin = adminEdcFee + effectiveCounterFee;
   const isPotongTunai = isTarikTunai && adminDeductionType === 'potong_tunai';
+  const isTunaiKonter = isTarikTunai && adminDeductionType === 'tunai_konter';
 
   // Skenario 1 (tambah_transfer): Nasabah kirim 103.000, fisik diserahkan 100.000 (Laci keluar 100.000)
   // Skenario 2 (potong_tunai): Nasabah kirim 100.000, fisik diserahkan 97.000 (Laci keluar 97.000)
-  const totalDebited = isPotongTunai ? nominal : nominal + totalAdmin;
+  // Skenario 3 (tunai_konter): Nasabah kirim 100.000, fisik diserahkan 100.000 (Laci -100.000), admin dibayar tunai di konter -> Masuk Uang Laci (+totalAdmin)
+  const totalDebited = isPotongTunai || isTunaiKonter ? nominal : nominal + totalAdmin;
   const cashHandedOut = isPotongTunai ? Math.max(0, nominal - totalAdmin) : nominal;
+  const netDrawerDeltaTarik = (isTunaiKonter ? totalAdmin : 0) - cashHandedOut;
 
   // Step 1: Open Payment & Confirmation Dialog
   const handleSubmit = (e: React.FormEvent) => {
@@ -309,8 +313,9 @@ export const AtmMiniView: React.FC = () => {
       }
     }
 
-    // Default cash received in modal to totalDebited
-    setCashReceivedInput(totalDebited);
+    // Default payment method & cash received in modal
+    setAtmMiniPaymentMethod('tunai');
+    setCashReceivedInput(isTunaiKonter ? totalAdmin : totalDebited);
     setAtmMiniDebtorName(customerName.trim());
     setAtmMiniKasbonError(null);
     setIsPaymentModalOpen(true);
@@ -407,7 +412,12 @@ export const AtmMiniView: React.FC = () => {
   // Step 2: Confirm and process transaction + open thermal receipt
   const handleConfirmAndExecuteTransaction = () => {
     const isTarikTunai = primaryTab === 'tarik_tunai';
-    const isPartialAtmMini = !isTarikTunai && atmMiniPaymentMethod === 'tunai' && cashReceivedInput > 0 && cashReceivedInput < totalDebited;
+    const cashPaymentTarget = isTunaiKonter ? totalAdmin : totalDebited;
+    const isPartialAtmMini =
+      (!isTarikTunai || isTunaiKonter) &&
+      atmMiniPaymentMethod === 'tunai' &&
+      cashReceivedInput > 0 &&
+      cashReceivedInput < cashPaymentTarget;
 
     // Validasi khusus pembayaran Kasbon / Hutang & Bayar Sebagian
     let finalCustomerName = customerName.trim();
@@ -502,7 +512,7 @@ export const AtmMiniView: React.FC = () => {
       atmMiniDueDate,
       adminDeductionType,
       counterFeeDiscount > 0 ? counterFeeDiscount : undefined,
-      isPartialAtmMini ? cashReceivedInput : (atmMiniPaymentMethod === 'hutang' ? 0 : totalDebited)
+      isPartialAtmMini ? cashReceivedInput : (atmMiniPaymentMethod === 'hutang' ? 0 : (isTunaiKonter ? totalAdmin : totalDebited))
     );
 
     setIsPaymentModalOpen(false);
@@ -520,7 +530,9 @@ export const AtmMiniView: React.FC = () => {
 
     const toastCashMsg =
       primaryTab === 'tarik_tunai'
-        ? `Tarik Tunai ${tx.bankName}: Uang fisik laci berkurang -Rp ${tx.cashHandedOrReceived.toLocaleString('id-ID')} (${isPotongTunai ? 'potong admin' : 'nasabah kirim sekalian admin'}).`
+        ? isTunaiKonter
+          ? `Tarik Tunai ${tx.bankName}: Uang tarikan keluar -Rp ${tx.cashHandedOrReceived.toLocaleString('id-ID')} & Admin tunai masuk uang laci +Rp ${totalAdmin.toLocaleString('id-ID')}.`
+          : `Tarik Tunai ${tx.bankName}: Uang fisik laci berkurang -Rp ${tx.cashHandedOrReceived.toLocaleString('id-ID')} (${isPotongTunai ? 'potong admin' : 'nasabah kirim sekalian admin'}).`
         : `Transaksi ${serviceName} berhasil diproses & uang tunai Rp ${tx.cashHandedOrReceived.toLocaleString('id-ID')} dicatat ke laci!`;
 
     setToastMessage(toastCashMsg);
@@ -1566,17 +1578,17 @@ export const AtmMiniView: React.FC = () => {
             {/* Opsi Skema Biaya Admin Khusus Tarik Tunai */}
             {isTarikTunai && (
               <div className="p-3 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 rounded-xl border border-amber-300 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span>Pilih Skema Biaya Admin Tarik Tunai:</span>
                   </label>
-                  <span className="text-[10px] font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                    Total Admin: Rp {totalAdmin.toLocaleString('id-ID')}
+                  <span className="text-[10px] font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 whitespace-nowrap shrink-0 tabular-nums">
+                    Admin: Rp {totalAdmin.toLocaleString('id-ID')}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   {/* Option 1: Kirim Sekalian Admin */}
                   <button
                     type="button"
@@ -1587,18 +1599,18 @@ export const AtmMiniView: React.FC = () => {
                         : 'bg-white border-amber-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
-                        <span className={`w-2.5 h-2.5 rounded-full ${adminDeductionType === 'tambah_transfer' ? 'bg-teal-600' : 'bg-slate-300'}`} />
-                        Kirim Sekalian Admin
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${adminDeductionType === 'tambah_transfer' ? 'bg-teal-600' : 'bg-slate-300'}`} />
+                        <span>Kirim Sekalian Admin</span>
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-teal-900 tabular-nums whitespace-nowrap">
+                        Transfer Rp {(nominal + totalAdmin).toLocaleString('id-ID')}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-tight">
-                      Nasabah transfer: <strong className="text-teal-900 font-mono">Rp {(nominal + totalAdmin).toLocaleString('id-ID')}</strong>
-                    </p>
-                    <div className="mt-1 text-[10px] font-bold text-teal-900 bg-white/90 p-1 rounded border border-teal-200">
-                      Diserahkan ke nasabah: <span className="font-mono text-slate-900">Rp {nominal.toLocaleString('id-ID')}</span>
-                      <div className="text-rose-600 font-black">Kas Laci: -Rp {nominal.toLocaleString('id-ID')}</div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-slate-600 pl-4">
+                      <span>Diserahkan tunai: <strong className="font-mono text-slate-900 tabular-nums">Rp {nominal.toLocaleString('id-ID')}</strong></span>
+                      <span className="text-rose-600 font-black font-mono tabular-nums whitespace-nowrap">Laci: -Rp {nominal.toLocaleString('id-ID')}</span>
                     </div>
                   </button>
 
@@ -1612,18 +1624,45 @@ export const AtmMiniView: React.FC = () => {
                         : 'bg-white border-amber-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
-                        <span className={`w-2.5 h-2.5 rounded-full ${adminDeductionType === 'potong_tunai' ? 'bg-amber-600' : 'bg-slate-300'}`} />
-                        Potong dari Uang Tunai
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${adminDeductionType === 'potong_tunai' ? 'bg-amber-600' : 'bg-slate-300'}`} />
+                        <span>Potong dari Uang Tunai</span>
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-amber-900 tabular-nums whitespace-nowrap">
+                        Transfer Rp {nominal.toLocaleString('id-ID')}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-tight">
-                      Nasabah transfer pas: <strong className="text-amber-900 font-mono">Rp {nominal.toLocaleString('id-ID')}</strong>
-                    </p>
-                    <div className="mt-1 text-[10px] font-bold text-amber-950 bg-white/90 p-1 rounded border border-amber-300">
-                      Diserahkan ke nasabah: <span className="font-mono text-amber-900">Rp {cashHandedOut.toLocaleString('id-ID')}</span>
-                      <div className="text-rose-600 font-black">Kas Laci: -Rp {cashHandedOut.toLocaleString('id-ID')}</div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-slate-600 pl-4">
+                      <span>Diserahkan dipotong admin: <strong className="font-mono text-amber-900 tabular-nums">Rp {Math.max(0, nominal - totalAdmin).toLocaleString('id-ID')}</strong></span>
+                      <span className="text-rose-600 font-black font-mono tabular-nums whitespace-nowrap">Laci: -Rp {Math.max(0, nominal - totalAdmin).toLocaleString('id-ID')}</span>
+                    </div>
+                  </button>
+
+                  {/* Option 3: Admin Bayar Tunai di Konter (Masuk Uang Laci) */}
+                  <button
+                    type="button"
+                    onClick={() => setAdminDeductionType('tunai_konter')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      adminDeductionType === 'tunai_konter'
+                        ? 'bg-emerald-50 border-emerald-600 ring-2 ring-emerald-500 shadow-xs'
+                        : 'bg-white border-amber-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${adminDeductionType === 'tunai_konter' ? 'bg-emerald-600' : 'bg-slate-300'}`} />
+                        <span>Admin Bayar Tunai di Konter</span>
+                      </span>
+                      <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0">
+                        Masuk Uang Laci
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[10px] text-slate-600 pl-4">
+                      <span>Transfer pokok: <strong className="font-mono text-slate-900 tabular-nums">Rp {nominal.toLocaleString('id-ID')}</strong> · Serahkan: <strong className="font-mono text-rose-700 tabular-nums">Rp {nominal.toLocaleString('id-ID')}</strong></span>
+                      <span className="text-emerald-700 font-black font-mono tabular-nums whitespace-nowrap">
+                        Admin Tunai Laci: +Rp {totalAdmin.toLocaleString('id-ID')}
+                      </span>
                     </div>
                   </button>
                 </div>
@@ -1632,7 +1671,7 @@ export const AtmMiniView: React.FC = () => {
 
             {/* Breakdown regarding physical cash and debited card balance */}
             <div className="pt-2 border-t border-slate-200 space-y-1.5">
-              <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline justify-between gap-2">
                 <span className="font-bold text-slate-700">
                   {primaryTab === 'tarik_tunai' && tarikChannel === 'qris'
                     ? 'Total Ditransfer via QRIS oleh Nasabah:'
@@ -1642,34 +1681,59 @@ export const AtmMiniView: React.FC = () => {
                     ? 'Total Dibayar Nasabah:'
                     : primaryTab === 'transfer_topup' && transferChannel === 'mbanking'
                     ? 'Total Didebet dari Rekening / Dibayar Nasabah:'
+                    : isTunaiKonter
+                    ? 'Total Ditransfer / Didebet Nasabah (Pokok):'
                     : isTarikTunai
                     ? 'Total Ditransfer / Didebet Nasabah:'
                     : 'Total Didebet dari Kartu Nasabah:'}
                 </span>
-                <span className="text-base font-extrabold text-slate-900 font-mono tabular-nums">
+                <span className="text-base font-extrabold text-slate-900 font-mono tabular-nums whitespace-nowrap">
                   Rp {totalDebited.toLocaleString('id-ID')}
                 </span>
               </div>
 
               {isTarikTunai ? (
-                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 text-[11px] space-y-1">
-                  <div className="flex items-center justify-between font-bold">
-                    <span>Uang Fisik Diberikan dari Laci:</span>
-                    <span className="font-mono text-sm font-black text-amber-900">
-                      Rp {cashHandedOut.toLocaleString('id-ID')}
-                    </span>
+                isTunaiKonter ? (
+                  <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-300 text-emerald-950 text-[11px] space-y-1">
+                    <div className="flex items-center justify-between font-bold">
+                      <span>Uang Tarikan Diserahkan (Keluar Laci):</span>
+                      <span className="font-mono font-black text-rose-700 tabular-nums">
+                        -Rp {cashHandedOut.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between font-bold text-emerald-800">
+                      <span>Bayar Admin Tunai di Konter (Masuk Laci):</span>
+                      <span className="font-mono font-black tabular-nums">
+                        +Rp {totalAdmin.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10.5px] font-black pt-1 border-t border-emerald-200 text-slate-900">
+                      <span>Selisih Bersih Kas Laci:</span>
+                      <span className={`font-mono tabular-nums ${netDrawerDeltaTarik >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {netDrawerDeltaTarik >= 0 ? '+' : '-'}Rp {Math.abs(netDrawerDeltaTarik).toLocaleString('id-ID')}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-[10px] text-rose-700 font-bold pt-0.5 border-t border-amber-200">
-                    <span>Pengurangan Saldo Kas Laci:</span>
-                    <span className="font-mono font-black">
-                      -Rp {cashHandedOut.toLocaleString('id-ID')}
-                    </span>
+                ) : (
+                  <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 text-[11px] space-y-1">
+                    <div className="flex items-center justify-between font-bold">
+                      <span>Uang Fisik Diberikan dari Laci:</span>
+                      <span className="font-mono text-sm font-black text-amber-900 tabular-nums">
+                        Rp {cashHandedOut.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-rose-700 font-bold pt-0.5 border-t border-amber-200">
+                      <span>Pengurangan Saldo Kas Laci:</span>
+                      <span className="font-mono font-black tabular-nums">
+                        -Rp {cashHandedOut.toLocaleString('id-ID')}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )
               ) : (
                 <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900 text-[11px] flex items-center justify-between font-medium">
                   <span>Uang Fisik Diterima ke Laci:</span>
-                  <span className="font-bold font-mono">
+                  <span className="font-bold font-mono tabular-nums">
                     Rp {totalDebited.toLocaleString('id-ID')}
                   </span>
                 </div>
@@ -1903,7 +1967,17 @@ export const AtmMiniView: React.FC = () => {
                         +Rp {tx.counterFee.toLocaleString('id-ID')}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-extrabold text-slate-900 tabular-nums">
-                        Rp {tx.totalDebited.toLocaleString('id-ID')}
+                        <div>Rp {tx.totalDebited.toLocaleString('id-ID')}</div>
+                        {tx.type === 'tarik_tunai_atm' && tx.adminDeductionType === 'tunai_konter' && (
+                          <div className="text-[10px] font-bold text-emerald-700">
+                            +Admin Laci Rp {(tx.adminEdcFee + tx.counterFee).toLocaleString('id-ID')}
+                          </div>
+                        )}
+                        {tx.type === 'tarik_tunai_atm' && tx.adminDeductionType === 'potong_tunai' && (
+                          <div className="text-[10px] font-semibold text-amber-700">
+                            Potong Admin
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase">
@@ -2080,26 +2154,40 @@ export const AtmMiniView: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="border-t-2 border-slate-200 pt-2 flex items-baseline justify-between">
-                  <span className="text-xs font-black text-slate-900 uppercase">
-                    {activeMode === 'qris_atm'
-                      ? 'Total Bayar via QRIS:'
-                      : activeMode === 'topup_ewallet_atm'
-                      ? 'Total Diproses E-Wallet:'
-                      : isTarikTunai
-                      ? 'Total Ditransfer / Didebet Nasabah:'
-                      : 'Total Didebet dari Kartu Nasabah:'}
-                  </span>
-                  <span className="text-xl font-black font-mono text-emerald-800 tabular-nums">
-                    Rp {totalDebited.toLocaleString('id-ID')}
-                  </span>
+                <div className="border-t-2 border-slate-200 pt-2 space-y-1.5">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs font-black text-slate-900 uppercase">
+                      {activeMode === 'qris_atm'
+                        ? 'Total Bayar via QRIS:'
+                        : activeMode === 'topup_ewallet_atm'
+                        ? 'Total Diproses E-Wallet:'
+                        : isTunaiKonter
+                        ? 'Debet / Transfer Pokok Nasabah:'
+                        : isTarikTunai
+                        ? 'Total Ditransfer / Didebet Nasabah:'
+                        : 'Total Didebet dari Kartu Nasabah:'}
+                    </span>
+                    <span className="text-xl font-black font-mono text-emerald-800 tabular-nums">
+                      Rp {totalDebited.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  {isTunaiKonter && (
+                    <div className="flex items-center justify-between bg-emerald-100/80 border border-emerald-300 rounded-lg px-2.5 py-1.5 text-xs font-black text-emerald-950">
+                      <span>Admin Bayar Tunai di Konter (Masuk Laci):</span>
+                      <span className="font-mono tabular-nums">+Rp {totalAdmin.toLocaleString('id-ID')}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Pilihan Metode Pembayaran: Tunai, QRIS, Kasbon (Hutang) */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-700 block">
-                  {isCurrentChannelCard ? 'Metode Pembayaran Transaksi EDC:' : 'Metode Pembayaran Transaksi:'}
+                  {isTunaiKonter
+                    ? 'Metode Terima Biaya Admin di Konter:'
+                    : isCurrentChannelCard
+                    ? 'Metode Pembayaran Transaksi EDC:'
+                    : 'Metode Pembayaran Transaksi:'}
                 </label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
@@ -2141,10 +2229,14 @@ export const AtmMiniView: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-sky-900">
-                    Minta nasabah scan QRIS toko sebesar <span className="font-bold font-mono">Rp {totalDebited.toLocaleString('id-ID')}</span>.
+                    {isTunaiKonter
+                      ? <>Minta nasabah scan QRIS untuk biaya admin sebesar <span className="font-bold font-mono">Rp {totalAdmin.toLocaleString('id-ID')}</span>.</>
+                      : <>Minta nasabah scan QRIS toko sebesar <span className="font-bold font-mono">Rp {totalDebited.toLocaleString('id-ID')}</span>.</>}
                   </p>
                   <p className="text-[10px] text-sky-700">
-                    💡 Saldo masuk ke rekening QRIS toko, kas laci tetap seimbang.
+                    {isTunaiKonter
+                      ? '💡 Catatan: Bila admin dibayar uang fisik agar masuk Uang Laci, pilih metode Tunai.'
+                      : '💡 Saldo masuk ke rekening QRIS toko, kas laci tetap seimbang.'}
                   </p>
                 </div>
               )}
@@ -2216,7 +2308,7 @@ export const AtmMiniView: React.FC = () => {
                   <div className="p-2 bg-amber-100/90 rounded-lg text-[11px] text-amber-950 font-medium border border-amber-300 flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                     <span>
-                      Dicatat sebesar <strong className="font-mono font-bold">Rp {totalDebited.toLocaleString('id-ID')}</strong> di Buku Hutang atas nama:{' '}
+                      Dicatat sebesar <strong className="font-mono font-bold">Rp {(isTunaiKonter ? totalAdmin : totalDebited).toLocaleString('id-ID')}</strong> {isTunaiKonter ? '(Kasbon Admin Konter)' : ''} di Buku Hutang atas nama:{' '}
                       <strong className="underline font-bold text-amber-950">
                         {atmMiniDebtorName.trim() || customerName.trim() || '(Ketik nama di atas)'}
                       </strong>
@@ -2227,52 +2319,175 @@ export const AtmMiniView: React.FC = () => {
 
               {atmMiniPaymentMethod === 'tunai' && (
                 isTarikTunai ? (
-                  <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 font-bold text-xs">
-                        <Banknote className="w-4 h-4 text-amber-600" />
-                        <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
+                  isTunaiKonter ? (
+                    <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2.5 text-emerald-950">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 font-bold text-xs">
+                          <Banknote className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>Petunjuk Kasir: Serahkan Tarikan & Terima Admin Tunai</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-200/80 text-emerald-950 border border-emerald-300 whitespace-nowrap shrink-0">
+                          Admin Masuk Laci
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/90 text-amber-950 border border-amber-300">
-                        {isPotongTunai ? '✂️ Potong dari Tunai' : '📲 Kirim Sekalian Admin'}
-                      </span>
-                    </div>
 
-                    <div className="flex items-baseline justify-between pt-1 border-t border-amber-200">
-                      <span className="text-xs font-bold text-slate-800">Uang Fisik Diserahkan dari Laci:</span>
-                      <span className="text-xl font-black font-mono text-amber-950">
-                        Rp {cashHandedOut.toLocaleString('id-ID')}
-                      </span>
-                    </div>
+                      <div className="p-2 bg-white/90 rounded-lg text-[11px] leading-snug space-y-1 border border-emerald-200">
+                        <div className="flex items-center justify-between text-slate-800">
+                          <span>1. Nasabah transfer / debet pokok:</span>
+                          <strong className="font-mono tabular-nums">Rp {nominal.toLocaleString('id-ID')}</strong>
+                        </div>
+                        <div className="flex items-center justify-between text-rose-700 font-bold">
+                          <span>2. Serahkan uang tarikan dari laci:</span>
+                          <strong className="font-mono tabular-nums">-Rp {cashHandedOut.toLocaleString('id-ID')}</strong>
+                        </div>
+                        <div className="flex items-center justify-between text-emerald-800 font-black">
+                          <span>3. Terima admin tunai (Masuk Uang Laci):</span>
+                          <strong className="font-mono tabular-nums">+Rp {totalAdmin.toLocaleString('id-ID')}</strong>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-emerald-100 font-black text-slate-900">
+                          <span>Dampak Bersih Saldo Kas Laci:</span>
+                          <span className={`font-mono tabular-nums ${netDrawerDeltaTarik >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {netDrawerDeltaTarik >= 0 ? '+' : '-'}Rp {Math.abs(netDrawerDeltaTarik).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                      </div>
 
-                    <div className="p-2 bg-white/80 rounded-lg text-[11px] leading-tight space-y-1 border border-amber-200">
-                      {isPotongTunai ? (
-                        <>
-                          <p className="text-slate-800">
-                            • Nasabah transfer pas: <strong className="font-mono">Rp {nominal.toLocaleString('id-ID')}</strong> (tidak sekalian admin).
-                          </p>
-                          <p className="text-slate-800">
-                            • Admin <strong className="font-mono">Rp {totalAdmin.toLocaleString('id-ID')}</strong> dipotong langsung dari uang tunai.
-                          </p>
-                          <p className="text-rose-700 font-bold">
-                            ⚡ Kas Laci Berkurang: <span className="font-mono font-black">-Rp {cashHandedOut.toLocaleString('id-ID')}</span>.
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-slate-800">
-                            • Nasabah transfer sekalian admin: <strong className="font-mono">Rp {totalDebited.toLocaleString('id-ID')}</strong>.
-                          </p>
-                          <p className="text-slate-800">
-                            • Kasir menyerahkan nominal penuh: <strong className="font-mono">Rp {nominal.toLocaleString('id-ID')}</strong>.
-                          </p>
-                          <p className="text-rose-700 font-bold">
-                            ⚡ Kas Laci Berkurang: <span className="font-mono font-black">-Rp {nominal.toLocaleString('id-ID')}</span>.
-                          </p>
-                        </>
-                      )}
+                      {/* Cash Admin Change Calculator */}
+                      <div className="space-y-1.5 pt-1 border-t border-emerald-200">
+                        <label className="text-[11px] font-bold text-emerald-900 flex items-center justify-between">
+                          <span>Uang Tunai Admin Diberikan Nasabah:</span>
+                          <span className="font-mono text-emerald-950">Tagihan: Rp {totalAdmin.toLocaleString('id-ID')}</span>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-500">
+                            Rp
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={cashReceivedInput ? cashReceivedInput.toLocaleString('id-ID') : ''}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setCashReceivedInput(val ? parseInt(val, 10) : 0);
+                            }}
+                            className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            placeholder={totalAdmin.toLocaleString('id-ID')}
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1 overflow-x-auto pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setCashReceivedInput(totalAdmin)}
+                            className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200/80 hover:bg-emerald-300 text-emerald-950 rounded transition cursor-pointer whitespace-nowrap"
+                          >
+                            Uang Pas
+                          </button>
+                          {[5000, 10000, 20000, 50000, 100000].map((quickCash) => (
+                            <button
+                              key={quickCash}
+                              type="button"
+                              onClick={() => setCashReceivedInput(quickCash)}
+                              className="px-2 py-0.5 text-[10px] font-mono font-bold bg-white border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100 transition cursor-pointer shrink-0"
+                            >
+                              Rp {quickCash.toLocaleString('id-ID')}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-0.5 text-xs">
+                          <span className="font-bold text-slate-700">
+                            {cashReceivedInput >= totalAdmin
+                              ? 'Kembalian Uang Admin:'
+                              : cashReceivedInput > 0
+                              ? 'Sisa Kasbon Admin (Buku Hutang):'
+                              : 'Kurang Bayar Admin:'}
+                          </span>
+                          <span
+                            className={`font-mono font-black text-sm tabular-nums ${
+                              cashReceivedInput >= totalAdmin
+                                ? 'text-emerald-700'
+                                : cashReceivedInput > 0
+                                ? 'text-amber-700'
+                                : 'text-rose-600'
+                            }`}
+                          >
+                            {cashReceivedInput >= totalAdmin
+                              ? `Rp ${(cashReceivedInput - totalAdmin).toLocaleString('id-ID')}`
+                              : `Rp ${(totalAdmin - cashReceivedInput).toLocaleString('id-ID')}`}
+                          </span>
+                        </div>
+
+                        {cashReceivedInput > 0 && cashReceivedInput < totalAdmin && (
+                          <div className="mt-1 p-2 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5">
+                            <p className="text-[10px] text-amber-900 leading-tight">
+                              💡 <strong>Bayar Sebagian Admin:</strong> Tunai Rp {cashReceivedInput.toLocaleString('id-ID')} masuk laci & sisa <strong className="font-mono">Rp {(totalAdmin - cashReceivedInput).toLocaleString('id-ID')}</strong> dicatat ke Buku Kasbon:
+                            </p>
+                            <input
+                              type="text"
+                              value={atmMiniDebtorName}
+                              onChange={(e) => {
+                                setAtmMiniDebtorName(e.target.value);
+                                if (atmMiniKasbonError) setAtmMiniKasbonError(null);
+                              }}
+                              placeholder="Ketik nama pelanggan yang kasbon admin..."
+                              className="w-full px-2.5 py-1 text-xs bg-white border border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                            {atmMiniKasbonError && (
+                              <p className="text-[10px] font-bold text-rose-600">⚠️ {atmMiniKasbonError}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-amber-950">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-xs">
+                          <Banknote className="w-4 h-4 text-amber-600" />
+                          <span>Petunjuk Kasir: Serahkan Uang Tunai ke Nasabah</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/90 text-amber-950 border border-amber-300">
+                          {isPotongTunai ? '✂️ Potong dari Tunai' : '📲 Kirim Sekalian Admin'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline justify-between pt-1 border-t border-amber-200">
+                        <span className="text-xs font-bold text-slate-800">Uang Fisik Diserahkan dari Laci:</span>
+                        <span className="text-xl font-black font-mono text-amber-950">
+                          Rp {cashHandedOut.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-white/80 rounded-lg text-[11px] leading-tight space-y-1 border border-amber-200">
+                        {isPotongTunai ? (
+                          <>
+                            <p className="text-slate-800">
+                              • Nasabah transfer pas: <strong className="font-mono">Rp {nominal.toLocaleString('id-ID')}</strong> (tidak sekalian admin).
+                            </p>
+                            <p className="text-slate-800">
+                              • Admin <strong className="font-mono">Rp {totalAdmin.toLocaleString('id-ID')}</strong> dipotong langsung dari uang tunai.
+                            </p>
+                            <p className="text-rose-700 font-bold">
+                              ⚡ Kas Laci Berkurang: <span className="font-mono font-black">-Rp {cashHandedOut.toLocaleString('id-ID')}</span>.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-slate-800">
+                              • Nasabah transfer sekalian admin: <strong className="font-mono">Rp {totalDebited.toLocaleString('id-ID')}</strong>.
+                            </p>
+                            <p className="text-slate-800">
+                              • Kasir menyerahkan nominal penuh: <strong className="font-mono">Rp {nominal.toLocaleString('id-ID')}</strong>.
+                            </p>
+                            <p className="text-rose-700 font-bold">
+                              ⚡ Kas Laci Berkurang: <span className="font-mono font-black">-Rp {nominal.toLocaleString('id-ID')}</span>.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
                 ) : (
                   <div className="p-3 bg-emerald-50 border-2 border-emerald-300 rounded-xl space-y-2 text-emerald-950">
                     <div className="flex items-center justify-between">
@@ -2551,19 +2766,52 @@ export const AtmMiniView: React.FC = () => {
                   <span className="font-mono font-bold text-emerald-800">+Rp {selectedTxDetail.counterFee.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between pt-1 font-bold text-sm text-slate-900">
-                  <span>Total Ditransfer / Didebet:</span>
+                  <span>
+                    {selectedTxDetail.type === 'tarik_tunai_atm' && selectedTxDetail.adminDeductionType === 'tunai_konter'
+                      ? 'Debet / Transfer Pokok:'
+                      : 'Total Ditransfer / Didebet:'}
+                  </span>
                   <span className="font-mono font-black text-emerald-800">Rp {selectedTxDetail.totalDebited.toLocaleString('id-ID')}</span>
                 </div>
                 {selectedTxDetail.type === 'tarik_tunai_atm' && (
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 mt-1">
-                    <span>Uang Fisik Diserahkan (Laci):</span>
-                    <span className="font-mono text-rose-700 font-black">
-                      -Rp {selectedTxDetail.cashHandedOrReceived.toLocaleString('id-ID')}
-                      {selectedTxDetail.adminDeductionType === 'potong_tunai' && (
-                        <span className="text-[10px] text-amber-800 font-normal ml-1">(Potong Admin)</span>
-                      )}
-                    </span>
-                  </div>
+                  selectedTxDetail.adminDeductionType === 'tunai_konter' ? (
+                    <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs space-y-1 mt-1">
+                      <div className="flex items-center justify-between font-bold text-amber-950">
+                        <span>Uang Tarikan Diserahkan (Laci Keluar):</span>
+                        <span className="font-mono text-rose-700 font-black">
+                          -Rp {selectedTxDetail.cashHandedOrReceived.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between font-bold text-emerald-800">
+                        <span>Admin Bayar Tunai (Masuk Uang Laci):</span>
+                        <span className="font-mono font-black">
+                          +Rp {(
+                            selectedTxDetail.isPartialPayment
+                              ? selectedTxDetail.paidAmount || 0
+                              : selectedTxDetail.paymentMethod === 'hutang'
+                              ? 0
+                              : selectedTxDetail.adminEdcFee + selectedTxDetail.counterFee
+                          ).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      {selectedTxDetail.remainingDebt && selectedTxDetail.remainingDebt > 0 ? (
+                        <div className="flex items-center justify-between text-[11px] font-bold text-rose-700 pt-1 border-t border-emerald-200">
+                          <span>Sisa Kasbon Admin:</span>
+                          <span className="font-mono">Rp {selectedTxDetail.remainingDebt.toLocaleString('id-ID')}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 mt-1">
+                      <span>Uang Fisik Diserahkan (Laci):</span>
+                      <span className="font-mono text-rose-700 font-black">
+                        -Rp {selectedTxDetail.cashHandedOrReceived.toLocaleString('id-ID')}
+                        {selectedTxDetail.adminDeductionType === 'potong_tunai' && (
+                          <span className="text-[10px] text-amber-800 font-normal ml-1">(Potong Admin)</span>
+                        )}
+                      </span>
+                    </div>
+                  )
                 )}
               </div>
 
