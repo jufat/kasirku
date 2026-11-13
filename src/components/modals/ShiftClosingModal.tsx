@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Power,
   X,
@@ -74,9 +74,13 @@ export const ShiftClosingModal: React.FC = () => {
     return `${formattedTime} WIB · ${formattedDate}`;
   };
 
-  // Sync state when modal opens
+  const wasOpenRef = useRef(false);
+
+  // Sync state only when modal transitions from closed to open
   useEffect(() => {
-    if (isShiftModalOpen) {
+    const justOpened = isShiftModalOpen && !wasOpenRef.current;
+    wasOpenRef.current = isShiftModalOpen;
+    if (justOpened) {
       setActualCash(drawerCashBalance);
       setClosingNotes('');
       setIsShiftSwapped(false);
@@ -85,9 +89,6 @@ export const ShiftClosingModal: React.FC = () => {
       setTempStandardCash(standardDrawerCash);
 
       if (shift.isOpen) {
-        // Jika shift sedang berjalan:
-        // Jika Shift 2 (Sore) -> default Tutup Toko Malam
-        // Jika Shift 1 (Pagi) -> default Serah Terima ke Shift 2
         if (shift.cashierSlot === 'kasir_2') {
           setClosingMode('tutup_toko');
           setNextSlot('kasir_1');
@@ -102,7 +103,6 @@ export const ShiftClosingModal: React.FC = () => {
           setCandidateCashierName(cashierProfiles.kasir_1?.name || '');
         }
       } else {
-        // Jika shift sedang TUTUP (Buka Kasir Pagi):
         setOpenSlot('kasir_1');
         setOpenCashierName(cashierProfiles.kasir_1?.name || 'Agus (Kasir Pagi)');
         setIsOpenShiftSwapped(false);
@@ -474,10 +474,10 @@ export const ShiftClosingModal: React.FC = () => {
                   step="any"
                   min="0"
                   required
-                  value={openStartingCash}
+                  value={openStartingCash || ''}
                   onChange={(e) => setOpenStartingCash(Number(e.target.value) || 0)}
                   className="w-full pl-10 pr-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
-                  placeholder="Modal laci awal..."
+                  placeholder="0"
                 />
               </div>
               <p className="text-[10.5px] text-slate-500">
@@ -615,10 +615,10 @@ export const ShiftClosingModal: React.FC = () => {
                       step="any"
                       min="0"
                       required
-                      value={actualCash}
+                      value={actualCash || ''}
                       onChange={(e) => setActualCash(Number(e.target.value) || 0)}
                       className="w-full pl-10 pr-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none"
-                      placeholder="Uang fisik di laci..."
+                      placeholder="0"
                     />
                   </div>
 
@@ -685,8 +685,9 @@ export const ShiftClosingModal: React.FC = () => {
                           type="number"
                           step="any"
                           min="0"
-                          value={tempStandardCash}
+                          value={tempStandardCash || ''}
                           onChange={(e) => setTempStandardCash(Number(e.target.value) || 0)}
+                          placeholder="0"
                           className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold"
                         />
                         <button
@@ -780,10 +781,10 @@ export const ShiftClosingModal: React.FC = () => {
                       step="any"
                       min="0"
                       required
-                      value={actualCash}
+                      value={actualCash || ''}
                       onChange={(e) => setActualCash(Number(e.target.value) || 0)}
                       className="w-full pl-10 pr-3 py-2 bg-slate-50 border-2 border-slate-300 rounded-xl font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
-                      placeholder="Ketik uang fisik..."
+                      placeholder="0"
                     />
                   </div>
 

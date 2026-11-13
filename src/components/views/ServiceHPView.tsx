@@ -651,8 +651,9 @@ export const ServiceHPView: React.FC = () => {
                       type="number"
                       step="any"
                       min="0"
-                      value={sparepartCost}
+                      value={sparepartCost || ''}
                       onChange={(e) => setSparepartCost(Number(e.target.value) || 0)}
+                      placeholder="0"
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-semibold"
                     />
                   </div>
@@ -662,8 +663,9 @@ export const ServiceHPView: React.FC = () => {
                       type="number"
                       step="any"
                       min="0"
-                      value={laborFee}
+                      value={laborFee || ''}
                       onChange={(e) => setLaborFee(Number(e.target.value) || 0)}
+                      placeholder="0"
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-semibold text-emerald-800"
                     />
                   </div>
@@ -770,9 +772,9 @@ export const ServiceHPView: React.FC = () => {
                       type="number"
                       step="any"
                       min="0"
-                      value={downPayment}
+                      value={downPayment || ''}
                       onChange={(e) => setDownPayment(Number(e.target.value) || 0)}
-                      placeholder="0 jika belum bayar"
+                      placeholder="0"
                       className="w-full px-3 py-1.5 bg-white border border-emerald-300 rounded-lg font-mono text-right font-bold text-emerald-800"
                     />
                   </div>
@@ -780,8 +782,10 @@ export const ServiceHPView: React.FC = () => {
                     <label className="font-bold text-slate-700 block mb-1">Garansi Servis (Hari)</label>
                     <input
                       type="number"
-                      value={warrantyDays}
+                      min="0"
+                      value={warrantyDays || ''}
                       onChange={(e) => setWarrantyDays(Number(e.target.value) || 0)}
+                      placeholder="0"
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono text-right font-semibold"
                     />
                   </div>

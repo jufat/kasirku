@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   TrendingUp,
   Wallet,
@@ -101,6 +101,7 @@ export const DashboardView: React.FC = () => {
 
   // Chart Metric Filter & Target Revenue State
   const [chartMetric, setChartMetric] = useState<'all' | 'kasir' | 'jasa' | 'target'>('all');
+  const [volumeChartMode, setVolumeChartMode] = useState<'total' | 'divisi'>('divisi');
   const [revenueTarget, setRevenueTarget] = useState<number>(() => {
     const saved = localStorage.getItem('jufat_revenue_target');
     return saved ? Number(saved) : 25000000;
@@ -657,6 +658,181 @@ export const DashboardView: React.FC = () => {
               <span className="font-bold">Rp {dataPoint.target.toLocaleString('id-ID')}</span>
             </div>
           )}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // =========================================================================
+  // TREN VOLUME TRANSAKSI HARIAN (7 HARI TERAKHIR - REAL-TIME SEMUA DIVISI)
+  // =========================================================================
+  const toLocalDateKey = (d: Date): string => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const parseTxDateKey = (dateStr?: string): string | null => {
+    if (!dateStr) return null;
+    const trimmed = dateStr.trim();
+
+    // 1. ISO / YYYY-MM-DD (e.g. "2026-11-13 09:30" or "2026-11-13T...")
+    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    }
+
+    // 2. Indonesian locale D/M/YYYY or DD/MM/YYYY (e.g. "13/11/2026, 01.55.52")
+    const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (slashMatch) {
+      return `${slashMatch[3]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[1].padStart(2, '0')}`;
+    }
+
+    // 3. Dash DD-MM-YYYY
+    const dashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+    if (dashMatch) {
+      return `${dashMatch[3]}-${dashMatch[2].padStart(2, '0')}-${dashMatch[1].padStart(2, '0')}`;
+    }
+
+    return null;
+  };
+
+  const dailyVolume7Days = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+    const buckets = new Map<
+      string,
+      {
+        dateKey: string;
+        label: string;
+        fullDateLabel: string;
+        isToday: boolean;
+        kasir: number;
+        atmMini: number;
+        ppob: number;
+        servisPrint: number;
+        total: number;
+      }
+    >();
+
+    for (let offset = 6; offset >= 0; offset--) {
+      const d = new Date(todayStart.getTime() - offset * 86400000);
+      const key = toLocalDateKey(d);
+      const dayName = dayNames[d.getDay()];
+      const dayNum = String(d.getDate()).padStart(2, '0');
+      const monthName = monthNames[d.getMonth()];
+      const isToday = offset === 0;
+
+      buckets.set(key, {
+        dateKey: key,
+        label: isToday ? 'Hari Ini' : `${dayName}, ${dayNum} ${monthName}`,
+        fullDateLabel: `${dayName}, ${dayNum} ${monthName} ${d.getFullYear()}`,
+        isToday,
+        kasir: 0,
+        atmMini: 0,
+        ppob: 0,
+        servisPrint: 0,
+        total: 0,
+      });
+    }
+
+    (transactions || []).forEach((t) => {
+      const key = parseTxDateKey(t.date);
+      const bucket = key ? buckets.get(key) : undefined;
+      if (bucket) {
+        bucket.kasir += 1;
+        bucket.total += 1;
+      }
+    });
+
+    (atmMiniTransactions || []).forEach((t) => {
+      const key = parseTxDateKey(t.date);
+      const bucket = key ? buckets.get(key) : undefined;
+      if (bucket) {
+        bucket.atmMini += 1;
+        bucket.total += 1;
+      }
+    });
+
+    (agencyTransactions || []).forEach((t) => {
+      const key = parseTxDateKey(t.date);
+      const bucket = key ? buckets.get(key) : undefined;
+      if (bucket) {
+        bucket.atmMini += 1;
+        bucket.total += 1;
+      }
+    });
+
+    (ppobTransactions || []).forEach((t) => {
+      const key = parseTxDateKey(t.date);
+      const bucket = key ? buckets.get(key) : undefined;
+      if (bucket) {
+        bucket.ppob += 1;
+        bucket.total += 1;
+      }
+    });
+
+    (services || []).forEach((s) => {
+      const key = parseTxDateKey(s.dateIn);
+      const bucket = key ? buckets.get(key) : undefined;
+      if (bucket) {
+        bucket.servisPrint += 1;
+        bucket.total += 1;
+      }
+    });
+
+    (printOrders || []).forEach((p) => {
+      const key = parseTxDateKey(p.date);
+      const bucket = key ? buckets.get(key) : undefined;
+      if (bucket) {
+        bucket.servisPrint += 1;
+        bucket.total += 1;
+      }
+    });
+
+    return Array.from(buckets.values());
+  }, [transactions, atmMiniTransactions, agencyTransactions, ppobTransactions, services, printOrders]);
+
+  const total7DayVolume = dailyVolume7Days.reduce((sum, d) => sum + d.total, 0);
+  const avgDailyVolume = Math.round((total7DayVolume / 7) * 10) / 10;
+  const peakVolumeDay = dailyVolume7Days.reduce(
+    (best, curr) => (curr.total > best.total ? curr : best),
+    dailyVolume7Days[0]
+  );
+
+  const VolumeTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const row = payload[0]?.payload;
+      if (!row) return null;
+      return (
+        <div className="bg-slate-900/95 backdrop-blur-md text-white p-3.5 rounded-xl shadow-xl border border-slate-700 text-xs space-y-2 min-w-[215px] select-none">
+          <div className="border-b border-slate-700 pb-1.5 flex items-center justify-between gap-3">
+            <span className="font-bold text-teal-300">{row.fullDateLabel}</span>
+            <span className="font-mono font-bold text-white tabular-nums">{row.total} Trx</span>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-teal-300">Kasir POS</span>
+              <span className="font-mono font-bold tabular-nums">{row.kasir} trx</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-amber-300">ATM Mini & Transfer</span>
+              <span className="font-mono font-bold tabular-nums">{row.atmMini} trx</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-sky-300">Pulsa & PPOB</span>
+              <span className="font-mono font-bold tabular-nums">{row.ppob} trx</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-indigo-300">Servis & Percetakan</span>
+              <span className="font-mono font-bold tabular-nums">{row.servisPrint} trx</span>
+            </div>
+          </div>
         </div>
       );
     }
@@ -2332,6 +2508,181 @@ export const DashboardView: React.FC = () => {
                     maxBarSize={40}
                   />
                 </>
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: GRAFIK BATANG TREN VOLUME TRANSAKSI HARIAN (7 HARI TERAKHIR)    */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+              Tren Volume Transaksi Harian
+            </h3>
+            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 flex-wrap">
+              <span>7 Hari Terakhir</span>
+              <span aria-hidden="true">·</span>
+              <span>Kasir POS, ATM Mini, PPOB, Servis & Percetakan</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/60 shrink-0">
+            <button
+              type="button"
+              onClick={() => setVolumeChartMode('divisi')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap shrink-0 ${
+                volumeChartMode === 'divisi'
+                  ? 'bg-white text-teal-950 shadow-sm font-black'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Per Divisi
+            </button>
+            <button
+              type="button"
+              onClick={() => setVolumeChartMode('total')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap shrink-0 ${
+                volumeChartMode === 'total'
+                  ? 'bg-white text-teal-950 shadow-sm font-black'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Total Harian
+            </button>
+          </div>
+        </div>
+
+        {/* Clean Summary Metrics with Hairline Dividers */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 py-1">
+          <div className="pb-2.5 sm:pb-0 sm:pr-4">
+            <span className="text-xs font-semibold text-slate-500 block">
+              Total Transaksi (7 Hari)
+            </span>
+            <span className="text-xl font-extrabold text-slate-900 font-mono tabular-nums mt-0.5 block">
+              {total7DayVolume.toLocaleString('id-ID')} Transaksi
+            </span>
+          </div>
+          <div className="py-2.5 sm:py-0 sm:px-4">
+            <span className="text-xs font-semibold text-slate-500 block">
+              Rata-Rata Harian
+            </span>
+            <span className="text-xl font-extrabold text-teal-800 font-mono tabular-nums mt-0.5 block">
+              {avgDailyVolume.toLocaleString('id-ID')} Trx / Hari
+            </span>
+          </div>
+          <div className="pt-2.5 sm:pt-0 sm:pl-4">
+            <span className="text-xs font-semibold text-slate-500 block">
+              Hari Volume Tertinggi
+            </span>
+            <span className="text-xl font-extrabold text-slate-900 font-mono tabular-nums mt-0.5 block truncate">
+              {peakVolumeDay && peakVolumeDay.total > 0
+                ? `${peakVolumeDay.label} (${peakVolumeDay.total} Trx)`
+                : 'Belum ada transaksi'}
+            </span>
+          </div>
+        </div>
+
+        {total7DayVolume === 0 && (
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+            <p className="text-slate-600">
+              Belum ada transaksi tercatat dalam 7 hari terakhir. Setiap transaksi baru di Kasir, ATM Mini, PPOB, Servis, atau Percetakan akan langsung muncul pada grafik.
+            </p>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('kasir')}
+                className="px-3 py-1.5 bg-teal-700 hover:bg-teal-600 text-white font-bold rounded-lg transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Buka Kasir POS
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('atm_mini')}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                ATM Mini
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Recharts Daily Volume Bar Chart */}
+        <div className="w-full h-64 sm:h-72 pt-1 select-none">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={dailyVolume7Days}
+              margin={{ top: 12, right: 12, left: -18, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
+                axisLine={{ stroke: '#e2e8f0' }}
+                tickLine={false}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fill: '#64748b', fontSize: 11, fontFamily: 'monospace' }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip content={<VolumeTooltip />} />
+              <Legend
+                wrapperStyle={{ fontSize: 11, paddingTop: 10 }}
+                formatter={(val) => <span className="text-slate-700 font-semibold">{val}</span>}
+              />
+              {avgDailyVolume > 0 && (
+                <ReferenceLine
+                  y={avgDailyVolume}
+                  stroke="#64748b"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                />
+              )}
+              {volumeChartMode === 'divisi' ? (
+                <>
+                  <Bar
+                    dataKey="kasir"
+                    name="Kasir POS"
+                    stackId="vol"
+                    fill="#0d9488"
+                    maxBarSize={44}
+                  />
+                  <Bar
+                    dataKey="atmMini"
+                    name="ATM Mini & Transfer"
+                    stackId="vol"
+                    fill="#f59e0b"
+                    maxBarSize={44}
+                  />
+                  <Bar
+                    dataKey="ppob"
+                    name="Pulsa & PPOB"
+                    stackId="vol"
+                    fill="#0284c7"
+                    maxBarSize={44}
+                  />
+                  <Bar
+                    dataKey="servisPrint"
+                    name="Servis & Percetakan"
+                    stackId="vol"
+                    fill="#6366f1"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={44}
+                  />
+                </>
+              ) : (
+                <Bar
+                  dataKey="total"
+                  name="Total Volume Transaksi"
+                  fill="#0d9488"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={48}
+                />
               )}
             </BarChart>
           </ResponsiveContainer>

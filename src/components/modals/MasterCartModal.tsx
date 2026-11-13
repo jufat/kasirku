@@ -291,12 +291,12 @@ export const MasterCartModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 select-none"
+      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) setIsMasterCartModalOpen(false);
       }}
     >
-      <div className="bg-white w-full max-w-4xl h-[94vh] md:h-auto md:max-h-[90vh] rounded-t-2xl md:rounded-2xl shadow-2xl border border-teal-200/80 flex flex-col overflow-hidden">
+      <div className="bg-white w-full max-w-4xl h-[94dvh] md:h-auto md:max-h-[90dvh] rounded-t-2xl md:rounded-2xl shadow-2xl border border-teal-200/80 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3.5 bg-gradient-to-r from-teal-700 via-emerald-600 to-teal-700 text-white flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">

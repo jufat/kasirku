@@ -1205,7 +1205,7 @@ export const KasirView: React.FC = () => {
 
       {/* Mobile Full-Screen Cart & Checkout Drawer */}
       {isMobileCartOpen && (
-        <div className="md:hidden fixed inset-0 z-50 bg-white flex flex-col h-full animate-in slide-in-from-bottom duration-200 select-none">
+        <div className="md:hidden fixed inset-0 z-50 bg-white flex flex-col h-dvh animate-in slide-in-from-bottom duration-200">
           {/* Mobile Cart Header */}
           <div className="p-3.5 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-teal-700 via-emerald-600 to-teal-800 text-white shrink-0">
             <button
@@ -1245,8 +1245,10 @@ export const KasirView: React.FC = () => {
             />
           </div>
 
-          {/* Cart Items List */}
-          <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5">
+          {/* Scrollable Mobile Cart + Checkout Area */}
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+            {/* Cart Items List */}
+            <div className="p-3.5 space-y-2.5 shrink-0">
             {cart.length === 0 ? (
               <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
                 <ShoppingCart className="w-10 h-10 stroke-[1.2] text-slate-300" />
@@ -1350,10 +1352,10 @@ export const KasirView: React.FC = () => {
               );
             })
             )}
-          </div>
+            </div>
 
-          {/* Checkout Form */}
-          <form onSubmit={handleCheckout} className="border-t border-slate-200 bg-slate-50 p-3.5 space-y-3 shrink-0">
+            {/* Checkout Form */}
+            <form onSubmit={handleCheckout} className="border-t border-slate-200 bg-slate-50 p-3.5 space-y-3 shrink-0 mt-auto">
             <div className="space-y-1.5 text-xs text-slate-600">
               <div className="flex justify-between">
                 <span>Subtotal Barang:</span>
@@ -1719,7 +1721,8 @@ export const KasirView: React.FC = () => {
                 </>
               )}
             </button>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 

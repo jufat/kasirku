@@ -194,7 +194,7 @@ export const KasThermalReceiptModal: React.FC<KasThermalReceiptModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl border border-slate-200 flex flex-col max-h-[94vh]">
+      <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl border border-slate-200 flex flex-col max-h-[94dvh]">
         {/* Modal Top Bar */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3 shrink-0">
           <div className="flex items-center gap-2">

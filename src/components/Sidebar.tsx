@@ -508,7 +508,7 @@ export const Sidebar: React.FC = () => {
   return (
     <>
       {/* Desktop Persistent Sidebar */}
-      <aside className="hidden md:flex w-64 bg-gradient-to-b from-[#0d9488] via-[#059669] to-[#047857] text-white flex-col justify-between h-screen shrink-0 border-r border-teal-600/40 select-none shadow-xl z-20">
+      <aside className="hidden md:flex w-64 bg-gradient-to-b from-[#0d9488] via-[#059669] to-[#047857] text-white flex-col justify-between h-dvh shrink-0 border-r border-teal-600/40 select-none shadow-xl z-20">
         {renderContent(false)}
       </aside>
 

@@ -101,6 +101,19 @@ const QRIS_TYPES = [
   'Transfer / Top Up Saldo QRIS',
 ];
 
+const sanitizeRupiahInput = (raw: string): string => {
+  const withoutTrailingCents = raw.replace(/,0{1,2}\s*$/, '');
+  return withoutTrailingCents.replace(/[^\d.]/g, '');
+};
+
+const parseExactRupiah = (raw: string): number => {
+  const withoutTrailingCents = raw.replace(/,0{1,2}\s*$/, '');
+  const digits = withoutTrailingCents.replace(/\D/g, '');
+  if (!digits) return 0;
+  const parsed = parseInt(digits, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export const AtmMiniView: React.FC = () => {
   const {
     atmMiniTransactions,
@@ -135,9 +148,23 @@ export const AtmMiniView: React.FC = () => {
   const [qrisProvider, setQrisProvider] = useState(QRIS_PROVIDERS[0]);
   const [qrisType, setQrisType] = useState(QRIS_TYPES[0]);
   const [qrisRrn, setQrisRrn] = useState('RRN-882901');
-  const [nominal, setNominal] = useState<number>(500000);
-  const [adminEdcFee, setAdminEdcFee] = useState<number>(3000);
-  const [counterFee, setCounterFee] = useState<number>(5000);
+  const [nominalInput, setNominalInput] = useState<string>('500.000');
+  const [adminEdcFeeInput, setAdminEdcFeeInput] = useState<string>('3.000');
+  const [counterFeeInput, setCounterFeeInput] = useState<string>('5.000');
+  const nominal = parseExactRupiah(nominalInput);
+  const adminEdcFee = parseExactRupiah(adminEdcFeeInput);
+  const counterFee = parseExactRupiah(counterFeeInput);
+  const setNominal = (valOrUpdater: number | ((prev: number) => number)) => {
+    setNominalInput((prevStr) => {
+      const prevNum = parseExactRupiah(prevStr);
+      const nextNum = typeof valOrUpdater === 'function' ? valOrUpdater(prevNum) : valOrUpdater;
+      return nextNum > 0 ? Math.trunc(nextNum).toLocaleString('id-ID') : '';
+    });
+  };
+  const setAdminEdcFee = (val: number) =>
+    setAdminEdcFeeInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '');
+  const setCounterFee = (val: number) =>
+    setCounterFeeInput(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '');
   const [counterFeeDiscount, setCounterFeeDiscount] = useState<number>(0);
   const [note, setNote] = useState('');
   const [toastMessage, setToastMessage] = useState('');
@@ -149,7 +176,10 @@ export const AtmMiniView: React.FC = () => {
 
   // Interactive Payment Dialog states
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [cashReceivedInput, setCashReceivedInput] = useState<number>(0);
+  const [cashReceivedInputText, setCashReceivedInputText] = useState<string>('');
+  const cashReceivedInput = parseExactRupiah(cashReceivedInputText);
+  const setCashReceivedInput = (val: number) =>
+    setCashReceivedInputText(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '');
   const [selectedTxDetail, setSelectedTxDetail] = useState<any | null>(null);
   const [atmMiniPaymentMethod, setAtmMiniPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
   const [atmMiniCustomerPhone, setAtmMiniCustomerPhone] = useState('');
@@ -1386,11 +1416,8 @@ export const AtmMiniView: React.FC = () => {
                 type="text"
                 inputMode="numeric"
                 required
-                value={nominal ? nominal.toLocaleString('id-ID') : ''}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/\D/g, '');
-                  setNominal(raw ? parseInt(raw, 10) : 0);
-                }}
+                value={nominalInput}
+                onChange={(e) => setNominalInput(sanitizeRupiahInput(e.target.value))}
                 placeholder="0 (Ketik nominal berapa saja)"
                 className="w-full pl-12 pr-20 py-2.5 text-lg font-black bg-white border-2 border-teal-500/70 focus:border-teal-600 rounded-xl font-mono text-slate-900 focus:ring-2 focus:ring-teal-400/40 focus:outline-none shadow-xs transition"
               />
@@ -1465,11 +1492,11 @@ export const AtmMiniView: React.FC = () => {
               <div className="flex items-center gap-1 font-mono">
                 <span className="text-slate-400">Rp</span>
                 <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={adminEdcFee}
-                  onChange={(e) => setAdminEdcFee(Number(e.target.value) || 0)}
+                  type="text"
+                  inputMode="numeric"
+                  value={adminEdcFeeInput}
+                  onChange={(e) => setAdminEdcFeeInput(sanitizeRupiahInput(e.target.value))}
+                  placeholder="0"
                   className="w-24 text-right px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -1484,11 +1511,11 @@ export const AtmMiniView: React.FC = () => {
                 <div className="flex items-center gap-1 font-mono">
                   <span className="text-slate-400">Rp</span>
                   <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={counterFee}
-                    onChange={(e) => setCounterFee(Number(e.target.value) || 0)}
+                    type="text"
+                    inputMode="numeric"
+                    value={counterFeeInput}
+                    onChange={(e) => setCounterFeeInput(sanitizeRupiahInput(e.target.value))}
+                    placeholder="0"
                     className="w-24 text-right px-2 py-0.5 bg-white border border-emerald-300 rounded text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
@@ -2365,11 +2392,8 @@ export const AtmMiniView: React.FC = () => {
                           <input
                             type="text"
                             inputMode="numeric"
-                            value={cashReceivedInput ? cashReceivedInput.toLocaleString('id-ID') : ''}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '');
-                              setCashReceivedInput(val ? parseInt(val, 10) : 0);
-                            }}
+                            value={cashReceivedInputText}
+                            onChange={(e) => setCashReceivedInputText(sanitizeRupiahInput(e.target.value))}
                             className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             placeholder={totalAdmin.toLocaleString('id-ID')}
                           />
@@ -2515,11 +2539,8 @@ export const AtmMiniView: React.FC = () => {
                         <input
                           type="text"
                           inputMode="numeric"
-                          value={cashReceivedInput ? cashReceivedInput.toLocaleString('id-ID') : ''}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, '');
-                            setCashReceivedInput(val ? parseInt(val, 10) : 0);
-                          }}
+                          value={cashReceivedInputText}
+                          onChange={(e) => setCashReceivedInputText(sanitizeRupiahInput(e.target.value))}
                           className="w-full pl-9 pr-3 py-1.5 text-sm font-mono font-black bg-white border border-emerald-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           placeholder={totalDebited.toLocaleString('id-ID')}
                         />

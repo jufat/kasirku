@@ -11,6 +11,18 @@ body {
   color: #1e293b;
 }
 
+/* Ensure text & numeric inputs are always interactive and selectable even inside touch-optimized containers */
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  pointer-events: auto;
+  touch-action: manipulation;
+  scroll-margin-bottom: 110px;
+}
+
 /* Custom scrollbars for POS views */
 ::-webkit-scrollbar {
   width: 6px;

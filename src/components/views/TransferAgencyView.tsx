@@ -49,6 +49,19 @@ const VA_PROVIDERS = [
   'Tokopedia VA',
 ];
 
+const sanitizeRupiahInput = (raw: string): string => {
+  const withoutTrailingCents = raw.replace(/,0{1,2}\s*$/, '');
+  return withoutTrailingCents.replace(/[^\d.]/g, '');
+};
+
+const parseExactRupiah = (raw: string): number => {
+  const withoutTrailingCents = raw.replace(/,0{1,2}\s*$/, '');
+  const digits = withoutTrailingCents.replace(/\D/g, '');
+  if (!digits) return 0;
+  const parsed = parseInt(digits, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export const TransferAgencyView: React.FC = () => {
   const { agencyTransactions, recordAgencyTransaction, openReceipt } = usePOS();
 
@@ -56,7 +69,15 @@ export const TransferAgencyView: React.FC = () => {
   const [provider, setProvider] = useState<string>('BRI');
   const [targetNumber, setTargetNumber] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
-  const [nominal, setNominal] = useState<number>(500000);
+  const [nominalInput, setNominalInput] = useState<string>('500.000');
+  const nominal = parseExactRupiah(nominalInput);
+  const setNominal = (valOrUpdater: number | ((prev: number) => number)) => {
+    setNominalInput((prevStr) => {
+      const prevNum = parseExactRupiah(prevStr);
+      const nextNum = typeof valOrUpdater === 'function' ? valOrUpdater(prevNum) : valOrUpdater;
+      return nextNum > 0 ? Math.trunc(nextNum).toLocaleString('id-ID') : '';
+    });
+  };
   const [bankAdminFee, setBankAdminFee] = useState<number>(2500);
   const [counterFee, setCounterFee] = useState<number>(5000);
   const [notes, setNotes] = useState<string>('');
@@ -281,11 +302,8 @@ export const TransferAgencyView: React.FC = () => {
                 type="text"
                 inputMode="numeric"
                 required
-                value={nominal ? nominal.toLocaleString('id-ID') : ''}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/\D/g, '');
-                  setNominal(raw ? parseInt(raw, 10) : 0);
-                }}
+                value={nominalInput}
+                onChange={(e) => setNominalInput(sanitizeRupiahInput(e.target.value))}
                 placeholder="0 (Ketik nominal berapa saja)"
                 className="w-full pl-11 pr-20 py-2.5 text-base font-extrabold bg-white border border-pink-300 rounded-xl font-mono text-slate-900 focus:ring-2 focus:ring-pink-500 focus:outline-none shadow-xs"
               />
@@ -348,8 +366,9 @@ export const TransferAgencyView: React.FC = () => {
                   type="number"
                   step="any"
                   min="0"
-                  value={bankAdminFee}
+                  value={bankAdminFee || ''}
                   onChange={(e) => setBankAdminFee(Number(e.target.value) || 0)}
+                  placeholder="0"
                   className="w-24 text-right px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-pink-500"
                 />
               </div>
@@ -366,8 +385,9 @@ export const TransferAgencyView: React.FC = () => {
                   type="number"
                   step="any"
                   min="0"
-                  value={counterFee}
+                  value={counterFee || ''}
                   onChange={(e) => setCounterFee(Number(e.target.value) || 0)}
+                  placeholder="0"
                   className="w-24 text-right px-2 py-0.5 bg-white border border-pink-300 rounded text-xs font-bold text-pink-700 focus:outline-none focus:ring-1 focus:ring-pink-500"
                 />
               </div>

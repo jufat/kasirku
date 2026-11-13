@@ -53,7 +53,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#f8fafc] text-slate-800 antialiased font-sans">
+    <div className="flex h-dvh w-screen overflow-hidden bg-[#f8fafc] text-slate-800 antialiased font-sans">
       {/* Fresh Vibrant Mint & Teal POS Sidebar (Desktop & Mobile Drawer) */}
       <Sidebar />
 
