@@ -38,6 +38,9 @@ import {
   Clock,
   RotateCcw,
   User,
+  Users,
+  UserCheck,
+  Repeat,
   Sun,
   Moon,
   History,
@@ -58,6 +61,13 @@ import {
 } from 'recharts';
 import { usePOS } from '../../context/POSContext';
 import { POSTransaction } from '../../types/pos';
+import {
+  toLocalDateKey,
+  parseTxDateKey,
+  extractDeduplicatedVisits,
+  computeCustomerStatsForRange,
+  CustomerPeriodStats,
+} from '../../utils/customerAnalytics';
 
 type TimeframeType = 'harian' | 'mingguan' | 'bulanan' | 'tahunan';
 type PresetType = 'hari_ini' | '7_hari' | 'bulan_ini' | '30_hari' | 'tahun_ini' | 'kustom';
@@ -102,6 +112,12 @@ export const DashboardView: React.FC = () => {
   // Chart Metric Filter & Target Revenue State
   const [chartMetric, setChartMetric] = useState<'all' | 'kasir' | 'jasa' | 'target'>('all');
   const [volumeChartMode, setVolumeChartMode] = useState<'total' | 'divisi'>('divisi');
+  const [customerPeriodTab, setCustomerPeriodTab] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
+  const [customerListFilter, setCustomerListFilter] = useState<'sama' | 'semua'>('sama');
+  const [liveTimeInfo, setLiveTimeInfo] = useState<{ dateLabel: string; timeLabel: string }>({
+    dateLabel: '',
+    timeLabel: '',
+  });
   const [revenueTarget, setRevenueTarget] = useState<number>(() => {
     const saved = localStorage.getItem('jufat_revenue_target');
     return saved ? Number(saved) : 25000000;
@@ -109,6 +125,30 @@ export const DashboardView: React.FC = () => {
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [tempTargetInput, setTempTargetInput] = useState<string>(revenueTarget.toString());
   const [targetToast, setTargetToast] = useState('');
+
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const dateLabel = now.toLocaleDateString('id-ID', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      const timeLabel = `${now
+        .toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })
+        .replace(/\./g, ':')} WIB`;
+      setLiveTimeInfo({ dateLabel, timeLabel });
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Saldo Digital Operasional Counter (Bank, EDC Agen & E-Wallet) terpusat di POSContext
   const [isEditingDigitalBalance, setIsEditingDigitalBalance] = useState(false);
@@ -667,37 +707,75 @@ export const DashboardView: React.FC = () => {
   // =========================================================================
   // TREN VOLUME TRANSAKSI HARIAN (7 HARI TERAKHIR - REAL-TIME SEMUA DIVISI)
   // =========================================================================
-  const toLocalDateKey = (d: Date): string => {
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
+  // Customer traffic analytics (1 Hari, 1 Minggu, 1 Bulan) deduplicated across all divisions
+  const customerAnalytics = useMemo(() => {
+    const visits = extractDeduplicatedVisits({
+      transactions,
+      atmMiniTransactions,
+      agencyTransactions,
+      ppobTransactions,
+      services,
+      printOrders,
+    });
 
-  const parseTxDateKey = (dateStr?: string): string | null => {
-    if (!dateStr) return null;
-    const trimmed = dateStr.trim();
+    const stats1Hari = computeCustomerStatsForRange(visits, {
+      periodId: 'harian',
+      label: '1 Hari (Hari Ini)',
+      sublabel: liveTimeInfo.dateLabel || 'Hari ini',
+      days: 1,
+    });
+    const stats1Minggu = computeCustomerStatsForRange(visits, {
+      periodId: 'mingguan',
+      label: '1 Minggu',
+      sublabel: '7 Hari Terakhir',
+      days: 7,
+    });
+    const stats1Bulan = computeCustomerStatsForRange(visits, {
+      periodId: 'bulanan',
+      label: '1 Bulan',
+      sublabel: '30 Hari Terakhir',
+      days: 30,
+    });
 
-    // 1. ISO / YYYY-MM-DD (e.g. "2026-11-13 09:30" or "2026-11-13T...")
-    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (isoMatch) {
-      return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
-    }
+    const periods: CustomerPeriodStats[] = [stats1Hari, stats1Minggu, stats1Bulan];
+    const comparisonChart = [
+      {
+        name: '1 Hari',
+        totalMasuk: stats1Hari.totalVisits,
+        pelangganBeda: stats1Hari.uniqueCustomers,
+        pelangganSama: stats1Hari.repeatCustomers,
+      },
+      {
+        name: '1 Minggu',
+        totalMasuk: stats1Minggu.totalVisits,
+        pelangganBeda: stats1Minggu.uniqueCustomers,
+        pelangganSama: stats1Minggu.repeatCustomers,
+      },
+      {
+        name: '1 Bulan',
+        totalMasuk: stats1Bulan.totalVisits,
+        pelangganBeda: stats1Bulan.uniqueCustomers,
+        pelangganSama: stats1Bulan.repeatCustomers,
+      },
+    ];
 
-    // 2. Indonesian locale D/M/YYYY or DD/MM/YYYY (e.g. "13/11/2026, 01.55.52")
-    const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (slashMatch) {
-      return `${slashMatch[3]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[1].padStart(2, '0')}`;
-    }
+    return { stats1Hari, stats1Minggu, stats1Bulan, periods, comparisonChart };
+  }, [
+    transactions,
+    atmMiniTransactions,
+    agencyTransactions,
+    ppobTransactions,
+    services,
+    printOrders,
+    liveTimeInfo.dateLabel,
+  ]);
 
-    // 3. Dash DD-MM-YYYY
-    const dashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
-    if (dashMatch) {
-      return `${dashMatch[3]}-${dashMatch[2].padStart(2, '0')}-${dashMatch[1].padStart(2, '0')}`;
-    }
-
-    return null;
-  };
+  const activeCustomerStats =
+    customerPeriodTab === 'harian'
+      ? customerAnalytics.stats1Hari
+      : customerPeriodTab === 'mingguan'
+      ? customerAnalytics.stats1Minggu
+      : customerAnalytics.stats1Bulan;
 
   const dailyVolume7Days = useMemo(() => {
     const now = new Date();
@@ -997,6 +1075,307 @@ export const DashboardView: React.FC = () => {
           >
             <PlusCircle className="w-4 h-4" />
           </button>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: PEMANTAUAN PELANGGAN MASUK OTOMATIS (1 HARI · 1 MINGGU · 1 BULAN) */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs space-y-4">
+        {/* Top Row: Title + 1 Hari Pelanggan Sejajar dengan Waktu */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="min-w-0">
+            <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+              Pemantauan Pelanggan Masuk Otomatis
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Dihitung otomatis dari semua divisi (Kasir, ATM Mini, PPOB, Servis & Percetakan · 1 struk Keranjang Besar dihitung 1 kunjungan)
+            </p>
+          </div>
+
+          {/* 1 Hari Pelanggan Sejajar dengan Waktu */}
+          <div className="flex items-center flex-wrap sm:flex-nowrap bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shrink-0">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 font-mono tabular-nums text-xs text-slate-700 whitespace-nowrap">
+              <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+              <span className="font-bold text-slate-800">
+                {liveTimeInfo.dateLabel
+                  ? `${liveTimeInfo.dateLabel} · ${liveTimeInfo.timeLabel}`
+                  : 'Memuat waktu...'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-teal-50/80 border-t sm:border-t-0 sm:border-l border-slate-200 font-mono tabular-nums text-xs whitespace-nowrap w-full sm:w-auto justify-between sm:justify-start">
+              <span className="inline-flex items-center gap-1.5 font-extrabold text-teal-950">
+                <Users className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                Hari Ini: {customerAnalytics.stats1Hari.totalVisits} Masuk
+              </span>
+              <span className="text-[11px] font-semibold text-teal-700">
+                ({customerAnalytics.stats1Hari.uniqueCustomers} Beda · {customerAnalytics.stats1Hari.repeatCustomers} Sama)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3 Period Summary Columns: 1 Hari, 1 Minggu, 1 Bulan */}
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
+          {customerAnalytics.periods.map((stat) => {
+            const isSelected = customerPeriodTab === stat.periodId;
+            return (
+              <button
+                key={stat.periodId}
+                type="button"
+                onClick={() => setCustomerPeriodTab(stat.periodId)}
+                className={`text-left p-3.5 sm:p-4 transition cursor-pointer flex flex-col justify-between gap-2.5 ${
+                  isSelected
+                    ? 'bg-teal-50/70'
+                    : 'bg-white hover:bg-slate-50/80'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-extrabold text-slate-900 block">
+                      {stat.label}
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      {stat.sublabel}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[10.5px] font-bold px-2 py-0.5 rounded border whitespace-nowrap shrink-0 ${
+                      isSelected
+                        ? 'bg-teal-700 text-white border-teal-700'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {isSelected ? 'Rincian Aktif' : 'Lihat Rincian'}
+                  </span>
+                </div>
+
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono tabular-nums leading-none">
+                    {stat.totalVisits.toLocaleString('id-ID')}
+                  </span>
+                  <span className="text-xs font-bold text-slate-600">
+                    Pelanggan Masuk
+                  </span>
+                </div>
+
+                {/* Pelanggan Beda vs Pelanggan Sama */}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/80 text-xs">
+                  <div>
+                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                      <UserCheck className="w-3 h-3 text-teal-600 shrink-0" />
+                      Pelanggan Beda
+                    </span>
+                    <span className="text-sm font-extrabold text-teal-900 font-mono tabular-nums block mt-0.5">
+                      {stat.uniqueCustomers.toLocaleString('id-ID')} Orang
+                    </span>
+                    <span className="text-[10px] text-slate-500 block">
+                      {stat.singleVisitCustomers} datang 1x
+                    </span>
+                  </div>
+                  <div className="border-l border-slate-200/80 pl-2.5">
+                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                      <Repeat className="w-3 h-3 text-amber-600 shrink-0" />
+                      Pelanggan Sama
+                    </span>
+                    <span className="text-sm font-extrabold text-amber-900 font-mono tabular-nums block mt-0.5">
+                      {stat.repeatCustomers.toLocaleString('id-ID')} Orang
+                    </span>
+                    <span className="text-[10px] text-slate-500 block">
+                      {stat.repeatTotalVisits}x transaksi ({stat.repeatExtraVisits} ulang)
+                    </span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Comparison Chart + Named Customer Detail Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-1 items-start">
+          {/* Left: Comparison Bar Chart (1 Hari vs 1 Minggu vs 1 Bulan) */}
+          <div className="lg:col-span-5 border border-slate-200 rounded-xl p-3 sm:p-3.5 bg-slate-50/40 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-slate-800">
+                Perbandingan Pelanggan Masuk, Beda & Sama
+              </span>
+              <span className="text-[10.5px] font-mono text-slate-500">1H · 1M · 1B</span>
+            </div>
+            <div className="w-full h-48 select-none">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={customerAnalytics.comparisonChart}
+                  margin={{ top: 8, right: 8, left: -22, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: '#475569', fontSize: 11, fontWeight: 700 }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'monospace' }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any) => [`${value} Orang/Kunjungan`, name]}
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderColor: '#334155',
+                      borderRadius: '0.75rem',
+                      color: '#f8fafc',
+                      fontSize: '11px',
+                    }}
+                    itemStyle={{ color: '#f8fafc' }}
+                    labelStyle={{ color: '#5eead4', fontWeight: 700, marginBottom: 4 }}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: 10.5, paddingTop: 6 }}
+                    formatter={(val) => <span className="text-slate-700 font-semibold">{val}</span>}
+                  />
+                  <Bar
+                    dataKey="totalMasuk"
+                    name="Total Masuk"
+                    fill="#0f766e"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={28}
+                  />
+                  <Bar
+                    dataKey="pelangganBeda"
+                    name="Pelanggan Beda"
+                    fill="#0284c7"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={28}
+                  />
+                  <Bar
+                    dataKey="pelangganSama"
+                    name="Pelanggan Sama"
+                    fill="#d97706"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={28}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Right: Interactive List of Repeat vs Unique Customers for Selected Period */}
+          <div className="lg:col-span-7 border border-slate-200 rounded-xl p-3 sm:p-3.5 bg-white space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-900">
+                  Rincian {activeCustomerStats.label}
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  {activeCustomerStats.anonymousWalkInCount > 0
+                    ? `${activeCustomerStats.namedVisitsCount} kunjungan bernama · ${activeCustomerStats.anonymousWalkInCount} pelanggan umum tanpa nama`
+                    : `${activeCustomerStats.totalVisits} kunjungan teridentifikasi otomatis`}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg border border-slate-200/70 self-start sm:self-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCustomerListFilter('sama')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer whitespace-nowrap ${
+                    customerListFilter === 'sama'
+                      ? 'bg-white text-amber-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Pelanggan Sama ({activeCustomerStats.repeatCustomers})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomerListFilter('semua')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer whitespace-nowrap ${
+                    customerListFilter === 'semua'
+                      ? 'bg-white text-teal-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Semua Unik ({activeCustomerStats.uniqueCustomers})
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const itemsToShow =
+                customerListFilter === 'sama'
+                  ? activeCustomerStats.repeatCustomerList
+                  : activeCustomerStats.allCustomerList;
+
+              if (itemsToShow.length === 0) {
+                return (
+                  <div className="py-5 px-3 text-center text-xs text-slate-500 bg-slate-50/70 rounded-lg border border-dashed border-slate-200 space-y-2">
+                    <p>
+                      {customerListFilter === 'sama'
+                        ? `Belum ada pelanggan bernama yang datang lebih dari 1 kali pada periode ${activeCustomerStats.label.toLowerCase()}. Isi nama atau nomor HP saat transaksi agar pelanggan langganan otomatis terdeteksi.`
+                        : `Belum ada pelanggan masuk pada periode ${activeCustomerStats.label.toLowerCase()}.`}
+                    </p>
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('kasir')}
+                        className="px-2.5 py-1 bg-teal-700 hover:bg-teal-600 text-white font-bold rounded-lg transition cursor-pointer"
+                      >
+                        Buka Kasir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('ppob')}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg transition cursor-pointer"
+                      >
+                        Buka PPOB
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="max-h-[196px] overflow-y-auto divide-y divide-slate-100 pr-1">
+                  {itemsToShow.slice(0, 25).map((cust, idx) => (
+                    <div
+                      key={cust.key}
+                      className="py-2 flex items-center justify-between gap-2 text-xs hover:bg-slate-50/80 px-1.5 rounded transition"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className="w-5 h-5 rounded bg-slate-100 text-slate-600 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 tabular-nums">
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                            <span className="truncate">{cust.displayName}</span>
+                            {cust.isAnonymous && (
+                              <span className="text-[10px] font-normal text-slate-400 shrink-0">
+                                (Tanpa Nama)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-slate-500 truncate">
+                            {cust.divisions.join(', ')} · Terakhir {cust.lastDateKey}
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[11px] font-extrabold tabular-nums whitespace-nowrap shrink-0 ${
+                          !cust.isAnonymous && cust.visitCount >= 2
+                            ? 'bg-amber-100 text-amber-900'
+                            : 'bg-teal-50 text-teal-800'
+                        }`}
+                      >
+                        {cust.visitCount}x masuk
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
 

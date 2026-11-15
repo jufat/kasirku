@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Wallet,
   PlusCircle,
@@ -17,8 +17,13 @@ import {
   Sun,
   Moon,
   ShoppingCart,
+  Users,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
+import {
+  extractDeduplicatedVisits,
+  computeCustomerStatsForRange,
+} from '../utils/customerAnalytics';
 
 export const TopHeader: React.FC = () => {
   const {
@@ -41,6 +46,12 @@ export const TopHeader: React.FC = () => {
     toggleBottomNav,
     cartTotalCount,
     setIsMasterCartModalOpen,
+    transactions,
+    atmMiniTransactions,
+    agencyTransactions,
+    ppobTransactions,
+    services,
+    printOrders,
   } = usePOS();
 
   // Real-time Indonesian digital clock (WIB)
@@ -114,6 +125,31 @@ export const TopHeader: React.FC = () => {
 
   const breadcrumb = getBreadcrumbTitle();
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
+
+  const todayCustomerStats = useMemo(() => {
+    const visits = extractDeduplicatedVisits({
+      transactions,
+      atmMiniTransactions,
+      agencyTransactions,
+      ppobTransactions,
+      services,
+      printOrders,
+    });
+    return computeCustomerStatsForRange(visits, {
+      periodId: 'harian',
+      label: 'Hari Ini',
+      sublabel: '1 Hari',
+      days: 1,
+    });
+  }, [
+    transactions,
+    atmMiniTransactions,
+    agencyTransactions,
+    ppobTransactions,
+    services,
+    printOrders,
+    clockData.fullDate,
+  ]);
 
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-teal-100/90 shrink-0 sticky top-0 z-10 shadow-xs select-none">
@@ -197,12 +233,28 @@ export const TopHeader: React.FC = () => {
             <span>Tersimpan {lastSavedTime}</span>
           </div>
 
-          {/* Live Clock */}
-          <div className="flex items-center gap-1.5 text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 font-mono tabular-nums shadow-xs whitespace-nowrap shrink-0">
-            <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-            <span className="font-bold text-slate-800">
-              {clockData.fullDate ? `${clockData.fullDate} · ${clockData.time}` : 'Memuat waktu...'}
-            </span>
+          {/* Live Clock & Inline Daily Customer Count (Sejajar dengan Waktu) */}
+          <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 shadow-xs whitespace-nowrap shrink-0 overflow-hidden">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 text-slate-700 font-mono tabular-nums">
+              <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+              <span className="font-bold text-slate-800">
+                {clockData.fullDate ? `${clockData.fullDate} · ${clockData.time}` : 'Memuat waktu...'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('dashboard')}
+              className="flex items-center gap-1.5 px-2.5 py-1 border-l border-slate-200 bg-teal-50/75 hover:bg-teal-100/80 text-teal-950 transition cursor-pointer font-mono tabular-nums whitespace-nowrap shrink-0"
+              title={`Pelanggan masuk hari ini: ${todayCustomerStats.totalVisits} (${todayCustomerStats.uniqueCustomers} beda, ${todayCustomerStats.repeatCustomers} sama). Klik untuk rincian di Dashboard.`}
+            >
+              <Users className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+              <span className="font-extrabold text-teal-950">
+                {todayCustomerStats.totalVisits} Plg
+              </span>
+              <span className="hidden xl:inline text-[10.5px] font-semibold text-teal-700">
+                · {todayCustomerStats.uniqueCustomers} Beda / {todayCustomerStats.repeatCustomers} Sama
+              </span>
+            </button>
           </div>
 
           {lowStockCount > 0 && (
@@ -394,18 +446,33 @@ export const TopHeader: React.FC = () => {
           </div>
         </div>
 
-        {/* Right: Always-Visible Live Digital Clock (WIB) */}
-        <div className="flex items-center gap-1 font-mono tabular-nums whitespace-nowrap shrink-0">
-          <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-          <span className="hidden min-[380px]:inline sm:hidden text-slate-500 font-medium text-[10.5px]">
-            {clockData.shortDate} ·
-          </span>
-          <span className="hidden sm:inline text-slate-600 font-medium text-[11px]">
-            {clockData.fullDate} ·
-          </span>
-          <span className="font-black text-slate-900 text-[11px] sm:text-xs">
-            {clockData.time || '--:--:-- WIB'}
-          </span>
+        {/* Right: Daily Customer Counter Inline Next to Live Digital Clock (WIB) */}
+        <div className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('dashboard')}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-white hover:bg-teal-100 border border-teal-200 text-teal-900 font-mono tabular-nums text-[10.5px] sm:text-[11px] font-extrabold transition cursor-pointer shrink-0"
+            title={`Pelanggan masuk hari ini: ${todayCustomerStats.totalVisits} (${todayCustomerStats.uniqueCustomers} beda, ${todayCustomerStats.repeatCustomers} sama)`}
+          >
+            <Users className="w-3 h-3 text-teal-700 shrink-0" />
+            <span>{todayCustomerStats.totalVisits} Plg</span>
+            <span className="hidden sm:inline font-semibold text-teal-700">
+              ({todayCustomerStats.uniqueCustomers}B/{todayCustomerStats.repeatCustomers}S)
+            </span>
+          </button>
+
+          <div className="flex items-center gap-1 font-mono tabular-nums whitespace-nowrap shrink-0">
+            <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+            <span className="hidden min-[380px]:inline sm:hidden text-slate-500 font-medium text-[10.5px]">
+              {clockData.shortDate} ·
+            </span>
+            <span className="hidden sm:inline text-slate-600 font-medium text-[11px]">
+              {clockData.fullDate} ·
+            </span>
+            <span className="font-black text-slate-900 text-[11px] sm:text-xs">
+              {clockData.time || '--:--:-- WIB'}
+            </span>
+          </div>
         </div>
       </div>
     </header>
