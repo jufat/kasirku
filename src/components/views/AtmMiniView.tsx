@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   CreditCard,
   ArrowDownLeft,
@@ -35,6 +35,13 @@ import {
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType, AtmMiniTransaction } from '../../types/pos';
+import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
+import {
+  buildCustomerDirectory,
+  searchCustomerDirectory,
+  CustomerDirectoryEntry,
+  CustomerSuggestionKind,
+} from '../../utils/customerLookup';
 
 const BANK_LIST = [
   'BRI',
@@ -117,6 +124,11 @@ const parseExactRupiah = (raw: string): number => {
 export const AtmMiniView: React.FC = () => {
   const {
     atmMiniTransactions,
+    agencyTransactions,
+    ppobTransactions,
+    services,
+    debts,
+    printOrders,
     recordAtmMiniTransaction,
     openReceipt,
     setActiveTab,
@@ -211,6 +223,134 @@ export const AtmMiniView: React.FC = () => {
   const isCurrentChannelCard =
     (primaryTab === 'tarik_tunai' && tarikChannel === 'kartu_debit') ||
     (primaryTab === 'transfer_topup' && transferChannel === 'kartu_debit');
+
+  // Direct customer lookup from past ATM Mini, Agen, PPOB & contacts
+  const lastAutoFilledNameRef = useRef<string>('');
+
+  const customerDirectory = useMemo(
+    () =>
+      buildCustomerDirectory({
+        atmMiniTransactions,
+        agencyTransactions,
+        ppobTransactions,
+        services,
+        debts,
+        printOrders,
+      }),
+    [atmMiniTransactions, agencyTransactions, ppobTransactions, services, debts, printOrders]
+  );
+
+  const preferredCustomerKinds = useMemo<CustomerSuggestionKind[]>(() => {
+    const channel = primaryTab === 'tarik_tunai' ? tarikChannel : transferChannel;
+    if (channel === 'ewallet') {
+      return ['ewallet', 'ppob_hp', 'phone_general', 'mbanking', 'bank'];
+    }
+    if (channel === 'mbanking') {
+      return ['mbanking', 'bank', 'ewallet', 'phone_general'];
+    }
+    if (channel === 'qris') {
+      return ['ewallet', 'mbanking', 'ppob_hp', 'phone_general'];
+    }
+    if (primaryTab === 'tarik_tunai') {
+      return ['card', 'bank', 'ewallet', 'mbanking', 'phone_general'];
+    }
+    return ['bank', 'mbanking', 'ewallet', 'phone_general'];
+  }, [primaryTab, tarikChannel, transferChannel]);
+
+  const customerSuggestions = useMemo(
+    () => searchCustomerDirectory(customerDirectory, customerName, preferredCustomerKinds, 8),
+    [customerDirectory, customerName, preferredCustomerKinds]
+  );
+
+  const exactCustomerMatches = useMemo(() => {
+    const clean = customerName.trim().toLowerCase();
+    if (clean.length < 2) return [];
+    return customerSuggestions.filter((e) => e.customerName.toLowerCase() === clean);
+  }, [customerSuggestions, customerName]);
+
+  const applyCustomerDirectoryEntry = (entry: CustomerDirectoryEntry) => {
+    setCustomerName(entry.customerName);
+    setAtmMiniDebtorName(entry.customerName);
+    lastAutoFilledNameRef.current = entry.customerName.toLowerCase();
+
+    const activeChannel = primaryTab === 'tarik_tunai' ? tarikChannel : transferChannel;
+
+    if (activeChannel === 'ewallet') {
+      if (entry.targetValue && entry.kind !== 'card') {
+        setTargetAccountOrPhone(entry.targetValue);
+        setAtmMiniCustomerPhone(entry.targetValue);
+      }
+      if (entry.provider) {
+        const matchedEw = EWALLET_LIST.find(
+          (ew) => ew.toLowerCase() === entry.provider!.toLowerCase()
+        );
+        if (matchedEw) setEwalletProvider(matchedEw);
+      }
+      return;
+    }
+
+    if (activeChannel === 'kartu_debit') {
+      if (entry.cardLast4) {
+        setCardNumberLast4(entry.cardLast4);
+      }
+      if (entry.provider) {
+        const matchedBank = BANK_LIST.find(
+          (b) => b.toLowerCase().includes(entry.provider!.toLowerCase())
+        );
+        if (matchedBank) setBankName(matchedBank);
+      }
+      if (primaryTab === 'transfer_topup' && entry.targetValue && entry.kind !== 'card') {
+        setTargetAccountOrPhone(entry.targetValue);
+      }
+      if (entry.targetValue && entry.kind !== 'card') {
+        setAtmMiniCustomerPhone(entry.targetValue);
+      }
+      return;
+    }
+
+    if (activeChannel === 'mbanking') {
+      if (entry.targetValue && entry.kind !== 'card') {
+        setTargetAccountOrPhone(entry.targetValue);
+      }
+      if (entry.provider) {
+        const matchedApp = MBANKING_APPS.find((a) =>
+          a.toLowerCase().includes(entry.provider!.split(' ')[0].toLowerCase())
+        );
+        if (matchedApp) setMbankingApp(matchedApp);
+      }
+      return;
+    }
+
+    if (activeChannel === 'qris' && entry.targetValue && entry.kind !== 'card') {
+      setAtmMiniCustomerPhone(entry.targetValue);
+    }
+  };
+
+  const handleCustomerNameInputChange = (val: string) => {
+    setCustomerName(val);
+    const clean = val.trim().toLowerCase();
+    if (!clean) {
+      lastAutoFilledNameRef.current = '';
+      return;
+    }
+
+    // Jika ketik nama persis sama & field nomor tujuan masih kosong, otomatis isi nomor/ID yang sesuai kanal
+    if (clean !== lastAutoFilledNameRef.current && !targetAccountOrPhone.trim()) {
+      const exactMatches = searchCustomerDirectory(
+        customerDirectory,
+        clean,
+        preferredCustomerKinds,
+        5
+      ).filter((e) => e.customerName.toLowerCase() === clean);
+
+      if (exactMatches.length === 1) {
+        const match = exactMatches[0];
+        if (match.kind !== 'card' && match.targetValue) {
+          applyCustomerDirectoryEntry(match);
+        }
+      }
+    }
+  };
 
   // Handle switching primary tab
   const handlePrimaryTabChange = (tab: 'tarik_tunai' | 'transfer_topup') => {
@@ -1000,12 +1140,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik / Nasabah
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama Nasabah"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama nasabah..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1073,12 +1215,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik Akun / Nasabah
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Agus Salim"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama (cth: Aldi)"
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1110,12 +1254,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik Akun / Nasabah
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama Nasabah M-Banking"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama nasabah..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1170,12 +1316,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik Akun / Nasabah
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Budi Santoso / QRIS Nasabah"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama nasabah..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1207,12 +1355,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik / Nasabah
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama Nasabah"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama nasabah..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1280,12 +1430,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik Akun / Penerima
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama Penerima"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama (cth: Aldi)"
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1317,12 +1469,14 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Pemilik Akun / Nasabah
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama Nasabah M-Banking"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama nasabah..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1378,14 +1532,50 @@ export const AtmMiniView: React.FC = () => {
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Nama Akun Pembayar / Pelanggan
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Budi Santoso / QRIS BCA"
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama pelanggan..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Quick History Match Strip: langsung muncul jika nama cocok dengan riwayat transaksi */}
+          {customerName.trim().length >= 2 && customerSuggestions.length > 0 && (
+            <div className="p-2.5 bg-teal-50/75 border border-teal-200/90 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-teal-900">
+                <span className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                  <span>
+                    {exactCustomerMatches.length > 0
+                      ? `Nomor / ID Tersimpan untuk "${exactCustomerMatches[0].customerName}":`
+                      : `Riwayat Nama Mirip (${customerSuggestions.length}):`}
+                  </span>
+                </span>
+                <span className="text-[10px] font-medium text-teal-700">Ketuk untuk isi otomatis</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {customerSuggestions.slice(0, 4).map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => applyCustomerDirectoryEntry(entry)}
+                    className="px-2.5 py-1 bg-white hover:bg-teal-100 border border-teal-300 rounded-lg text-[11px] text-left transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <span className="font-bold text-slate-800">{entry.customerName}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-[10px] font-semibold text-teal-700">{entry.channelTag}</span>
+                    <span className="font-mono font-extrabold text-teal-950 tabular-nums">
+                      {entry.displayTarget}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
           )}

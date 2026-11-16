@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Send,
   Building,
@@ -16,6 +16,13 @@ import {
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AgencyType } from '../../types/pos';
+import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
+import {
+  buildCustomerDirectory,
+  searchCustomerDirectory,
+  CustomerDirectoryEntry,
+  CustomerSuggestionKind,
+} from '../../utils/customerLookup';
 
 const BANK_PROVIDERS = [
   'BRI',
@@ -63,12 +70,22 @@ const parseExactRupiah = (raw: string): number => {
 };
 
 export const TransferAgencyView: React.FC = () => {
-  const { agencyTransactions, recordAgencyTransaction, openReceipt } = usePOS();
+  const {
+    agencyTransactions,
+    atmMiniTransactions,
+    ppobTransactions,
+    services,
+    debts,
+    printOrders,
+    recordAgencyTransaction,
+    openReceipt,
+  } = usePOS();
 
   const [agencyType, setAgencyType] = useState<AgencyType>('transfer_bank');
   const [provider, setProvider] = useState<string>('BRI');
   const [targetNumber, setTargetNumber] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
+  const lastAutoFilledNameRef = useRef<string>('');
   const [nominalInput, setNominalInput] = useState<string>('500.000');
   const nominal = parseExactRupiah(nominalInput);
   const setNominal = (valOrUpdater: number | ((prev: number) => number)) => {
@@ -82,6 +99,70 @@ export const TransferAgencyView: React.FC = () => {
   const [counterFee, setCounterFee] = useState<number>(5000);
   const [notes, setNotes] = useState<string>('');
   const [successToast, setSuccessToast] = useState<string>('');
+
+  const customerDirectory = useMemo(
+    () =>
+      buildCustomerDirectory({
+        agencyTransactions,
+        atmMiniTransactions,
+        ppobTransactions,
+        services,
+        debts,
+        printOrders,
+      }),
+    [agencyTransactions, atmMiniTransactions, ppobTransactions, services, debts, printOrders]
+  );
+
+  const preferredCustomerKinds = useMemo<CustomerSuggestionKind[]>(
+    () =>
+      agencyType === 'ewallet'
+        ? ['ewallet', 'ppob_hp', 'phone_general', 'bank']
+        : ['bank', 'mbanking', 'ewallet', 'phone_general'],
+    [agencyType]
+  );
+
+  const customerSuggestions = useMemo(
+    () => searchCustomerDirectory(customerDirectory, customerName, preferredCustomerKinds, 8),
+    [customerDirectory, customerName, preferredCustomerKinds]
+  );
+
+  const applyCustomerDirectoryEntry = (entry: CustomerDirectoryEntry) => {
+    setCustomerName(entry.customerName);
+    lastAutoFilledNameRef.current = entry.customerName.toLowerCase();
+    if (entry.targetValue && entry.kind !== 'card') {
+      setTargetNumber(entry.targetValue);
+    }
+    if (entry.provider) {
+      const pool =
+        agencyType === 'ewallet'
+          ? EWALLET_PROVIDERS
+          : agencyType === 'briva_va'
+          ? VA_PROVIDERS
+          : BANK_PROVIDERS;
+      const matched = pool.find((p) => p.toLowerCase().includes(entry.provider!.toLowerCase()));
+      if (matched) setProvider(matched);
+    }
+  };
+
+  const handleCustomerNameInputChange = (val: string) => {
+    setCustomerName(val);
+    const clean = val.trim().toLowerCase();
+    if (!clean) {
+      lastAutoFilledNameRef.current = '';
+      return;
+    }
+    if (clean !== lastAutoFilledNameRef.current && !targetNumber.trim()) {
+      const exactMatches = searchCustomerDirectory(
+        customerDirectory,
+        clean,
+        preferredCustomerKinds,
+        5
+      ).filter((e) => e.customerName.toLowerCase() === clean);
+      if (exactMatches.length === 1 && exactMatches[0].kind !== 'card' && exactMatches[0].targetValue) {
+        applyCustomerDirectoryEntry(exactMatches[0]);
+      }
+    }
+  };
 
   // Default fees when switching type
   const handleTypeChange = (type: AgencyType) => {
@@ -258,12 +339,14 @@ export const TransferAgencyView: React.FC = () => {
               <label className="text-xs font-bold text-slate-700 block mb-1.5">
                 Nama Pengirim / Pemilik
               </label>
-              <input
-                type="text"
+              <CustomerNameLookupInput
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Nama Pelanggan"
-                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:bg-white focus:outline-none"
+                onChange={handleCustomerNameInputChange}
+                onSelectSuggestion={applyCustomerDirectoryEntry}
+                suggestions={customerSuggestions}
+                placeholder="Ketik nama pelanggan..."
+                alignDropdown="left"
+                inputClassName="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:bg-white focus:outline-none"
               />
             </div>
             <div>

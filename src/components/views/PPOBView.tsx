@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Zap,
   Phone,
@@ -30,9 +30,17 @@ import {
   Calculator,
   ArrowRight,
   ShoppingCart,
+  History,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { PPOBCategory, PPOBPackage, PPOBTransaction } from '../../types/pos';
+import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
+import {
+  buildCustomerDirectory,
+  searchCustomerDirectory,
+  CustomerDirectoryEntry,
+  CustomerSuggestionKind,
+} from '../../utils/customerLookup';
 
 const POPULAR_GAMES = [
   'Semua Game',
@@ -78,6 +86,11 @@ export const PPOBView: React.FC = () => {
     updatePPOBPackage,
     deletePPOBPackage,
     ppobTransactions,
+    atmMiniTransactions,
+    agencyTransactions,
+    services,
+    debts,
+    printOrders,
     recordPPOBTransaction,
     updatePPOBTransaction,
     deletePPOBTransaction,
@@ -124,6 +137,51 @@ export const PPOBView: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [mobileTab, setMobileTab] = useState<'buy' | 'history'>('buy');
   const [lastTxForReceipt, setLastTxForReceipt] = useState<PPOBTransaction | null>(null);
+
+  // Past customer lookup (PPOB, E-Wallet/ATM Mini, Agen & kontak toko)
+  const lastAutoFilledNameRef = useRef<string>('');
+
+  const customerDirectory = useMemo(
+    () =>
+      buildCustomerDirectory({
+        ppobTransactions,
+        atmMiniTransactions,
+        agencyTransactions,
+        services,
+        debts,
+        printOrders,
+      }),
+    [ppobTransactions, atmMiniTransactions, agencyTransactions, services, debts, printOrders]
+  );
+
+  const preferredCustomerKinds = useMemo<CustomerSuggestionKind[]>(() => {
+    switch (category) {
+      case 'pulsa':
+      case 'data':
+        return ['ppob_hp', 'ewallet', 'phone_general', 'ppob_tagihan'];
+      case 'pln':
+        return ['ppob_pln', 'ppob_pln_bulanan', 'ppob_hp', 'phone_general'];
+      case 'pln_bulanan':
+        return ['ppob_pln_bulanan', 'ppob_pln', 'ppob_hp', 'phone_general'];
+      case 'wifi':
+        return ['ppob_wifi', 'ppob_hp', 'phone_general'];
+      case 'game':
+        return ['ppob_game', 'ppob_hp', 'ewallet', 'phone_general'];
+      default:
+        return ['ppob_tagihan', 'ppob_hp', 'ewallet', 'phone_general'];
+    }
+  }, [category]);
+
+  const customerSuggestions = useMemo(
+    () => searchCustomerDirectory(customerDirectory, customerName, preferredCustomerKinds, 8),
+    [customerDirectory, customerName, preferredCustomerKinds]
+  );
+
+  const exactCustomerMatches = useMemo(() => {
+    const clean = customerName.trim().toLowerCase();
+    if (clean.length < 2) return [];
+    return customerSuggestions.filter((e) => e.customerName.toLowerCase() === clean);
+  }, [customerSuggestions, customerName]);
 
   // Scroll references and helper functions for horizontal tabs
   const categoryScrollRef = useRef<HTMLDivElement>(null);
@@ -350,6 +408,71 @@ export const PPOBView: React.FC = () => {
       cleaned.startsWith('0888')
     ) {
       setSelectedProvider('Smartfren');
+    }
+  };
+
+  const applyCustomerDirectoryEntry = (entry: CustomerDirectoryEntry) => {
+    setCustomerName(entry.customerName);
+    setPpobDebtorName(entry.customerName);
+    lastAutoFilledNameRef.current = entry.customerName.toLowerCase();
+
+    if (category === 'game') {
+      if (entry.gameUserId) {
+        setGameUserId(entry.gameUserId);
+        setGameZoneId(entry.gameZoneId || '');
+      } else if (entry.targetValue) {
+        setGameUserId(entry.targetValue);
+      }
+      if (entry.provider) {
+        const matchedGame = POPULAR_GAMES.find(
+          (g) => g !== 'Semua Game' && g.toLowerCase() === entry.provider!.toLowerCase()
+        );
+        if (matchedGame) setSelectedGame(matchedGame);
+      }
+      return;
+    }
+
+    if (entry.targetValue && entry.kind !== 'card') {
+      handlePhoneChange(entry.targetValue);
+      setPpobCustomerPhone(entry.targetValue);
+    }
+
+    if (category === 'wifi' && entry.kind === 'ppob_wifi' && entry.provider) {
+      const matchedWifi = POPULAR_WIFI_PROVIDERS.find(
+        (w) => w.toLowerCase() === entry.provider!.toLowerCase()
+      );
+      if (matchedWifi) {
+        setCustomWifiProvider(matchedWifi);
+      } else {
+        setCustomWifiProvider('Lainnya');
+        setCustomWifiOtherName(entry.provider);
+      }
+    }
+  };
+
+  const handleCustomerNameInputChange = (val: string) => {
+    setCustomerName(val);
+    const clean = val.trim().toLowerCase();
+    if (!clean) {
+      lastAutoFilledNameRef.current = '';
+      return;
+    }
+
+    const isTargetEmpty = category === 'game' ? !gameUserId.trim() : !phoneNumber.trim();
+    if (clean !== lastAutoFilledNameRef.current && isTargetEmpty) {
+      const exactMatches = searchCustomerDirectory(
+        customerDirectory,
+        clean,
+        preferredCustomerKinds,
+        5
+      ).filter((e) => e.customerName.toLowerCase() === clean);
+
+      if (exactMatches.length === 1) {
+        const match = exactMatches[0];
+        if (match.kind !== 'card' && match.targetValue) {
+          applyCustomerDirectoryEntry(match);
+        }
+      }
     }
   };
 
@@ -897,14 +1020,16 @@ export const PPOBView: React.FC = () => {
 
                 <div>
                   <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    Nickname / Nama Pembeli (Opsional)
+                    Nickname / Nama Pembeli (Ketik Nama)
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: JuFat_Slayer"
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-violet-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama pembeli..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-violet-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -931,7 +1056,7 @@ export const PPOBView: React.FC = () => {
             /* ============================================================== */
             /* DYNAMIC FORM: PEMBAYARAN LISTRIK BULANAN (PLN PASCABAYAR)       */
             /* ============================================================== */
-            <div className="bg-white rounded-xl border border-amber-300 shadow-2xs overflow-hidden">
+            <div className="bg-white rounded-xl border border-amber-300 shadow-2xs overflow-visible">
               <div className="p-3 sm:p-3.5 space-y-2.5">
                 <div className="flex items-center gap-2.5 border-b border-amber-100 pb-2">
                   <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
@@ -964,14 +1089,16 @@ export const PPOBView: React.FC = () => {
 
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Nama Pelanggan (Opsional)
+                      Nama Pelanggan (Ketik Nama)
                     </label>
-                    <input
-                      type="text"
+                    <CustomerNameLookupInput
                       value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Contoh: Budi Santoso"
-                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
+                      onChange={handleCustomerNameInputChange}
+                      onSelectSuggestion={applyCustomerDirectoryEntry}
+                      suggestions={customerSuggestions}
+                      placeholder="Ketik nama pelanggan..."
+                      alignDropdown="right"
+                      inputClassName="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
                     />
                   </div>
                 </div>
@@ -980,7 +1107,7 @@ export const PPOBView: React.FC = () => {
               {/* Quick Custom Bill Calculator Section */}
               <form
                 onSubmit={handlePayCustomPlnBill}
-                className="bg-amber-50/70 p-3 sm:p-3.5 border-t border-amber-200/80 space-y-2.5"
+                className="bg-amber-50/70 p-3 sm:p-3.5 border-t border-amber-200/80 rounded-b-xl space-y-2.5"
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-extrabold text-amber-950 text-xs flex items-center gap-1.5">
@@ -1117,7 +1244,7 @@ export const PPOBView: React.FC = () => {
             /* ============================================================== */
             /* DYNAMIC FORM: PEMBAYARAN TAGIHAN WIFI & INTERNET RUMAH          */
             /* ============================================================== */
-            <div className="bg-white rounded-xl border border-sky-300 shadow-2xs overflow-hidden">
+            <div className="bg-white rounded-xl border border-sky-300 shadow-2xs overflow-visible">
               <div className="p-3 sm:p-3.5 space-y-2.5">
                 <div className="flex items-center gap-2.5 border-b border-sky-100 pb-2">
                   <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0">
@@ -1220,14 +1347,16 @@ export const PPOBView: React.FC = () => {
 
                 <div>
                   <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    Nama Pelanggan Wifi (Opsional)
+                    Nama Pelanggan Wifi (Ketik Nama)
                   </label>
-                  <input
-                    type="text"
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Agus Pratama"
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none"
+                    onChange={handleCustomerNameInputChange}
+                    onSelectSuggestion={applyCustomerDirectoryEntry}
+                    suggestions={customerSuggestions}
+                    placeholder="Ketik nama pelanggan..."
+                    alignDropdown="right"
+                    inputClassName="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -1236,7 +1365,7 @@ export const PPOBView: React.FC = () => {
               {/* Quick Custom Bill Calculator Card for Wifi */}
               <form
                 onSubmit={handlePayCustomWifiBill}
-                className="bg-sky-50/70 p-3 sm:p-3.5 border-t border-sky-200/80 space-y-2.5"
+                className="bg-sky-50/70 p-3 sm:p-3.5 border-t border-sky-200/80 rounded-b-xl space-y-2.5"
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-extrabold text-sky-950 text-xs flex items-center gap-1.5">
@@ -1384,11 +1513,17 @@ export const PPOBView: React.FC = () => {
               </form>
             </div>
           ) : (
-            /* Standard Phone / Meteran Input for Pulsa, Data, Token PLN, etc. */
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="md:col-span-2">
+            /* Standard Phone / Meteran + Customer Name Input for Pulsa, Data, Token PLN, BPJS, PDAM */
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+              <div className="md:col-span-5">
                 <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                  {category === 'pln' ? 'Nomor Meteran / ID Pelanggan Token PLN (Prabayar)' : 'Nomor HP Pelanggan'}
+                  {category === 'pln'
+                    ? 'No. Meteran / ID PLN (Prabayar) *'
+                    : category === 'bpjs'
+                    ? 'Nomor VA / Kartu BPJS Kesehatan *'
+                    : category === 'pdam'
+                    ? 'Nomor Sambungan / ID PDAM *'
+                    : 'Nomor HP Pelanggan *'}
                 </label>
                 <div className="relative">
                   <input
@@ -1396,11 +1531,17 @@ export const PPOBView: React.FC = () => {
                     value={phoneNumber}
                     onChange={(e) => handlePhoneChange(e.target.value)}
                     placeholder={
-                      category === 'pln' ? 'Contoh: 14028918230' : 'Contoh: 081234567890'
+                      category === 'pln'
+                        ? 'Contoh: 14028918230'
+                        : category === 'bpjs'
+                        ? 'Contoh: 8888801234567'
+                        : category === 'pdam'
+                        ? 'Contoh: 10293847'
+                        : 'Contoh: 081234567890'
                     }
                     className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:ring-2 focus:ring-teal-500 focus:outline-none"
                   />
-                  {category !== 'pln' && phoneNumber.length >= 4 && (
+                  {category !== 'pln' && category !== 'bpjs' && category !== 'pdam' && phoneNumber.length >= 4 && (
                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                       {selectedProvider}
                     </span>
@@ -1408,7 +1549,22 @@ export const PPOBView: React.FC = () => {
                 </div>
               </div>
 
-              <div>
+              <div className="md:col-span-4">
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                  Nama Pelanggan (Ketik Nama)
+                </label>
+                <CustomerNameLookupInput
+                  value={customerName}
+                  onChange={handleCustomerNameInputChange}
+                  onSelectSuggestion={applyCustomerDirectoryEntry}
+                  suggestions={customerSuggestions}
+                  placeholder="Ketik nama (cari riwayat)..."
+                  alignDropdown="left"
+                  inputClassName="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="md:col-span-3">
                 <label className="text-[11px] font-bold text-slate-600 block mb-1">
                   Operator / Jaringan
                 </label>
@@ -1428,6 +1584,40 @@ export const PPOBView: React.FC = () => {
                     ))
                   )}
                 </select>
+              </div>
+            </div>
+          )}
+
+          {/* Quick History Match Strip: otomatis tampil saat mengetik nama pelanggan yang pernah bertransaksi */}
+          {customerName.trim().length >= 2 && customerSuggestions.length > 0 && (
+            <div className="p-2.5 bg-teal-50/80 border border-teal-200/90 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-teal-900">
+                <span className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                  <span>
+                    {exactCustomerMatches.length > 0
+                      ? `Nomor / ID Tersimpan untuk "${exactCustomerMatches[0].customerName}":`
+                      : `Riwayat Pelanggan Cocok (${customerSuggestions.length}):`}
+                  </span>
+                </span>
+                <span className="text-[10px] font-medium text-teal-700">Ketuk untuk isi otomatis</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {customerSuggestions.slice(0, 4).map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => applyCustomerDirectoryEntry(entry)}
+                    className="px-2.5 py-1 bg-white hover:bg-teal-100 border border-teal-300 rounded-lg text-[11px] text-left transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <span className="font-bold text-slate-800">{entry.customerName}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-[10px] font-semibold text-teal-700">{entry.channelTag}</span>
+                    <span className="font-mono font-extrabold text-teal-950 tabular-nums">
+                      {entry.displayTarget}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
           )}
