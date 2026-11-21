@@ -31,10 +31,13 @@ import {
   ArrowRight,
   ShoppingCart,
   History,
+  ClipboardPaste,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { PPOBCategory, PPOBPackage, PPOBTransaction } from '../../types/pos';
 import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
+import { QuickReceiptImportModal } from '../QuickReceiptImportModal';
+import { ParsedPPOBItem } from '../../utils/receiptTextParser';
 import {
   buildCustomerDirectory,
   searchCustomerDirectory,
@@ -137,6 +140,7 @@ export const PPOBView: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [mobileTab, setMobileTab] = useState<'buy' | 'history'>('buy');
   const [lastTxForReceipt, setLastTxForReceipt] = useState<PPOBTransaction | null>(null);
+  const [isQuickImportOpen, setIsQuickImportOpen] = useState(false);
 
   // Past customer lookup (PPOB, E-Wallet/ATM Mini, Agen & kontak toko)
   const lastAutoFilledNameRef = useRef<string>('');
@@ -751,6 +755,129 @@ export const PPOBView: React.FC = () => {
     return pkg.category === category;
   });
 
+  const handleFillFromQuickImport = (item: ParsedPPOBItem) => {
+    setCategory(item.category);
+    setCustomerName(item.customerName);
+
+    if (item.category === 'game') {
+      const zoneMatch = item.targetNumber.match(/^([^\s(]+)\s*\(([^)]+)\)/);
+      if (zoneMatch) {
+        setGameUserId(zoneMatch[1]);
+        setGameZoneId(zoneMatch[2]);
+      } else {
+        setGameUserId(item.targetNumber);
+        setGameZoneId(item.gameZoneId || '');
+      }
+      const matchedGame = POPULAR_GAMES.find(
+        (g) => g !== 'Semua Game' && g.toLowerCase() === item.provider.toLowerCase()
+      );
+      if (matchedGame) setSelectedGame(matchedGame);
+    } else {
+      handlePhoneChange(item.targetNumber);
+    }
+
+    if (item.category === 'pln_bulanan') {
+      setCustomPlnBillInput(item.hpp > 0 ? Math.trunc(item.hpp).toLocaleString('id-ID') : '');
+      setCustomPlnAdminInput(
+        item.loketProfit > 0 ? Math.trunc(item.loketProfit).toLocaleString('id-ID') : '0'
+      );
+      setSuccessMessage(`Data Tagihan Listrik ${item.targetNumber} dimasukkan ke form.`);
+      setTimeout(() => setSuccessMessage(''), 4500);
+      return;
+    }
+
+    if (item.category === 'wifi') {
+      const matchedWifi = POPULAR_WIFI_PROVIDERS.find(
+        (w) => w.toLowerCase() === item.provider.toLowerCase()
+      );
+      if (matchedWifi) {
+        setCustomWifiProvider(matchedWifi);
+      } else {
+        setCustomWifiProvider('Lainnya');
+        setCustomWifiOtherName(item.provider);
+      }
+      setCustomWifiBillInput(item.hpp > 0 ? Math.trunc(item.hpp).toLocaleString('id-ID') : '');
+      setCustomWifiAdminInput(
+        item.loketProfit > 0 ? Math.trunc(item.loketProfit).toLocaleString('id-ID') : '0'
+      );
+      setSuccessMessage(`Data Tagihan Wifi ${item.provider} dimasukkan ke form.`);
+      setTimeout(() => setSuccessMessage(''), 4500);
+      return;
+    }
+
+    if (item.category === 'pulsa' || item.category === 'data') {
+      setSelectedProvider(item.provider || 'Telkomsel');
+    }
+
+    if (item.sellingPrice > 0 && item.targetNumber.trim()) {
+      const customPkg: PPOBPackage = {
+        id: `import-ppob-${Date.now()}`,
+        category: item.category,
+        provider: item.provider,
+        name: item.packageName,
+        hpp: item.hpp,
+        price: item.sellingPrice,
+        desc: item.note,
+      };
+      setSelectedPackageForCheckout(customPkg);
+      setPpobPaymentMethod(item.paymentMethod);
+      setPpobDiscount(0);
+      setPpobCashReceived(item.sellingPrice);
+      setPpobCustomerPhone(item.targetNumber);
+      setPpobDebtorName(item.customerName);
+      setPpobKasbonError(null);
+      setPpobNote(item.note);
+    } else {
+      setSuccessMessage(`Data ${item.sourceApp} (${item.targetNumber}) dimasukkan ke form.`);
+      setTimeout(() => setSuccessMessage(''), 4500);
+    }
+  };
+
+  const handleRecordQuickImportItems = (
+    items: ParsedPPOBItem[],
+    openReceiptOnSingle: boolean
+  ) => {
+    let runningCashOffset = 0;
+    let lastRecorded: PPOBTransaction | null = null;
+
+    items.forEach((item, idx) => {
+      const shouldOpenReceipt = openReceiptOnSingle && items.length === 1 && idx === 0;
+      const recorded = recordPPOBTransaction(
+        item.category,
+        item.provider,
+        item.targetNumber,
+        item.packageName,
+        item.hpp,
+        item.sellingPrice,
+        item.customerName || 'Pelanggan PPOB',
+        item.paymentMethod,
+        item.targetNumber,
+        undefined,
+        item.note,
+        undefined,
+        {
+          suppressReceiptModal: !shouldOpenReceipt,
+          cashBalanceOffset: runningCashOffset,
+        }
+      );
+      lastRecorded = recorded;
+      if (item.paymentMethod === 'tunai') {
+        runningCashOffset += item.sellingPrice;
+      }
+    });
+
+    if (lastRecorded) {
+      setLastTxForReceipt(lastRecorded);
+    }
+
+    setSuccessMessage(
+      items.length === 1
+        ? `Struk ${items[0].sourceApp} (${items[0].packageName}) tercatat otomatis ke Kas & Riwayat!`
+        : `${items.length} transaksi PPOB dari Impor Struk Multi-Aplikasi berhasil dicatat ke Kas & Riwayat!`
+    );
+    setTimeout(() => setSuccessMessage(''), 6000);
+  };
+
   return (
     <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0 bg-[#f8f9fa]">
       {/* Mobile Tab Switcher */}
@@ -797,6 +924,26 @@ export const PPOBView: React.FC = () => {
               : 'border-b border-slate-200 bg-slate-50'
           }`}
         >
+          {/* Quick Multi-App Receipt Import Banner Bar */}
+          <div className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-2xs flex-wrap">
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-slate-800 truncate">
+                Pilih Layanan PPOB atau Impor Struk Aplikasi Lain
+              </p>
+              <p className="text-[10.5px] text-slate-500 truncate">
+                Catat langsung dari OrderKuota, Mitra Bukalapak, Digipos, Payfazz, BRImo &amp; DANA
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsQuickImportOpen(true)}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Tempel Struk Multi-App</span>
+            </button>
+          </div>
+
           {/* Category Tabs with Restored & Visible Horizontal Scroll + Quick Arrows */}
           <div className="relative group">
             {/* Left Scroll Arrow */}
@@ -2710,6 +2857,14 @@ export const PPOBView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <QuickReceiptImportModal
+        isOpen={isQuickImportOpen}
+        onClose={() => setIsQuickImportOpen(false)}
+        mode="ppob"
+        onFillPPOBForm={handleFillFromQuickImport}
+        onRecordPPOBItems={handleRecordQuickImportItems}
+      />
     </div>
   );
 };

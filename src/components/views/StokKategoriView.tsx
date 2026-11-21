@@ -28,10 +28,16 @@ import {
   Wallet,
   ChevronUp,
   ChevronDown,
+  Calculator,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { usePOS } from '../../context/POSContext';
-import { Product, ProductCategory } from '../../types/pos';
+import { Product } from '../../types/pos';
+import {
+  computeStockValuation,
+  parseStockNumber,
+  StockValuationAudit,
+} from '../../utils/stockValuation';
 
 export const StokKategoriView: React.FC = () => {
   const {
@@ -43,6 +49,7 @@ export const StokKategoriView: React.FC = () => {
     updateProduct,
     deleteProduct,
     restockProduct,
+    recalculateProductCatalog,
     importProductsFromExcel,
     exportProductsToExcel,
     downloadExcelTemplate,
@@ -91,25 +98,35 @@ export const StokKategoriView: React.FC = () => {
   const [excelParsedProducts, setExcelParsedProducts] = useState<Omit<Product, 'id'>[]>([]);
   const [importNotice, setImportNotice] = useState('');
 
+  // Audit / Hitung Ulang state
+  const [valuationAudit, setValuationAudit] = useState<StockValuationAudit | null>(null);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+
   const unitProfit = price - hpp;
   const profitMarginPercent = hpp > 0 ? Math.round((unitProfit / hpp) * 100) : 0;
 
   const allCategories = ['Semua', ...categories];
 
-  // Stock Analytics & Health
-  const totalItems = products.length;
-  const totalStockUnits = products.reduce((acc, p) => acc + p.stock, 0);
-  const totalAssetHpp = products.reduce((acc, p) => acc + p.stock * p.hpp, 0);
-  const totalPotentialRevenue = products.reduce((acc, p) => acc + p.stock * p.price, 0);
-  const totalPotentialProfit = totalPotentialRevenue - totalAssetHpp;
+  // Stock Analytics & Health (Sanitized & Non-negative)
+  const globalValuation = React.useMemo(() => computeStockValuation(products), [products]);
+  const totalStockUnits = globalValuation.totalUnits;
+  const totalAssetHpp = globalValuation.totalAssetHpp;
+  const totalPotentialRevenue = globalValuation.totalPotentialRevenue;
+  const totalPotentialProfit = globalValuation.totalPotentialProfit;
 
-  const outOfStockProducts = products.filter((p) => p.stock <= 0);
-  const lowStockProducts = products.filter((p) => p.stock > 0 && p.stock <= p.minStock);
+  const outOfStockProducts = products.filter((p) => (Number(p.stock) || 0) <= 0);
+  const lowStockProducts = products.filter(
+    (p) => (Number(p.stock) || 0) > 0 && (Number(p.stock) || 0) <= (Number(p.minStock) || 0)
+  );
   const criticalProducts = [...outOfStockProducts, ...lowStockProducts];
-  const safeProducts = products.filter((p) => p.stock > p.minStock);
+  const safeProducts = products.filter(
+    (p) => (Number(p.stock) || 0) > (Number(p.minStock) || 0)
+  );
 
   // Filtered Products
   const filteredProducts = products.filter((p) => {
+    const stockNum = Math.max(0, Number(p.stock) || 0);
+    const minNum = Math.max(0, Number(p.minStock) || 0);
     const matchesCat = selectedCat === 'Semua' || p.category === selectedCat;
     const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -118,17 +135,29 @@ export const StokKategoriView: React.FC = () => {
 
     let matchesStockStatus = true;
     if (stockStatusFilter === 'needs_restock') {
-      matchesStockStatus = p.stock <= p.minStock;
+      matchesStockStatus = stockNum <= minNum;
     } else if (stockStatusFilter === 'out_of_stock') {
-      matchesStockStatus = p.stock <= 0;
+      matchesStockStatus = stockNum <= 0;
     } else if (stockStatusFilter === 'low_stock') {
-      matchesStockStatus = p.stock > 0 && p.stock <= p.minStock;
+      matchesStockStatus = stockNum > 0 && stockNum <= minNum;
     } else if (stockStatusFilter === 'safe') {
-      matchesStockStatus = p.stock > p.minStock;
+      matchesStockStatus = stockNum > minNum;
     }
 
     return matchesCat && matchesSearch && matchesStockStatus;
   });
+
+  const filteredValuation = React.useMemo(
+    () => computeStockValuation(filteredProducts),
+    [filteredProducts]
+  );
+  const isFilterActive = filteredProducts.length !== products.length;
+
+  const handleRecalculateAssets = () => {
+    const audit = recalculateProductCatalog();
+    setValuationAudit(audit);
+    setIsAuditModalOpen(true);
+  };
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -269,26 +298,56 @@ export const StokKategoriView: React.FC = () => {
         }
 
         const parsed: Omit<Product, 'id'>[] = rawJson.map((row, idx) => {
-          const prodName = row['Nama Produk'] || row['name'] || row['NAMA'] || `Produk Baru ${idx + 1}`;
-          const prodSku = row['Kode SKU'] || row['sku'] || row['SKU'] || `IMP-${Date.now().toString().slice(-4)}-${idx + 1}`;
-          const prodCat = row['Kategori'] || row['category'] || categories[0] || 'Kabel & Charger';
-          const prodHpp = Number(row['HPP Modal'] || row['hpp'] || row['modal'] || 10000);
-          const prodPrice = Number(row['Harga Jual'] || row['price'] || row['harga'] || 15000);
-          const prodStock = Number(row['Stok Awal'] || row['stock'] || row['stok'] || 10);
-          const prodMin = Number(row['Batas Minimum'] || row['minStock'] || row['min_stok'] || 5);
-          const prodUnit = row['Satuan'] || row['unit'] || 'pcs';
-          const prodBarcode = row['Barcode'] || row['barcode'] || undefined;
+          const prodName =
+            row['Nama Produk'] ?? row['name'] ?? row['NAMA'] ?? `Produk Baru ${idx + 1}`;
+          const prodSku =
+            row['Kode SKU'] ??
+            row['sku'] ??
+            row['SKU'] ??
+            `IMP-${Date.now().toString().slice(-4)}-${idx + 1}`;
+          const prodCat =
+            row['Kategori'] ?? row['category'] ?? categories[0] ?? 'Kabel & Charger';
+
+          const rawHpp =
+            row['HPP (Modal)'] ??
+            row['HPP Modal'] ??
+            row['HPP'] ??
+            row['hpp'] ??
+            row['modal'] ??
+            0;
+          const rawPrice =
+            row['Harga Jual'] ?? row['price'] ?? row['harga'] ?? 0;
+          const rawStock =
+            row['Stok (Pcs)'] ??
+            row['Stok'] ??
+            row['Stok Awal'] ??
+            row['stock'] ??
+            row['stok'] ??
+            0;
+          const rawMin =
+            row['Batas Minimum Stok'] ??
+            row['Batas Minimum'] ??
+            row['minStock'] ??
+            row['min_stok'] ??
+            5;
+          const prodUnit = row['Satuan'] ?? row['unit'] ?? 'pcs';
+          const prodBarcode = row['Barcode'] ?? row['barcode'] ?? undefined;
+
+          const prodHpp = Math.max(0, Math.round(parseStockNumber(rawHpp, 0)));
+          const prodPrice = Math.max(0, Math.round(parseStockNumber(rawPrice, 0)));
+          const prodStock = Math.max(0, Math.round(parseStockNumber(rawStock, 0)));
+          const prodMin = Math.max(1, Math.round(parseStockNumber(rawMin, 5)));
 
           return {
-            name: String(prodName),
-            sku: String(prodSku),
-            category: String(prodCat),
-            hpp: Math.max(0, isNaN(prodHpp) ? 0 : prodHpp),
-            price: Math.max(0, isNaN(prodPrice) ? 0 : prodPrice),
-            stock: Math.max(0, isNaN(prodStock) ? 0 : prodStock),
-            minStock: Math.max(1, isNaN(prodMin) ? 3 : prodMin),
-            unit: String(prodUnit),
-            barcode: prodBarcode ? String(prodBarcode) : undefined,
+            name: String(prodName).trim(),
+            sku: String(prodSku).trim(),
+            category: String(prodCat).trim(),
+            hpp: prodHpp,
+            price: prodPrice,
+            stock: prodStock,
+            minStock: prodMin,
+            unit: String(prodUnit).trim() || 'pcs',
+            barcode: prodBarcode ? String(prodBarcode).trim() : undefined,
           };
         });
 
@@ -338,11 +397,21 @@ export const StokKategoriView: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Buttons: Tambah Produk, Tambah via Excel, Ekspor Excel, Kelola Kategori */}
+        {/* Action Buttons: Hitung Ulang, Tambah Produk, Tambah via Excel, Ekspor Excel, Kelola Kategori */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
+            type="button"
+            onClick={handleRecalculateAssets}
+            className="px-2.5 py-1 text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg border border-amber-300 flex items-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+            title="Hitung ulang Nilai Aset (HPP) & Potensi Omzet serta cek anomali harga/stok"
+          >
+            <Calculator className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+            <span>Hitung Ulang</span>
+          </button>
+
+          <button
             onClick={() => setShowSummaryCards(!showSummaryCards)}
-            className="px-2 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
             title={showSummaryCards ? 'Sembunyikan Kotak Ringkasan' : 'Tampilkan Kotak Ringkasan'}
           >
             {showSummaryCards ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
@@ -351,7 +420,7 @@ export const StokKategoriView: React.FC = () => {
 
           <button
             onClick={() => setIsCategoryModalOpen(true)}
-            className="px-2 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
             title="Kelola & Buat Kategori Baru"
           >
             <FolderPlus className="w-3 h-3 text-slate-600" />
@@ -360,7 +429,7 @@ export const StokKategoriView: React.FC = () => {
 
           <button
             onClick={() => setIsExcelModalOpen(true)}
-            className="px-2 py-1 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-300 flex items-center gap-1 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-300 flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
             title="Tambah Banyak Produk dengan File Excel / CSV"
           >
             <FileSpreadsheet className="w-3 h-3 text-emerald-700" />
@@ -369,7 +438,7 @@ export const StokKategoriView: React.FC = () => {
 
           <button
             onClick={exportProductsToExcel}
-            className="px-2 py-1 text-[11px] font-bold bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer"
+            className="px-2 py-1 text-[11px] font-bold bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-300 flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
             title="Ekspor Seluruh Katalog Produk ke File Excel .xlsx"
           >
             <Download className="w-3 h-3 text-slate-600" />
@@ -378,7 +447,7 @@ export const StokKategoriView: React.FC = () => {
 
           <button
             onClick={handleOpenAdd}
-            className="px-2.5 py-1 text-[11px] font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer active:scale-95"
+            className="px-2.5 py-1 text-[11px] font-bold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
           >
             <Plus className="w-3.5 h-3.5 text-amber-300 stroke-[2.5]" />
             <span>+ Produk</span>
@@ -392,19 +461,38 @@ export const StokKategoriView: React.FC = () => {
           {/* Card 1: Total Aset Modal HPP */}
           <div className="bg-white px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200/90 shadow-2xs flex items-center justify-between gap-1.5 hover:border-teal-300 transition">
             <div className="min-w-0 flex-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block truncate">
-                Nilai Aset (HPP)
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block truncate">
+                  Nilai Aset (HPP)
+                </span>
+                {globalValuation.anomalies.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRecalculateAssets}
+                    className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1 rounded hover:bg-amber-200 cursor-pointer shrink-0"
+                    title="Ada anomali harga/HPP yang perlu dicek"
+                  >
+                    Cek
+                  </button>
+                )}
+              </div>
               <span className="text-xs sm:text-sm font-extrabold text-slate-900 font-mono tabular-nums block leading-tight">
                 Rp {totalAssetHpp.toLocaleString('id-ID')}
               </span>
               <span className="text-[9px] text-teal-700 font-semibold truncate block">
-                {totalStockUnits.toLocaleString('id-ID')} unit barang
+                {isFilterActive
+                  ? `Filter: Rp ${filteredValuation.totalAssetHpp.toLocaleString('id-ID')} (${filteredValuation.totalUnits} unit)`
+                  : `${totalStockUnits.toLocaleString('id-ID')} unit barang`}
               </span>
             </div>
-            <div className="w-6 h-6 rounded-md bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0">
-              <Package className="w-3.5 h-3.5" />
-            </div>
+            <button
+              type="button"
+              onClick={handleRecalculateAssets}
+              className="w-6 h-6 rounded-md bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0 cursor-pointer transition"
+              title="Hitung Ulang & Audit Nilai Aset"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Card 2: Potensi Omzet & Profit */}
@@ -417,12 +505,19 @@ export const StokKategoriView: React.FC = () => {
                 Rp {totalPotentialRevenue.toLocaleString('id-ID')}
               </span>
               <span className="text-[9px] text-emerald-600 font-bold truncate block">
-                Laba: +Rp {totalPotentialProfit.toLocaleString('id-ID')}
+                {isFilterActive
+                  ? `Filter: Rp ${filteredValuation.totalPotentialRevenue.toLocaleString('id-ID')}`
+                  : `Laba: +Rp ${totalPotentialProfit.toLocaleString('id-ID')}`}
               </span>
             </div>
-            <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+            <button
+              type="button"
+              onClick={handleRecalculateAssets}
+              className="w-6 h-6 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0 cursor-pointer transition"
+              title="Hitung Ulang & Audit Potensi Omzet"
+            >
               <TrendingUp className="w-3.5 h-3.5" />
-            </div>
+            </button>
           </div>
 
           {/* Card 3: Peringatan Stok Kritis (Habis & Menipis) */}
@@ -636,7 +731,7 @@ export const StokKategoriView: React.FC = () => {
       <div className="flex-1 overflow-y-auto p-2 sm:p-4 pb-48 sm:pb-24">
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left border-collapse text-xs">
+            <table className="w-full min-w-[860px] text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
                 <th className="py-2 px-2.5">Kode SKU / Barcode</th>
@@ -646,6 +741,7 @@ export const StokKategoriView: React.FC = () => {
                 <th className="py-2 px-2.5 text-right">Harga Jual</th>
                 <th className="py-2 px-2.5 text-right">Laba Satuan</th>
                 <th className="py-2 px-2.5 text-center">Status & Sisa Stok</th>
+                <th className="py-2 px-2.5 text-right">Aset HPP &amp; Omzet</th>
                 <th className="py-2 px-2.5 text-center">Batas Min</th>
                 <th className="py-2 px-2.5 text-center">Aksi & Restok</th>
               </tr>
@@ -653,7 +749,7 @@ export const StokKategoriView: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400 space-y-2">
+                  <td colSpan={10} className="py-12 text-center text-slate-400 space-y-2">
                     <Package className="w-10 h-10 text-slate-300 mx-auto stroke-[1.5]" />
                     <p className="font-semibold text-slate-600">Tidak ada produk yang cocok dengan filter</p>
                     <button
@@ -670,13 +766,18 @@ export const StokKategoriView: React.FC = () => {
                 </tr>
               ) : (
                 filteredProducts.map((p) => {
-                  const profit = p.price - p.hpp;
-                  const marginPct = p.hpp > 0 ? Math.round((profit / p.hpp) * 100) : 0;
-                  const isOutOfStock = p.stock <= 0;
-                  const isLow = p.stock > 0 && p.stock <= p.minStock;
+                  const safeStock = Math.max(0, Number(p.stock) || 0);
+                  const safeHpp = Math.max(0, Number(p.hpp) || 0);
+                  const safePrice = Math.max(0, Number(p.price) || 0);
+                  const profit = safePrice - safeHpp;
+                  const marginPct = safeHpp > 0 ? Math.round((profit / safeHpp) * 100) : 0;
+                  const rowAssetHpp = safeStock * safeHpp;
+                  const rowPotentialRev = safeStock * safePrice;
+                  const isOutOfStock = safeStock <= 0;
+                  const isLow = safeStock > 0 && safeStock <= p.minStock;
 
                   // Visual Stock Health Ratio
-                  const stockRatio = Math.min(100, Math.round((p.stock / Math.max(1, p.minStock * 2)) * 100));
+                  const stockRatio = Math.min(100, Math.round((safeStock / Math.max(1, p.minStock * 2)) * 100));
 
                   return (
                     <tr
@@ -710,16 +811,16 @@ export const StokKategoriView: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-1.5 px-2.5 text-right font-mono font-medium text-slate-600 tabular-nums text-xs">
-                        Rp {p.hpp.toLocaleString('id-ID')}
+                        Rp {safeHpp.toLocaleString('id-ID')}
                       </td>
                       <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 tabular-nums text-xs">
-                        Rp {p.price.toLocaleString('id-ID')}
+                        Rp {safePrice.toLocaleString('id-ID')}
                       </td>
                       <td className="py-1.5 px-2.5 text-right font-mono tabular-nums">
-                        <span className="font-bold text-teal-800 block text-xs">
-                          +Rp {profit.toLocaleString('id-ID')}
+                        <span className={`font-bold block text-xs ${profit < 0 ? 'text-rose-700' : 'text-teal-800'}`}>
+                          {profit >= 0 ? '+' : '-'}Rp {Math.abs(profit).toLocaleString('id-ID')}
                         </span>
-                        <span className="text-[9px] text-teal-600 font-semibold">
+                        <span className={`text-[9px] font-semibold ${profit < 0 ? 'text-rose-600' : 'text-teal-600'}`}>
                           ({marginPct}%)
                         </span>
                       </td>
@@ -738,9 +839,7 @@ export const StokKategoriView: React.FC = () => {
                           >
                             {isOutOfStock
                               ? '0 Habis'
-                              : isLow
-                              ? `${p.stock} ${p.unit}`
-                              : `${p.stock} ${p.unit}`}
+                              : `${safeStock} ${p.unit}`}
                           </span>
 
                           {/* Progress indicator */}
@@ -756,6 +855,16 @@ export const StokKategoriView: React.FC = () => {
                               style={{ width: `${Math.max(5, stockRatio)}%` }}
                             />
                           </div>
+                        </div>
+                      </td>
+
+                      {/* Row Total Asset (HPP) & Potential Revenue */}
+                      <td className="py-1.5 px-2.5 text-right font-mono tabular-nums">
+                        <div className="text-[11px] font-bold text-slate-800">
+                          Rp {rowAssetHpp.toLocaleString('id-ID')}
+                        </div>
+                        <div className="text-[10px] font-semibold text-emerald-700">
+                          Omzet: Rp {rowPotentialRev.toLocaleString('id-ID')}
                         </div>
                       </td>
 
@@ -818,6 +927,29 @@ export const StokKategoriView: React.FC = () => {
                 })
               )}
             </tbody>
+            {filteredProducts.length > 0 && (
+              <tfoot>
+                <tr className="bg-slate-100/90 border-t-2 border-slate-200 font-bold text-xs">
+                  <td colSpan={6} className="py-2.5 px-2.5 text-slate-800">
+                    Total Terhitung ({filteredProducts.length} produk ditampilkan)
+                  </td>
+                  <td className="py-2.5 px-2.5 text-center font-mono tabular-nums text-slate-900">
+                    {filteredValuation.totalUnits.toLocaleString('id-ID')} unit
+                  </td>
+                  <td className="py-2.5 px-2.5 text-right font-mono tabular-nums">
+                    <div className="text-slate-900 font-extrabold">
+                      Aset: Rp {filteredValuation.totalAssetHpp.toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-emerald-700 font-extrabold">
+                      Omzet: Rp {filteredValuation.totalPotentialRevenue.toLocaleString('id-ID')}
+                    </div>
+                  </td>
+                  <td colSpan={2} className="py-2.5 px-2.5 text-right font-mono tabular-nums text-[11px] text-teal-800">
+                    Est. Laba: +Rp {filteredValuation.totalPotentialProfit.toLocaleString('id-ID')}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
           </div>
         </div>
@@ -1367,6 +1499,220 @@ export const StokKategoriView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AUDIT & HITUNG ULANG NILAI ASET (HPP) & POTENSI OMZET MODAL */}
+      {isAuditModalOpen && valuationAudit && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4 z-50"
+          onClick={() => setIsAuditModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-4 sm:px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-extrabold text-sm sm:text-base tracking-tight truncate">
+                    Hasil Hitung Ulang Nilai Aset &amp; Potensi Omzet
+                  </h4>
+                  <p className="text-[11px] text-slate-300 truncate">
+                    Dihitung ulang pukul {valuationAudit.auditedAt} · {valuationAudit.totalProducts} produk ({valuationAudit.totalUnits.toLocaleString('id-ID')} unit)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/70 text-xs">
+              {/* Normalization & Diff Alert */}
+              <div
+                className={`p-3 rounded-xl border flex items-start gap-2.5 ${
+                  valuationAudit.fixedCount > 0 || valuationAudit.assetDiff !== 0 || valuationAudit.revenueDiff !== 0
+                    ? 'bg-amber-50 border-amber-200 text-amber-950'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                }`}
+              >
+                {valuationAudit.fixedCount > 0 ? (
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-1">
+                  <p className="font-extrabold">
+                    {valuationAudit.fixedCount > 0
+                      ? `${valuationAudit.fixedCount} data produk dengan angka/format tidak valid berhasil dinormalisasi & disimpan ulang.`
+                      : 'Seluruh angka stok, HPP, dan harga jual valid & telah dihitung ulang dari database produk terbaru.'}
+                  </p>
+                  {(valuationAudit.assetDiff !== 0 || valuationAudit.revenueDiff !== 0) && (
+                    <p className="text-[11px] font-mono tabular-nums">
+                      Koreksi Aset HPP: {valuationAudit.assetDiff >= 0 ? '+' : '-'}Rp{' '}
+                      {Math.abs(valuationAudit.assetDiff).toLocaleString('id-ID')} · Koreksi Omzet:{' '}
+                      {valuationAudit.revenueDiff >= 0 ? '+' : '-'}Rp{' '}
+                      {Math.abs(valuationAudit.revenueDiff).toLocaleString('id-ID')}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 4 KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Nilai Aset (HPP)
+                  </span>
+                  <span className="text-sm font-black text-slate-900 font-mono tabular-nums block mt-0.5">
+                    Rp {valuationAudit.totalAssetHpp.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Potensi Omzet
+                  </span>
+                  <span className="text-sm font-black text-emerald-700 font-mono tabular-nums block mt-0.5">
+                    Rp {valuationAudit.totalPotentialRevenue.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Potensi Laba
+                  </span>
+                  <span className="text-sm font-black text-teal-700 font-mono tabular-nums block mt-0.5">
+                    +Rp {valuationAudit.totalPotentialProfit.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Rata-rata Margin
+                  </span>
+                  <span className="text-sm font-black text-slate-900 font-mono tabular-nums block mt-0.5">
+                    {valuationAudit.averageMarginPct}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Breakdown Per Kategori */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="font-extrabold text-slate-800">Rincian Nilai Aset &amp; Omzet Per Kategori</span>
+                  <span className="text-[10.5px] text-slate-500 font-mono">
+                    Rumus: ∑ (Stok × Harga)
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/70 border-b border-slate-200 text-[10.5px] text-slate-600 font-bold">
+                        <th className="py-2 px-3">Kategori</th>
+                        <th className="py-2 px-3 text-center">Produk</th>
+                        <th className="py-2 px-3 text-center">Total Unit</th>
+                        <th className="py-2 px-3 text-right">Nilai Aset (HPP)</th>
+                        <th className="py-2 px-3 text-right">Potensi Omzet</th>
+                        <th className="py-2 px-3 text-right">Est. Laba</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {valuationAudit.byCategory.map((cat) => (
+                        <tr key={cat.category} className="hover:bg-slate-50">
+                          <td className="py-2 px-3 font-bold text-slate-800">{cat.category}</td>
+                          <td className="py-2 px-3 text-center font-mono tabular-nums text-slate-600">
+                            {cat.productCount}
+                          </td>
+                          <td className="py-2 px-3 text-center font-mono tabular-nums text-slate-800 font-semibold">
+                            {cat.unitCount.toLocaleString('id-ID')}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums text-slate-900 font-bold">
+                            Rp {cat.assetHpp.toLocaleString('id-ID')}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums text-emerald-700 font-bold">
+                            Rp {cat.potentialRevenue.toLocaleString('id-ID')}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums text-teal-700 font-semibold">
+                            +Rp {cat.potentialProfit.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Deteksi Anomali Produk */}
+              {valuationAudit.anomalies.length > 0 && (
+                <div className="bg-white rounded-xl border border-amber-300 overflow-hidden">
+                  <div className="px-3.5 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+                    <span className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <span>Temuan Anomali Hitungan ({valuationAudit.anomalies.length} Produk)</span>
+                    </span>
+                    <span className="text-[10.5px] text-amber-800 font-semibold">
+                      Perlu dicek agar total akurat
+                    </span>
+                  </div>
+                  <div className="divide-y divide-amber-100">
+                    {valuationAudit.anomalies.map(({ product: ap, reasons }) => (
+                      <div
+                        key={ap.id}
+                        className="px-3.5 py-2.5 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 truncate">
+                            {ap.name}{' '}
+                            <span className="text-[10px] font-mono text-slate-500">({ap.sku})</span>
+                          </div>
+                          <div className="text-[11px] text-amber-800">
+                            {reasons.join(' · ')}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAuditModalOpen(false);
+                            handleOpenEdit(ap);
+                          }}
+                          className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-950 font-bold rounded-lg text-[11px] cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          Edit Produk
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 sm:px-5 py-3 bg-white border-t border-slate-200 flex items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleRecalculateAssets}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Hitung Ulang Lagi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="px-4 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-extrabold rounded-xl cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Selesai &amp; Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}

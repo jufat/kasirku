@@ -32,10 +32,13 @@ import {
   Crown,
   Percent,
   ShoppingCart,
+  ClipboardPaste,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType, AtmMiniTransaction } from '../../types/pos';
 import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
+import { QuickReceiptImportModal } from '../QuickReceiptImportModal';
+import { ParsedAtmMiniItem } from '../../utils/receiptTextParser';
 import {
   buildCustomerDirectory,
   searchCustomerDirectory,
@@ -185,6 +188,7 @@ export const AtmMiniView: React.FC = () => {
   const [filterType, setFilterType] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [mobileTab, setMobileTab] = useState<'terminal' | 'history'>('terminal');
+  const [isQuickImportOpen, setIsQuickImportOpen] = useState(false);
 
   // Interactive Payment Dialog states
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -775,6 +779,126 @@ export const AtmMiniView: React.FC = () => {
     return matchesType && matchesSearch;
   });
 
+  const handleFillFromQuickImport = (item: ParsedAtmMiniItem) => {
+    const nextPrimary = item.atmType === 'tarik_tunai_atm' ? 'tarik_tunai' : 'transfer_topup';
+    setPrimaryTab(nextPrimary);
+    if (nextPrimary === 'tarik_tunai') {
+      setTarikChannel(item.channel);
+    } else {
+      setTransferChannel(item.channel);
+    }
+
+    if (item.channel === 'ewallet') {
+      const matchedEw = EWALLET_LIST.find(
+        (e) => e.toLowerCase() === item.bankName.toLowerCase()
+      );
+      setEwalletProvider(matchedEw || item.bankName || 'DANA');
+    } else if (item.channel === 'mbanking') {
+      const matchedApp = MBANKING_APPS.find((a) =>
+        a.toLowerCase().includes(item.bankName.split(' ')[0].toLowerCase())
+      );
+      setMbankingApp(matchedApp || MBANKING_APPS[0]);
+    } else if (item.channel === 'qris') {
+      const matchedQris = QRIS_PROVIDERS.find((q) =>
+        q.toLowerCase().includes(item.bankName.split(' ')[0].toLowerCase())
+      );
+      setQrisProvider(matchedQris || QRIS_PROVIDERS[0]);
+      if (item.referenceNo) setQrisRrn(item.referenceNo);
+    } else {
+      const matchedBank = BANK_LIST.find((b) =>
+        b.toLowerCase().includes(item.bankName.toLowerCase())
+      );
+      setBankName(matchedBank || BANK_LIST[0]);
+    }
+
+    setCardType(item.cardType);
+    setTargetAccountOrPhone(item.targetAccountOrPhone);
+    setCustomerName(item.customerName);
+    setNominal(item.nominal);
+    setAdminEdcFee(item.adminEdcFee);
+    setCounterFee(item.counterFee);
+    setAdminDeductionType(item.adminDeductionType);
+    setNote(item.note);
+
+    setToastMessage(
+      `Data ${item.sourceApp} (${item.customerName || item.targetAccountOrPhone || 'Transaksi'}) berhasil dimasukkan ke form.`
+    );
+    setTimeout(() => setToastMessage(''), 4500);
+  };
+
+  const handleRecordQuickImportItems = (
+    items: ParsedAtmMiniItem[],
+    openReceiptOnSingle: boolean
+  ) => {
+    let runningCashOffset = 0;
+
+    items.forEach((item, idx) => {
+      const totalAdmin = item.adminEdcFee + item.counterFee;
+      const isPotong =
+        item.atmType === 'tarik_tunai_atm' && item.adminDeductionType === 'potong_tunai';
+      const isTunaiKonter =
+        item.atmType === 'tarik_tunai_atm' && item.adminDeductionType === 'tunai_konter';
+      const totalDebited = isPotong || isTunaiKonter ? item.nominal : item.nominal + totalAdmin;
+
+      const maskedId =
+        item.channel === 'ewallet'
+          ? `EW-${item.bankName.toUpperCase()} · ${item.targetAccountOrPhone || '-'}`
+          : item.channel === 'mbanking'
+          ? `APP ${item.bankName.split(' ')[0]} · ${item.referenceNo || 'Cardless'}`
+          : item.channel === 'qris'
+          ? item.referenceNo || `RRN-${Math.floor(100000 + Math.random() * 900000)}`
+          : `IMP-${item.referenceNo || '8888'}`;
+
+      const destination = item.targetAccountOrPhone
+        ? `${item.targetAccountOrPhone} (${item.bankName})`
+        : item.bankName;
+
+      const shouldOpenReceipt = openReceiptOnSingle && items.length === 1 && idx === 0;
+
+      recordAtmMiniTransaction(
+        item.atmType,
+        item.bankName,
+        item.cardType,
+        maskedId,
+        item.customerName || (item.sourceApp ? `Nasabah ${item.sourceApp}` : 'Nasabah'),
+        item.nominal,
+        item.adminEdcFee,
+        item.counterFee,
+        destination,
+        item.note,
+        item.paymentMethod,
+        item.targetAccountOrPhone,
+        undefined,
+        item.adminDeductionType,
+        undefined,
+        isTunaiKonter ? totalAdmin : totalDebited,
+        {
+          suppressReceiptModal: !shouldOpenReceipt,
+          cashBalanceOffset: runningCashOffset,
+        }
+      );
+
+      // Update offset for next batch mutation snapshot
+      if (item.atmType === 'tarik_tunai_atm') {
+        const cashOut = isPotong ? Math.max(0, item.nominal - totalAdmin) : item.nominal;
+        if (isTunaiKonter && item.paymentMethod === 'tunai') {
+          runningCashOffset += totalAdmin - cashOut;
+        } else {
+          runningCashOffset -= cashOut;
+        }
+      } else if (item.paymentMethod === 'tunai') {
+        runningCashOffset += totalDebited;
+      }
+    });
+
+    setToastMessage(
+      items.length === 1
+        ? `Struk ${items[0].sourceApp} (Rp ${items[0].nominal.toLocaleString('id-ID')}) tercatat otomatis ke Kas & Riwayat!`
+        : `${items.length} transaksi dari Impor Struk Multi-Aplikasi berhasil dicatat ke Kas & Riwayat!`
+    );
+    setTimeout(() => setToastMessage(''), 5500);
+  };
+
   return (
     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#f8fafc]">
       {/* Mobile Header Bar & Switcher (No bottom menu obstructing the view) */}
@@ -954,6 +1078,25 @@ export const AtmMiniView: React.FC = () => {
               <Building2 className="w-3.5 h-3.5 text-sky-600 shrink-0 hidden sm:block" />
             </div>
           </div>
+
+          {/* One-Paste Multi-App Quick Import Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsQuickImportOpen(true)}
+            className="w-full px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl flex items-center justify-between gap-2 transition cursor-pointer active:scale-[0.99] shadow-2xs"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+                <ClipboardPaste className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-xs font-extrabold truncate">
+                Tempel Struk Multi-Aplikasi
+              </span>
+            </span>
+            <span className="text-[10px] font-semibold text-amber-300 whitespace-nowrap shrink-0">
+              BRImo · DANA · BCA · QRIS →
+            </span>
+          </button>
 
           {toastMessage && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between gap-2 font-bold animate-fade-in flex-wrap">
@@ -3051,6 +3194,14 @@ export const AtmMiniView: React.FC = () => {
         </div>
       );
     })()}
+
+      <QuickReceiptImportModal
+        isOpen={isQuickImportOpen}
+        onClose={() => setIsQuickImportOpen(false)}
+        mode="atm_mini"
+        onFillAtmMiniForm={handleFillFromQuickImport}
+        onRecordAtmMiniItems={handleRecordQuickImportItems}
+      />
     </div>
   );
 };

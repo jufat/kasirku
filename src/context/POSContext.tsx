@@ -46,6 +46,11 @@ import {
   PRINT_PRICE_LIST,
   DEFAULT_CASHIER_PROFILES,
 } from '../data/initialData';
+import {
+  normalizeProductRecord,
+  computeStockValuation,
+  StockValuationAudit,
+} from '../utils/stockValuation';
 
 interface POSContextType {
   // Navigation & Role
@@ -168,7 +173,8 @@ interface POSContextType {
     dueDate?: string,
     adminDeductionType?: 'tambah_transfer' | 'potong_tunai' | 'tunai_konter',
     discount?: number,
-    paidAmount?: number
+    paidAmount?: number,
+    options?: { suppressReceiptModal?: boolean; cashBalanceOffset?: number }
   ) => AtmMiniTransaction;
 
   // PPOB
@@ -189,7 +195,8 @@ interface POSContextType {
     customerPhone?: string,
     dueDate?: string,
     note?: string,
-    discount?: number
+    discount?: number,
+    options?: { suppressReceiptModal?: boolean; cashBalanceOffset?: number }
   ) => PPOBTransaction;
   updatePPOBTransaction: (tx: PPOBTransaction) => void;
   deletePPOBTransaction: (id: string) => void;
@@ -264,6 +271,7 @@ interface POSContextType {
   updateProduct: (product: Product) => void;
   deleteProduct: (id: string) => void;
   restockProduct: (id: string, addQty: number, newHpp?: number) => void;
+  recalculateProductCatalog: () => StockValuationAudit;
 
   // Categories & Excel Operations
   categories: string[];
@@ -368,8 +376,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('jufat_products');
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+    try {
+      const saved = localStorage.getItem('jufat_products');
+      if (saved) {
+        const parsed: Product[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((p) => normalizeProductRecord(p).product);
+        }
+      }
+    } catch {
+      // ignore corrupted storage
+    }
+    return INITIAL_PRODUCTS;
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -1183,14 +1201,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isMasterCart,
     };
 
-    // 1. Reduce Stock for regular retail products only
+    // 1. Reduce Stock for regular retail products only (aggregate qty across cart lines)
     setProducts((prev) =>
       prev.map((p) => {
-        const bought = cart.find(
-          (c) => c.product.id === p.id && (!c.itemType || c.itemType === 'produk')
-        );
-        if (bought) {
-          return { ...p, stock: Math.max(0, p.stock - bought.quantity) };
+        const totalBoughtQty = cart
+          .filter((c) => c.product.id === p.id && (!c.itemType || c.itemType === 'produk'))
+          .reduce((sum, c) => sum + (Number(c.quantity) || 0), 0);
+        if (totalBoughtQty > 0) {
+          return { ...p, stock: Math.max(0, (Number(p.stock) || 0) - totalBoughtQty) };
         }
         return p;
       })
@@ -1518,6 +1536,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newAgTx;
   };
 
+  // Sequence counter for collision-free batch IDs
+  const batchSeqRef = React.useRef(0);
+  const nextSeq = () => {
+    batchSeqRef.current = (batchSeqRef.current + 1) % 10000;
+    return batchSeqRef.current;
+  };
+
   // ATM Mini (EDC) auto-journaling
   const recordAtmMiniTransaction = (
     type: AtmMiniTransaction['type'],
@@ -1535,19 +1560,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dueDate?: string,
     adminDeductionType: 'tambah_transfer' | 'potong_tunai' | 'tunai_konter' = 'tambah_transfer',
     discount?: number,
-    paidAmount?: number
+    paidAmount?: number,
+    options?: { suppressReceiptModal?: boolean; cashBalanceOffset?: number }
   ): AtmMiniTransaction => {
+    const seq = nextSeq();
+    const baseDrawerCash = drawerCashBalance + (options?.cashBalanceOffset ?? 0);
     const traceNo = Math.floor(100000 + Math.random() * 900000).toString();
     const approvalCode = `APPR-${Math.floor(100000 + Math.random() * 900000)}`;
     const totalAdmin = adminEdcFee + counterFee;
     const isPotongTunai = type === 'tarik_tunai_atm' && adminDeductionType === 'potong_tunai';
     const isTunaiKonter = type === 'tarik_tunai_atm' && adminDeductionType === 'tunai_konter';
 
-    // Perhitungan debet transfer & uang tunai diserahkan:
-    // Skenario 1 (tambah_transfer): Nasabah kirim 103.000, fisik diserahkan 100.000 -> Laci keluar 100.000
-    // Skenario 2 (potong_tunai): Nasabah kirim 100.000, fisik diserahkan 97.000 -> Laci keluar 97.000
-    // Skenario 3 (tunai_konter): Nasabah kirim/debet 100.000, fisik diserahkan 100.000 -> Laci keluar 100.000,
-    //   dan biaya admin totalAdmin dibayar tunai di konter -> Masuk Uang Laci (+totalAdmin)
     const totalDebited = isPotongTunai || isTunaiKonter ? nominal : nominal + totalAdmin;
     const cashHandedOrReceived =
       type === 'tarik_tunai_atm'
@@ -1571,7 +1594,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     const newTx: AtmMiniTransaction = {
-      id: `atm-${Date.now()}`,
+      id: `atm-${Date.now()}-${seq}`,
       terminalId: 'EDC-JUFAT-01',
       traceNo,
       approvalCode,
@@ -1603,7 +1626,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 1. If Kasbon (Hutang) or Partial Payment, record into Debt Ledger
     if (remainingDebt > 0) {
       const newDebt: DebtRecord = {
-        id: `dbt-${Date.now()}`,
+        id: `dbt-${Date.now()}-${seq}`,
         invoiceOrRef: `EDC-${traceNo}`,
         date: new Date().toISOString().slice(0, 10),
         customerName: customerName.trim() || 'Nasabah EDC',
@@ -1633,7 +1656,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : 'EDC';
 
       const mutationKeluar: CashMutation = {
-        id: `mut-${Date.now()}-out`,
+        id: `mut-${Date.now()}-${seq}-out`,
         timestamp: nowTime,
         type: 'keluar',
         category: 'jasa_transfer',
@@ -1644,28 +1667,28 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : `Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Nasabah kirim Rp ${totalDebited.toLocaleString('id-ID')} (Diserahkan Rp ${cashOutFromDrawer.toLocaleString('id-ID')})`,
         amount: cashOutFromDrawer,
         paymentMethod: 'tunai',
-        runningCashBalance: drawerCashBalance - cashOutFromDrawer,
+        runningCashBalance: baseDrawerCash - cashOutFromDrawer,
         recordedBy: shift.cashierName,
       };
 
       if (isTunaiKonter) {
         if (paymentMethod === 'qris') {
           const mutationAdminNonTunai: CashMutation = {
-            id: `mut-${Date.now() + 1}-fee`,
+            id: `mut-${Date.now()}-${seq}-fee`,
             timestamp: nowTime,
             type: 'masuk',
             category: 'jasa_transfer',
             description: `Admin Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] via QRIS (${customerName})`,
             amount: totalAdmin,
             paymentMethod: 'non_tunai',
-            runningCashBalance: drawerCashBalance - cashOutFromDrawer,
+            runningCashBalance: baseDrawerCash - cashOutFromDrawer,
             recordedBy: shift.cashierName,
           };
           setMutations((prev) => [mutationKeluar, mutationAdminNonTunai, ...prev]);
           setDigitalBalance((prev) => prev + totalDebited + totalAdmin);
 
           setLastSyncEvent({
-            id: `sync-${Date.now()}`,
+            id: `sync-${Date.now()}-${seq}`,
             timestamp: nowTime,
             source: 'atm_mini',
             actionTitle: `Tarik Tunai ${channelLabel} ${bankName} (Admin QRIS)`,
@@ -1675,13 +1698,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             note: `Ref: ${traceNo} · Kas Laci: -Rp ${cashOutFromDrawer.toLocaleString('id-ID')} | Saldo Digital Bank: +Rp ${(totalDebited + totalAdmin).toLocaleString('id-ID')}`,
           });
         } else {
-          // Admin dibayar TUNAI di konter -> Masuk Uang Laci!
           const cashAdminMasukLaci = actualPaid;
           const mutationsToAdd: CashMutation[] = [];
 
           if (cashAdminMasukLaci > 0) {
             const mutationAdminTunaiMasuk: CashMutation = {
-              id: `mut-${Date.now() + 1}-adm`,
+              id: `mut-${Date.now()}-${seq}-adm`,
               timestamp: nowTime,
               type: 'masuk',
               category: 'jasa_transfer',
@@ -1690,7 +1712,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 : `Bayar Admin Tunai Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName}) - Masuk Uang Laci (EDC/App Rp ${adminEdcFee.toLocaleString('id-ID')} + Jasa Rp ${counterFee.toLocaleString('id-ID')})`,
               amount: cashAdminMasukLaci,
               paymentMethod: 'tunai',
-              runningCashBalance: drawerCashBalance - cashOutFromDrawer + cashAdminMasukLaci,
+              runningCashBalance: baseDrawerCash - cashOutFromDrawer + cashAdminMasukLaci,
               recordedBy: shift.cashierName,
             };
             mutationsToAdd.push(mutationAdminTunaiMasuk);
@@ -1698,13 +1720,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           mutationsToAdd.push(mutationKeluar);
           setMutations((prev) => [...mutationsToAdd, ...prev]);
-
-          // Saldo digital bank bertambah hanya sebesar pokok penarikan
           setDigitalBalance((prev) => prev + totalDebited);
 
           const netDrawerDelta = cashAdminMasukLaci - cashOutFromDrawer;
           setLastSyncEvent({
-            id: `sync-${Date.now()}`,
+            id: `sync-${Date.now()}-${seq}`,
             timestamp: nowTime,
             source: 'atm_mini',
             actionTitle: `Tarik Tunai ${channelLabel} ${bankName} (Admin Tunai Konter)`,
@@ -1718,27 +1738,23 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
       } else {
-        // Skenario 1 & 2: tambah_transfer atau potong_tunai
         const mutationLaba: CashMutation = {
-          id: `mut-${Date.now() + 1}-fee`,
+          id: `mut-${Date.now()}-${seq}-fee`,
           timestamp: nowTime,
           type: 'masuk',
           category: 'jasa_transfer',
           description: `Laba Jasa Tarik Tunai ${channelLabel} ${bankName} [${traceNo}] (${customerName})`,
           amount: counterFee,
           paymentMethod: 'non_tunai',
-          runningCashBalance: drawerCashBalance - cashOutFromDrawer,
+          runningCashBalance: baseDrawerCash - cashOutFromDrawer,
           recordedBy: shift.cashierName,
         };
 
         setMutations((prev) => [mutationKeluar, mutationLaba, ...prev]);
-
-        // Saldo digital di rekening penampung agen bertambah dari debet kartu / transfer nasabah
         setDigitalBalance((prev) => prev + totalDebited);
 
-        // Real-Time Inter-Module Sync Event
         setLastSyncEvent({
-          id: `sync-${Date.now()}`,
+          id: `sync-${Date.now()}-${seq}`,
           timestamp: nowTime,
           source: 'atm_mini',
           actionTitle: `Tarik Tunai ${channelLabel} ${bankName}`,
@@ -1761,11 +1777,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : 'Layanan EDC';
 
       if (paymentMethod === 'tunai' || (isPartial && actualPaid > 0)) {
-        // Uang masuk fisik ke laci kasir sebesar actualPaid
         const fullCashReceived = actualPaid;
-        const newRunning = drawerCashBalance + fullCashReceived;
+        const newRunning = baseDrawerCash + fullCashReceived;
         const mutation: CashMutation = {
-          id: `mut-${Date.now()}`,
+          id: `mut-${Date.now()}-${seq}`,
           timestamp: nowTime,
           type: 'masuk',
           category: 'jasa_transfer',
@@ -1779,13 +1794,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         setMutations((prev) => [mutation, ...prev]);
 
-        // Saldo digital rekening agen berkurang sebesar uang yang dikirim keluar (nominal + admin EDC)
         const digitalOut = nominal + adminEdcFee;
         setDigitalBalance((prev) => Math.max(0, prev - digitalOut));
 
-        // Real-Time Inter-Module Sync Event
         setLastSyncEvent({
-          id: `sync-${Date.now()}`,
+          id: `sync-${Date.now()}-${seq}`,
           timestamp: nowTime,
           source: 'atm_mini',
           actionTitle: `${serviceName} ${bankName}`,
@@ -1796,23 +1809,21 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       } else if (paymentMethod === 'qris') {
         const mutation: CashMutation = {
-          id: `mut-${Date.now()}`,
+          id: `mut-${Date.now()}-${seq}`,
           timestamp: nowTime,
           type: 'masuk',
           category: 'jasa_transfer',
           description: `Laba Jasa Mini ATM via QRIS ${serviceName} ${bankName} [${traceNo}] (${customerName})`,
           amount: counterFee,
           paymentMethod: 'non_tunai',
-          runningCashBalance: drawerCashBalance,
+          runningCashBalance: baseDrawerCash,
           recordedBy: shift.cashierName,
         };
         setMutations((prev) => [mutation, ...prev]);
-
-        // Fee non-tunai langsung menambah saldo digital agen
         setDigitalBalance((prev) => prev + counterFee);
 
         setLastSyncEvent({
-          id: `sync-${Date.now()}`,
+          id: `sync-${Date.now()}-${seq}`,
           timestamp: nowTime,
           source: 'atm_mini',
           actionTitle: `${serviceName} ${bankName} (QRIS)`,
@@ -1824,8 +1835,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    setReceiptData(newTx);
-    setIsReceiptModalOpen(true);
+    if (!options?.suppressReceiptModal) {
+      setReceiptData(newTx);
+      setIsReceiptModalOpen(true);
+    }
 
     return newTx;
   };
@@ -1843,14 +1856,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     customerPhone?: string,
     dueDate?: string,
     note?: string,
-    discount?: number
+    discount?: number,
+    options?: { suppressReceiptModal?: boolean; cashBalanceOffset?: number }
   ): PPOBTransaction => {
-    const refNo = `PPOB-${Date.now().toString().slice(-6)}`;
+    const seq = nextSeq();
+    const baseDrawerCash = drawerCashBalance + (options?.cashBalanceOffset ?? 0);
+    const refNo = `PPOB-${Date.now().toString().slice(-4)}${String(seq).padStart(2, '0')}`;
     const profit = sellingPrice - hpp;
     const nowTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     const newTx: PPOBTransaction = {
-      id: `ppob-${Date.now()}`,
+      id: `ppob-${Date.now()}-${seq}`,
       refNo,
       date: new Date().toLocaleString('id-ID'),
       category,
@@ -1871,7 +1887,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 1. If Kasbon (Hutang), immediately add to Debt Ledger
     if (paymentMethod === 'hutang') {
       const newDebt: DebtRecord = {
-        id: `dbt-${Date.now()}`,
+        id: `dbt-${Date.now()}-${seq}`,
         invoiceOrRef: refNo,
         date: new Date().toISOString().slice(0, 10),
         customerName: customerName.trim() || 'Pelanggan PPOB',
@@ -1887,35 +1903,37 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else if (paymentMethod === 'tunai' && sellingPrice > 0) {
       // Auto-journal into Cash Harian
       const mutation: CashMutation = {
-        id: `mut-${Date.now()}`,
+        id: `mut-${Date.now()}-${seq}`,
         timestamp: nowTime,
         type: 'masuk',
         category: 'pulsa_ppob',
         description: `Penjualan ${category.toUpperCase()} ${provider} ${packageName} (${targetNumber})`,
         amount: sellingPrice,
         paymentMethod: 'tunai',
-        runningCashBalance: drawerCashBalance + sellingPrice,
+        runningCashBalance: baseDrawerCash + sellingPrice,
         recordedBy: shift.cashierName,
       };
       setMutations((prev) => [mutation, ...prev]);
     } else if (paymentMethod === 'qris' && sellingPrice > 0) {
       // QRIS
       const mutation: CashMutation = {
-        id: `mut-${Date.now()}`,
+        id: `mut-${Date.now()}-${seq}`,
         timestamp: nowTime,
         type: 'masuk',
         category: 'pulsa_ppob',
         description: `Penjualan QRIS ${category.toUpperCase()} ${provider} ${packageName} (${targetNumber})`,
         amount: sellingPrice,
         paymentMethod: 'non_tunai',
-        runningCashBalance: drawerCashBalance,
+        runningCashBalance: baseDrawerCash,
         recordedBy: shift.cashierName,
       };
       setMutations((prev) => [mutation, ...prev]);
     }
 
-    setReceiptData(newTx);
-    setIsReceiptModalOpen(true);
+    if (!options?.suppressReceiptModal) {
+      setReceiptData(newTx);
+      setIsReceiptModalOpen(true);
+    }
 
     return newTx;
   };
@@ -2506,15 +2524,16 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Product Catalog
   const addProduct = (newProd: Omit<Product, 'id'>) => {
-    const product: Product = {
+    const { product } = normalizeProductRecord({
       ...newProd,
       id: `prod-${Date.now()}`,
-    };
+    });
     setProducts((prev) => [product, ...prev]);
   };
 
   const updateProduct = (updated: Product) => {
-    setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    const { product } = normalizeProductRecord(updated);
+    setProducts((prev) => prev.map((p) => (p.id === product.id ? product : p)));
   };
 
   const deleteProduct = (id: string) => {
@@ -2522,18 +2541,68 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const restockProduct = (id: string, addQty: number, newHpp?: number) => {
+    const cleanQty = Math.max(0, Math.round(Number(addQty) || 0));
+    const cleanNewHpp =
+      newHpp !== undefined && Number.isFinite(newHpp) && newHpp > 0
+        ? Math.round(newHpp)
+        : undefined;
+
     setProducts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
+          const baseStock = Math.max(0, Math.round(Number(p.stock) || 0));
           return {
             ...p,
-            stock: Math.max(0, p.stock + addQty),
-            ...(newHpp && newHpp > 0 ? { hpp: newHpp } : {}),
+            stock: Math.max(0, baseStock + cleanQty),
+            ...(cleanNewHpp !== undefined ? { hpp: cleanNewHpp } : {}),
           };
         }
         return p;
       })
     );
+  };
+
+  const recalculateProductCatalog = (): StockValuationAudit => {
+    const prevRawHpp = products.reduce(
+      (acc, p) => acc + (Number(p.stock) || 0) * (Number(p.hpp) || 0),
+      0
+    );
+    const prevRawRev = products.reduce(
+      (acc, p) => acc + (Number(p.stock) || 0) * (Number(p.price) || 0),
+      0
+    );
+
+    let fixedCount = 0;
+    const normalizedList: Product[] = products.map((p) => {
+      const res = normalizeProductRecord(p);
+      if (res.wasFixed) fixedCount += 1;
+      return res.product;
+    });
+
+    setProducts(normalizedList);
+    try {
+      localStorage.setItem('jufat_products', JSON.stringify(normalizedList));
+    } catch {
+      // ignore storage errors
+    }
+
+    const valuation = computeStockValuation(normalizedList);
+    return {
+      ...valuation,
+      auditedAt: new Date().toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+      fixedCount,
+      previousAssetHpp: Number.isFinite(prevRawHpp) ? Math.round(prevRawHpp) : 0,
+      previousPotentialRevenue: Number.isFinite(prevRawRev) ? Math.round(prevRawRev) : 0,
+      assetDiff:
+        valuation.totalAssetHpp - (Number.isFinite(prevRawHpp) ? Math.round(prevRawHpp) : 0),
+      revenueDiff:
+        valuation.totalPotentialRevenue -
+        (Number.isFinite(prevRawRev) ? Math.round(prevRawRev) : 0),
+    };
   };
 
   // Category Management
@@ -2571,10 +2640,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCategories((prev) => [...prev, ...newCatNames]);
     }
 
-    const generated = newProds.map((p, idx) => ({
-      ...p,
-      id: `prod-${Date.now()}-${idx}-${Math.floor(100 + Math.random() * 900)}`,
-    }));
+    const generated = newProds.map((p, idx) =>
+      normalizeProductRecord({
+        ...p,
+        id: `prod-${Date.now()}-${idx}-${Math.floor(100 + Math.random() * 900)}`,
+      }).product
+    );
 
     setProducts((prev) => [...generated, ...prev]);
     return generated.length;
@@ -3039,7 +3110,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const data = JSON.parse(jsonStr);
       if (data.storeProfile) setStoreProfile(data.storeProfile);
-      if (data.products) setProducts(data.products);
+      if (data.products && Array.isArray(data.products)) {
+        setProducts(data.products.map((p: Product) => normalizeProductRecord(p).product));
+      }
       if (data.categories) setCategories(data.categories);
       if (data.transactions) setTransactions(data.transactions);
       if (data.agencyTransactions) setAgencyTransactions(data.agencyTransactions);
@@ -3108,9 +3181,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setStoreProfile(data.storeProfile);
         localStorage.setItem('jufat_store_profile', JSON.stringify(data.storeProfile));
       }
-      if (data.products) {
-        setProducts(data.products);
-        localStorage.setItem('jufat_products', JSON.stringify(data.products));
+      if (data.products && Array.isArray(data.products)) {
+        const cleanProducts = data.products.map((p: Product) => normalizeProductRecord(p).product);
+        setProducts(cleanProducts);
+        localStorage.setItem('jufat_products', JSON.stringify(cleanProducts));
       }
       if (data.categories) {
         setCategories(data.categories);
@@ -3410,6 +3484,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProduct,
         deleteProduct,
         restockProduct,
+        recalculateProductCatalog,
         receiptData,
         isReceiptModalOpen,
         openReceipt,
