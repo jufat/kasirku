@@ -194,7 +194,7 @@ export const DataSyncModal: React.FC = () => {
 
           {syncCode ? (
             <div className="flex items-center gap-1.5 text-emerald-800 font-mono font-bold bg-emerald-100/90 px-2 py-0.5 rounded-md text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>Kode: {syncCode}</span>
             </div>
           ) : (

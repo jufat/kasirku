@@ -10,16 +10,12 @@ import {
   Zap,
   PlusCircle,
   ArrowUpRight,
-  ArrowDownRight,
-  Package,
-  Layers,
   CheckCircle,
   CheckCircle2,
   CreditCard,
   BarChart3,
   Calendar,
   CalendarDays,
-  Filter,
   Target,
   Edit3,
   Save,
@@ -32,7 +28,6 @@ import {
   ArrowRightLeft,
   Calculator,
   Copy,
-  Printer,
   Coins,
   ShieldAlert,
   Clock,
@@ -68,6 +63,7 @@ import {
   computeCustomerStatsForRange,
   CustomerPeriodStats,
 } from '../../utils/customerAnalytics';
+import { computeStockValuation } from '../../utils/stockValuation';
 
 type TimeframeType = 'harian' | 'mingguan' | 'bulanan' | 'tahunan';
 type PresetType = 'hari_ini' | '7_hari' | 'bulan_ini' | '30_hari' | 'tahun_ini' | 'kustom';
@@ -95,6 +91,8 @@ export const DashboardView: React.FC = () => {
     shiftHistory,
     setIsShiftModalOpen,
   } = usePOS();
+
+  const stockValuation = useMemo(() => computeStockValuation(products), [products]);
 
   // Timeframe and date filter states
   const [timeframe, setTimeframe] = useState<TimeframeType>('bulanan');
@@ -456,8 +454,6 @@ export const DashboardView: React.FC = () => {
 
   const totalTodaySales =
     rawTodaySales > 0 ? rawTodaySales : Math.max(3450000, totalOmsetAll);
-
-  const remainingCashOnHand = drawerCashBalance;
 
   // Dynamic Chart Datasets for Harian, Mingguan, Bulanan, and Tahunan
   const getChartDataset = () => {
@@ -969,13 +965,13 @@ export const DashboardView: React.FC = () => {
       {lastSyncEvent && (
         <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-300 rounded-2xl p-3 shadow-xs flex items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
               <ArrowRightLeft className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-                  ⚡ Sinkronisasi Instan
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-600 text-white px-2 py-0.5 rounded-md">
+                  Sinkronisasi Instan
                 </span>
                 <span className="text-xs font-bold text-slate-900 truncate">
                   {lastSyncEvent.actionTitle} ({lastSyncEvent.customerName})
@@ -985,7 +981,7 @@ export const DashboardView: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-emerald-900 mt-0.5 truncate font-medium">
-                {lastSyncEvent.note} · <strong>Saldo kas & digital otomatis terupdate secara instan.</strong>
+                {lastSyncEvent.note} · <strong>Saldo kas & digital otomatis terupdate.</strong>
               </p>
             </div>
           </div>
@@ -993,14 +989,14 @@ export const DashboardView: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsCashMutationModalOpen(true)}
-              className="px-2.5 py-1 text-[11px] font-bold bg-white text-emerald-800 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+              className="px-3 min-h-[34px] text-xs font-bold bg-white text-emerald-800 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition cursor-pointer whitespace-nowrap shrink-0"
             >
               Lihat Kas Laci
             </button>
             <button
               type="button"
               onClick={clearLastSyncEvent}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded-md transition cursor-pointer"
+              className="min-w-[34px] min-h-[34px] flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-lg transition cursor-pointer"
               title="Tutup Notifikasi"
             >
               <X className="w-4 h-4" />
@@ -1009,73 +1005,173 @@ export const DashboardView: React.FC = () => {
         </div>
       )}
 
-      {/* Small Summary Widget: Total Today Sales & Remaining Cash on Hand */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-        {/* Widget 1: Total Today Sales */}
-        <div className="bg-white rounded-2xl border border-emerald-200/80 p-3.5 sm:p-4 shadow-xs hover:shadow-md transition flex items-center justify-between gap-3 group">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition">
-              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  Total Today Sales
-                </span>
-                <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 tracking-wide">
-                  Hari Ini
-                </span>
-              </div>
-              <div className="text-lg sm:text-xl md:text-2xl font-black text-emerald-950 font-mono tabular-nums truncate leading-tight mt-0.5">
-                Rp {totalTodaySales.toLocaleString('id-ID')}
-              </div>
-              <p className="text-[10px] text-emerald-700 font-medium truncate mt-0.5">
-                {todayTotalTxCount} transaksi · POS, PPOB, EDC & Servis
-              </p>
-            </div>
-          </div>
+      {/* Compact Top Quick-Action Strip */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight leading-tight">
+            Ringkasan &amp; Analitik Bisnis
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Pantau omzet, kas fisik laci, pelanggan masuk, stok kritis &amp; piutang secara langsung
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('kasir')}
-            className="p-1.5 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 rounded-lg transition shrink-0 cursor-pointer"
-            title="Buka Kasir POS"
+            className="px-3.5 min-h-[38px] bg-teal-700 hover:bg-teal-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
           >
-            <ArrowUpRight className="w-4 h-4" />
+            <ShoppingCart className="w-3.5 h-3.5" />
+            <span>Kasir POS</span>
           </button>
-        </div>
-
-        {/* Widget 2: Remaining Cash on Hand */}
-        <div className="bg-white rounded-2xl border border-amber-200/80 p-3.5 sm:p-4 shadow-xs hover:shadow-md transition flex items-center justify-between gap-3 group">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition">
-              <Wallet className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  Remaining Cash on Hand
-                </span>
-                <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-100 text-amber-900 tracking-wide">
-                  Kas di Laci
-                </span>
-              </div>
-              <div className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 font-mono tabular-nums truncate leading-tight mt-0.5">
-                Rp {remainingCashOnHand.toLocaleString('id-ID')}
-              </div>
-              <p className="text-[10px] text-amber-800 font-medium truncate mt-0.5">
-                Saldo kas fisik riil siap transaksi
-              </p>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('atm_mini')}
+            className="px-3.5 min-h-[38px] bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>ATM Mini</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('ppob')}
+            className="px-3.5 min-h-[38px] bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-300" />
+            <span>Pulsa &amp; PPOB</span>
+          </button>
           <button
             type="button"
             onClick={() => setIsCashMutationModalOpen(true)}
-            className="p-1.5 text-amber-800 hover:text-amber-950 hover:bg-amber-50 rounded-lg transition shrink-0 cursor-pointer"
-            title="Catat Mutasi Kas"
+            className="px-3.5 min-h-[38px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
           >
-            <PlusCircle className="w-4 h-4" />
+            <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Catat Kas</span>
           </button>
         </div>
+      </div>
+
+      {/* Unified 5-Card Primary KPI Summary Grid (Non-Duplicated & Tappable) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2.5 sm:gap-3.5">
+        {/* KPI 1: Omzet Hari Ini */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('kasir')}
+          className="bg-white p-3.5 sm:p-4 rounded-xl border border-emerald-200/80 hover:border-emerald-400 shadow-xs transition flex flex-col justify-between text-left cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="text-[11px] font-bold text-slate-500 uppercase truncate">Omzet Hari Ini</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 w-full">
+            <div className="text-base sm:text-lg font-extrabold text-emerald-950 font-mono tabular-nums truncate">
+              Rp {totalTodaySales.toLocaleString('id-ID')}
+            </div>
+            <p className="text-[11px] text-emerald-700 mt-0.5 truncate">
+              {todayTotalTxCount} transaksi semua divisi
+            </p>
+          </div>
+        </button>
+
+        {/* KPI 2: Kas Fisik di Laci */}
+        <button
+          type="button"
+          onClick={() => setIsCashMutationModalOpen(true)}
+          className="bg-white p-3.5 sm:p-4 rounded-xl border border-amber-200/80 hover:border-amber-400 shadow-xs transition flex flex-col justify-between text-left cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="text-[11px] font-bold text-slate-500 uppercase truncate">Kas Fisik Laci</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <Wallet className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 w-full">
+            <div className="text-base sm:text-lg font-extrabold text-slate-900 font-mono tabular-nums truncate">
+              Rp {drawerCashBalance.toLocaleString('id-ID')}
+            </div>
+            <p className="text-[11px] text-amber-800 mt-0.5 truncate">Saldo tunai siap pakai</p>
+          </div>
+        </button>
+
+        {/* KPI 3: Service Diproses */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('service_hp')}
+          className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 hover:border-blue-300 shadow-xs transition flex flex-col justify-between text-left cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="text-[11px] font-bold text-slate-500 uppercase truncate">Service Diproses</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <Wrench className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 w-full">
+            <div className="text-base sm:text-lg font-extrabold text-blue-950 font-mono tabular-nums">
+              {activeServicesCount} Unit
+            </div>
+            <p className="text-[11px] text-blue-700 mt-0.5 truncate">
+              {services.filter((s) => s.status === 'antrean').length} antrean ·{' '}
+              {services.filter((s) => s.status === 'proses').length} pengerjaan
+            </p>
+          </div>
+        </button>
+
+        {/* KPI 4: Peringatan Restock */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('stok')}
+          className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 hover:border-amber-300 shadow-xs transition flex flex-col justify-between text-left cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="text-[11px] font-bold text-slate-500 uppercase truncate">Peringatan Restock</span>
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                lowStockProducts.length > 0
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-slate-100 text-slate-400'
+              }`}
+            >
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 w-full">
+            <div
+              className={`text-base sm:text-lg font-extrabold font-mono tabular-nums ${
+                lowStockProducts.length > 0 ? 'text-amber-800' : 'text-slate-800'
+              }`}
+            >
+              {lowStockProducts.length} Produk
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+              {lowStockProducts.length > 0 ? 'Ketuk untuk lihat & restok' : 'Semua stok aman'}
+            </p>
+          </div>
+        </button>
+
+        {/* KPI 5: Piutang Kasbon */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('hutang_retur')}
+          className="col-span-2 md:col-span-1 bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 hover:border-purple-300 shadow-xs transition flex flex-col justify-between text-left cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="text-[11px] font-bold text-slate-500 uppercase truncate">Piutang Kasbon</span>
+            <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+              <BookOpen className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2.5 w-full">
+            <div className="text-base sm:text-lg font-extrabold text-purple-950 font-mono tabular-nums truncate">
+              Rp {unpaidDebtTotal.toLocaleString('id-ID')}
+            </div>
+            <p className="text-[11px] text-purple-700 mt-0.5 truncate">
+              {debts.filter((d) => d.status !== 'lunas').length} pelanggan belum lunas
+            </p>
+          </div>
+        </button>
       </div>
 
       {/* ========================================================================= */}
@@ -1379,140 +1475,6 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Welcome & Action Banner */}
-      <div className="bg-gradient-to-r from-teal-700 via-emerald-600 to-cyan-700 rounded-2xl p-4 sm:p-6 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider bg-amber-400 text-amber-950 shadow-xs">
-              Ju-Fat Cell Overview
-            </span>
-            <span className="text-xs text-teal-100 font-medium hidden sm:inline">· Counter Management System</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight mt-1.5 leading-snug">
-            Ringkasan & Analitik Bisnis
-          </h2>
-          <p className="text-xs text-teal-100 mt-0.5">
-            Laporan tren penjualan harian, mingguan, bulanan & tahunan dengan target omzet terintegrasi
-          </p>
-        </div>
-
-        {/* Quick Action Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={() => setActiveTab('kasir')}
-            className="px-3 py-1.5 sm:px-3.5 sm:py-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-          >
-            <ShoppingCart className="w-3.5 h-3.5" />
-            <span>Kasir POS</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('atm_mini')}
-            className="px-3 py-1.5 sm:px-3.5 sm:py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>ATM Mini (EDC)</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('ppob')}
-            className="px-3 py-1.5 sm:px-3.5 sm:py-2 bg-teal-800/80 hover:bg-teal-800 text-white border border-teal-400/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-300" />
-            <span>Pulsa & PPOB</span>
-          </button>
-          <button
-            onClick={() => setIsCashMutationModalOpen(true)}
-            className="px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white/15 hover:bg-white/25 text-white border border-white/20 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
-          >
-            <PlusCircle className="w-3.5 h-3.5 text-emerald-300" />
-            <span>Catat Kas</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 4 Primary Top KPI Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-        {/* KPI 1: Kas Fisik di Laci */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase">Kas Fisik Laci</span>
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 sm:mt-3">
-            <div className="text-base sm:text-xl font-extrabold text-emerald-950 font-mono tabular-nums truncate">
-              Rp {drawerCashBalance.toLocaleString('id-ID')}
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-emerald-700 mt-0.5 truncate">Saldo riil di laci kasir</p>
-          </div>
-        </div>
-
-        {/* KPI 2: Service HP Diproses */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase">Service Diproses</span>
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-              <Wrench className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 sm:mt-3">
-            <div className="text-base sm:text-xl font-extrabold text-blue-950 font-mono tabular-nums">
-              {activeServicesCount} Unit
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-blue-700 mt-0.5 truncate">
-              {services.filter((s) => s.status === 'antrean').length} antrean ·{' '}
-              {services.filter((s) => s.status === 'proses').length} pengerjaan
-            </p>
-          </div>
-        </div>
-
-        {/* KPI 3: Stok Menipis Warning */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase">Peringatan Restock</span>
-            <div
-              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                lowStockProducts.length > 0
-                  ? 'bg-amber-100 text-amber-700'
-                  : 'bg-slate-100 text-slate-400'
-              }`}
-            >
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 sm:mt-3">
-            <div
-              className={`text-base sm:text-xl font-extrabold font-mono tabular-nums ${
-                lowStockProducts.length > 0 ? 'text-amber-800' : 'text-slate-800'
-              }`}
-            >
-              {lowStockProducts.length} Produk
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
-              Stok di bawah batas aman
-            </p>
-          </div>
-        </div>
-
-        {/* KPI 4: Buku Piutang Belum Lunas */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase">Piutang Kasbon</span>
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-              <BookOpen className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2.5 sm:mt-3">
-            <div className="text-base sm:text-xl font-extrabold text-purple-950 font-mono tabular-nums truncate">
-              Rp {unpaidDebtTotal.toLocaleString('id-ID')}
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-purple-700 mt-0.5 truncate">
-              {debts.filter((d) => d.status !== 'lunas').length} pelanggan tempo
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* ========================================================================= */}
       {/* SECTION: LAPORAN REKONSILIASI SHIFT & AUDIT SALDO (FISIK LACI VS DIGITAL) */}
       {/* ========================================================================= */}
@@ -1718,12 +1680,12 @@ export const DashboardView: React.FC = () => {
                   placeholder="0"
                 />
               </div>
-              <div className="flex items-center justify-between mt-1 text-[10.5px] text-slate-500">
+              <div className="flex items-center justify-between mt-1.5 text-[11px] text-slate-500">
                 <span>Input hitungan uang lembar di laci</span>
                 <button
                   type="button"
                   onClick={() => setPhysicalCashCounted(drawerCashBalance)}
-                  className="text-amber-800 hover:underline font-bold"
+                  className="px-2 py-1 text-amber-800 hover:bg-amber-100 rounded-md font-bold cursor-pointer whitespace-nowrap"
                 >
                   Samakan Sistem
                 </button>
@@ -1736,9 +1698,9 @@ export const DashboardView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsDenominationOpen(!isDenominationOpen)}
-                  className="text-amber-800 hover:text-amber-950 font-extrabold underline flex items-center gap-1"
+                  className="px-2 py-1 text-amber-800 hover:text-amber-950 hover:bg-amber-100 rounded-md font-extrabold flex items-center gap-1 cursor-pointer whitespace-nowrap"
                 >
-                  <Coins className="w-3 h-3" />
+                  <Coins className="w-3.5 h-3.5" />
                   <span>{isDenominationOpen ? 'Tutup Rincian' : 'Buka Rincian Pecahan'}</span>
                 </button>
               </div>
@@ -1901,7 +1863,7 @@ export const DashboardView: React.FC = () => {
           </div>
         ) : (
           <div className="bg-rose-50 border-2 border-rose-400 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
-            <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+            <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm">
               <ShieldAlert className="w-6 h-6 stroke-[2.5]" />
             </div>
             <div className="min-w-0 flex-1">
@@ -3084,67 +3046,88 @@ export const DashboardView: React.FC = () => {
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 pt-1">
           {/* Stream 1 */}
-          <div className="p-3 sm:p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700 mb-1">
-              <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Aksesoris & POS</span>
+          <button
+            type="button"
+            onClick={() => setActiveTab('kasir')}
+            className="p-3 sm:p-3.5 bg-slate-50 hover:bg-emerald-50/60 rounded-xl border border-slate-200 hover:border-emerald-300 transition cursor-pointer group text-left"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700">
+                <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Aksesoris &amp; POS</span>
+              </div>
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition shrink-0" />
             </div>
-            <div className="text-sm sm:text-base font-extrabold text-slate-900 font-mono truncate">
+            <div className="text-sm sm:text-base font-extrabold text-slate-900 font-mono tabular-nums truncate">
               Rp {totalSalesPOS.toLocaleString('id-ID')}
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 truncate">
+            <div className="text-[11px] text-slate-500 mt-1 truncate">
               {transactions.length} struk penjualan
             </div>
-          </div>
+          </button>
 
           {/* Stream 2 */}
-          <div
+          <button
+            type="button"
             onClick={() => setActiveTab('atm_mini')}
-            className="p-3 sm:p-3.5 bg-slate-50 hover:bg-pink-50/50 rounded-xl border border-slate-200 hover:border-pink-300 transition cursor-pointer group"
-            title="Buka ATM Mini & Transfer"
+            className="p-3 sm:p-3.5 bg-slate-50 hover:bg-pink-50/50 rounded-xl border border-slate-200 hover:border-pink-300 transition cursor-pointer group text-left"
           >
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700">
                 <Send className="w-3.5 h-3.5 text-pink-600" />
-                <span>Laba ATM & Transfer</span>
+                <span>Laba ATM &amp; Transfer</span>
               </div>
-              <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-pink-600 transition" />
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-pink-600 transition shrink-0" />
             </div>
-            <div className="text-sm sm:text-base font-extrabold text-pink-800 font-mono truncate">
+            <div className="text-sm sm:text-base font-extrabold text-pink-800 font-mono tabular-nums truncate">
               +Rp {totalAgencyProfit.toLocaleString('id-ID')}
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 truncate">
+            <div className="text-[11px] text-slate-500 mt-1 truncate">
               {totalBankingTransactionsCount} transaksi perbankan
             </div>
-          </div>
+          </button>
 
           {/* Stream 3 */}
-          <div className="p-3 sm:p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700 mb-1">
-              <Zap className="w-3.5 h-3.5 text-amber-600" />
-              <span>Laba Pulsa & PPOB</span>
+          <button
+            type="button"
+            onClick={() => setActiveTab('ppob')}
+            className="p-3 sm:p-3.5 bg-slate-50 hover:bg-amber-50/60 rounded-xl border border-slate-200 hover:border-amber-300 transition cursor-pointer group text-left"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700">
+                <Zap className="w-3.5 h-3.5 text-amber-600" />
+                <span>Laba Pulsa &amp; PPOB</span>
+              </div>
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 transition shrink-0" />
             </div>
-            <div className="text-sm sm:text-base font-extrabold text-amber-800 font-mono truncate">
+            <div className="text-sm sm:text-base font-extrabold text-amber-800 font-mono tabular-nums truncate">
               +Rp {totalPPOBProfit.toLocaleString('id-ID')}
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 truncate">
-              {ppobTransactions.length} tagihan & token
+            <div className="text-[11px] text-slate-500 mt-1 truncate">
+              {ppobTransactions.length} tagihan &amp; token
             </div>
-          </div>
+          </button>
 
           {/* Stream 4 */}
-          <div className="p-3 sm:p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700 mb-1">
-              <Wrench className="w-3.5 h-3.5 text-blue-600" />
-              <span>Servis Handphone</span>
+          <button
+            type="button"
+            onClick={() => setActiveTab('service_hp')}
+            className="p-3 sm:p-3.5 bg-slate-50 hover:bg-blue-50/60 rounded-xl border border-slate-200 hover:border-blue-300 transition cursor-pointer group text-left"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-700">
+                <Wrench className="w-3.5 h-3.5 text-blue-600" />
+                <span>Servis Handphone</span>
+              </div>
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
             </div>
-            <div className="text-sm sm:text-base font-extrabold text-blue-900 font-mono truncate">
+            <div className="text-sm sm:text-base font-extrabold text-blue-900 font-mono tabular-nums truncate">
               Rp {totalServiceRevenue.toLocaleString('id-ID')}
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 truncate">
+            <div className="text-[11px] text-slate-500 mt-1 truncate">
               {services.length} unit reparasi
             </div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -3199,6 +3182,21 @@ export const DashboardView: React.FC = () => {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] bg-slate-50 px-3 py-2 rounded-lg">
+            <div>
+              <span className="text-slate-500 font-semibold block text-[10px]">Aset HPP Aktif</span>
+              <span className="font-mono font-extrabold text-slate-900 tabular-nums">
+                Rp {stockValuation.totalAssetHpp.toLocaleString('id-ID')}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-slate-500 font-semibold block text-[10px]">Potensi Omzet Aktif</span>
+              <span className="font-mono font-extrabold text-emerald-700 tabular-nums">
+                Rp {stockValuation.totalPotentialRevenue.toLocaleString('id-ID')}
+              </span>
+            </div>
           </div>
         </div>
 

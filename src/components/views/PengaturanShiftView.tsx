@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
   Settings,
-  Shield,
   Download,
   Upload,
   RefreshCw,
@@ -9,9 +8,6 @@ import {
   Store,
   UserCheck,
   CheckCircle,
-  Database,
-  Printer,
-  Key,
   Image as ImageIcon,
   Trash2,
   AlertTriangle,
@@ -22,7 +18,6 @@ import {
   Smartphone,
   Cloud,
   QrCode,
-  Wifi,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 
@@ -83,6 +78,11 @@ export const PengaturanShiftView: React.FC = () => {
   const [storeLogo, setStoreLogo] = useState(storeProfile.logo || '');
   const [logoUrlInput, setLogoUrlInput] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const [activeSection, setActiveSection] = useState<'profil' | 'shift_mode' | 'sync_backup'>('profil');
+  const [modeToast, setModeToast] = useState('');
+  const [confirmEnterDemo, setConfirmEnterDemo] = useState(false);
+  const [confirmResetDemo, setConfirmResetDemo] = useState(false);
 
   // Demo exit modal states
   const [isExitDemoModalOpen, setIsExitDemoModalOpen] = useState(false);
@@ -99,8 +99,9 @@ export const PengaturanShiftView: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setLogoError('');
     if (file.size > 2 * 1024 * 1024) {
-      alert('Ukuran file logo maksimal 2MB!');
+      setLogoError('Ukuran file logo maksimal 2MB!');
       return;
     }
 
@@ -149,11 +150,12 @@ export const PengaturanShiftView: React.FC = () => {
   const handleConfirmExitDemo = () => {
     exitDemoMode(exitOption);
     setIsExitDemoModalOpen(false);
-    alert(
+    setModeToast(
       exitOption === 'keep_products'
-        ? 'Selamat! Anda sekarang berada di Mode Toko Nyata. Transaksi demo telah dibersihkan dan katalog produk Anda siap digunakan!'
-        : 'Selamat! Anda sekarang berada di Mode Toko Nyata dengan database bersih total. Silakan input produk toko Anda sendiri!'
+        ? 'Mode Toko Nyata aktif! Transaksi demo dibersihkan dan katalog produk siap digunakan.'
+        : 'Mode Toko Nyata aktif dengan database bersih total. Silakan input produk toko Anda.'
     );
+    setTimeout(() => setModeToast(''), 5000);
   };
 
   // Import JSON from file directly
@@ -223,76 +225,135 @@ export const PengaturanShiftView: React.FC = () => {
         </div>
       </div>
 
-      {/* Banner 1: Mode Status & Keluar dari Mode Demo */}
-      <div
-        className={`p-5 rounded-2xl border transition-all ${
-          storeProfile.isDemoMode
-            ? 'bg-gradient-to-r from-amber-50 to-orange-50/60 border-amber-300'
-            : 'bg-gradient-to-r from-emerald-50 to-teal-50/60 border-emerald-300'
-        }`}
-      >
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                  storeProfile.isDemoMode
-                    ? 'bg-amber-500 text-white'
-                    : 'bg-emerald-600 text-white'
-                }`}
-              >
-                {storeProfile.isDemoMode ? 'MODE DEMO AKTIF' : 'MODE TOKO NYATA (PRODUKSI)'}
-              </span>
-              <span className="text-xs text-slate-500 font-mono">
-                Penyimpanan Lokal: Aman ({lastSavedTime})
-              </span>
-            </div>
-
-            <h4 className="text-sm font-bold text-slate-900">
-              {storeProfile.isDemoMode
-                ? 'Anda sedang berada di Mode Demo (Data Contoh Bawaan)'
-                : 'Toko Anda beroperasi dalam Mode Nyata (Data Bersih)'}
-            </h4>
-            <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-              {storeProfile.isDemoMode
-                ? 'Semua transaksi kasir, servis, mutasi kas, dan data pelanggan saat ini adalah data simulasi. Klik "Keluar Mode Demo" untuk membersihkan riwayat contoh dan mulai mencatat data asli toko Anda.'
-                : 'Semua transaksi kasir, stok, servis, dan kas laci saat ini adalah data riil toko Anda. Data disimpan otomatis di browser dan aman dari kehilangan.'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {storeProfile.isDemoMode ? (
-              <button
-                onClick={() => setIsExitDemoModalOpen(true)}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95"
-              >
-                <Sparkles className="w-4 h-4 text-emerald-200" />
-                <span>Keluar dari Mode Demo & Mulai Toko Nyata</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  if (
-                    confirm(
-                      'Apakah Anda ingin kembali ke Mode Demo? Data contoh akan dimuat kembali untuk simulasi.'
-                    )
-                  ) {
-                    enterDemoMode();
-                  }
-                }}
-                className="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Muat Ulang Mode Demo
-              </button>
-            )}
-          </div>
-        </div>
+      {/* Sub-navigation Tabs */}
+      <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+        {[
+          { id: 'profil', label: 'Profil & Logo Toko' },
+          { id: 'shift_mode', label: 'Shift & Mode Toko' },
+          { id: 'sync_backup', label: 'Sinkron & Backup' },
+        ].map((tab) => {
+          const isActive = activeSection === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveSection(tab.id as any)}
+              className={`flex-1 min-w-[140px] min-h-[40px] px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                isActive
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
+      {modeToast && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-900 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{modeToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setModeToast('')}
+            className="text-emerald-700 hover:text-emerald-900 font-bold px-2 py-1 cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
+      {activeSection === 'shift_mode' && (
+        <div
+          className={`p-5 rounded-2xl border transition-all ${
+            storeProfile.isDemoMode
+              ? 'bg-gradient-to-r from-amber-50 to-orange-50/60 border-amber-300'
+              : 'bg-gradient-to-r from-emerald-50 to-teal-50/60 border-emerald-300'
+          }`}
+        >
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                    storeProfile.isDemoMode
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-emerald-600 text-white'
+                  }`}
+                >
+                  {storeProfile.isDemoMode ? 'MODE DEMO AKTIF' : 'MODE TOKO NYATA (PRODUKSI)'}
+                </span>
+                <span className="text-xs text-slate-500 font-mono">
+                  Penyimpanan Lokal: Aman ({lastSavedTime})
+                </span>
+              </div>
+
+              <h4 className="text-sm font-bold text-slate-900">
+                {storeProfile.isDemoMode
+                  ? 'Anda sedang berada di Mode Demo (Data Contoh Bawaan)'
+                  : 'Toko Anda beroperasi dalam Mode Nyata (Data Bersih)'}
+              </h4>
+              <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+                {storeProfile.isDemoMode
+                  ? 'Semua transaksi kasir, servis, mutasi kas, dan data pelanggan saat ini adalah data simulasi. Klik "Keluar Mode Demo" untuk membersihkan riwayat contoh dan mulai mencatat data asli toko Anda.'
+                  : 'Semua transaksi kasir, stok, servis, dan kas laci saat ini adalah data riil toko Anda. Data disimpan otomatis di browser dan aman dari kehilangan.'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {storeProfile.isDemoMode ? (
+                <button
+                  type="button"
+                  onClick={() => setIsExitDemoModalOpen(true)}
+                  className="px-4 min-h-[40px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95 whitespace-nowrap"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-200" />
+                  <span>Keluar dari Mode Demo</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : confirmEnterDemo ? (
+                <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-xl border border-amber-300 shadow-xs">
+                  <span className="text-[11px] font-bold text-slate-700 px-1.5">Muat data demo?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      enterDemoMode();
+                      setConfirmEnterDemo(false);
+                      setModeToast('Berhasil beralih ke Mode Demo.');
+                    }}
+                    className="px-3 min-h-[34px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg cursor-pointer"
+                  >
+                    Ya, Muat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmEnterDemo(false)}
+                    className="px-2.5 min-h-[34px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmEnterDemo(true)}
+                  className="px-3.5 min-h-[38px] bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap"
+                >
+                  Muat Ulang Mode Demo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Card 1: Logo & Identitas Toko (User Request: Bagian profil buatkan untuk memasukkan logo) */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-5">
+        {/* Card 1: Logo & Identitas Toko */}
+        {activeSection === 'profil' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-5 lg:col-span-2">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <Store className="w-5 h-5 text-emerald-600" />
@@ -367,9 +428,14 @@ export const PengaturanShiftView: React.FC = () => {
                   )}
                 </div>
 
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[11px] text-slate-500">
                   Format gambar yang didukung: PNG, JPG, WebP, SVG. Maksimal 2MB.
                 </p>
+                {logoError && (
+                  <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg">
+                    {logoError}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -380,21 +446,22 @@ export const PengaturanShiftView: React.FC = () => {
                   Atau pilih logo preset instan:
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {PRESET_LOGOS.map((preset, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => {
+                      setLogoError('');
                       setStoreLogo(preset.data);
                       updateStoreProfile({ logo: preset.data });
                       setIsSaved(true);
                       setTimeout(() => setIsSaved(false), 3000);
                     }}
-                    className="p-1.5 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg flex items-center gap-2 text-left transition cursor-pointer"
+                    className="p-2 min-h-[42px] bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-xl flex items-center gap-2 text-left transition cursor-pointer"
                   >
-                    <img src={preset.data} alt={preset.name} className="w-6 h-6 object-contain shrink-0" />
-                    <span className="text-[10px] font-bold text-slate-700 truncate">{preset.name}</span>
+                    <img src={preset.data} alt={preset.name} className="w-7 h-7 object-contain shrink-0" />
+                    <span className="text-[11px] font-bold text-slate-700 truncate">{preset.name}</span>
                   </button>
                 ))}
               </div>
@@ -406,12 +473,12 @@ export const PengaturanShiftView: React.FC = () => {
                   value={logoUrlInput}
                   onChange={(e) => setLogoUrlInput(e.target.value)}
                   placeholder="Atau tempel URL gambar logo (https://...)"
-                  className="flex-1 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
                 <button
                   type="button"
                   onClick={handleApplyLogoUrl}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg transition"
+                  className="px-3.5 min-h-[36px] bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap shrink-0"
                 >
                   Terapkan
                 </button>
@@ -476,16 +543,18 @@ export const PengaturanShiftView: React.FC = () => {
 
             <button
               type="submit"
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
+              className="px-4 min-h-[40px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
             >
               <CheckCircle className="w-4 h-4" />
-              <span>Simpan Profil & Logo Toko</span>
+              <span>Simpan Profil &amp; Logo Toko</span>
             </button>
           </form>
         </div>
+        )}
 
-        {/* Card 2: Keamanan Data & Cadangan Database (Agar data baru tidak mudah hilang) */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+        {/* Card 2: Keamanan Data & Cadangan Database */}
+        {activeSection === 'sync_backup' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 lg:col-span-2">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <HardDrive className="w-5 h-5 text-emerald-600" />
             <div>
@@ -583,8 +652,10 @@ export const PengaturanShiftView: React.FC = () => {
             </form>
           </div>
         </div>
+        )}
 
         {/* Card: Sinkronisasi Multi-Perangkat (PC & HP) */}
+        {activeSection === 'sync_backup' && (
         <div className="bg-white rounded-2xl border border-teal-200/90 p-5 shadow-xs space-y-4 lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-3">
@@ -629,7 +700,7 @@ export const PengaturanShiftView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span
                   className={`w-2.5 h-2.5 rounded-full ${
-                    syncCode ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                    syncCode ? 'bg-emerald-500' : 'bg-slate-400'
                   }`}
                 />
                 <span className="font-bold text-slate-900 text-sm">
@@ -711,8 +782,10 @@ export const PengaturanShiftView: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Card 3: Shift Status & Access Control */}
+        {activeSection === 'shift_mode' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
@@ -776,15 +849,18 @@ export const PengaturanShiftView: React.FC = () => {
             </div>
 
             <button
+              type="button"
               onClick={toggleRole}
-              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
+              className="px-3.5 min-h-[38px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition cursor-pointer whitespace-nowrap shrink-0"
             >
               Ganti ke {shift.role === 'owner' ? 'Kasir' : 'Owner'}
             </button>
           </div>
         </div>
+        )}
 
         {/* Card 4: Reset Demo Data */}
+        {activeSection === 'shift_mode' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <RefreshCw className="w-4 h-4 text-red-600" />
@@ -795,22 +871,44 @@ export const PengaturanShiftView: React.FC = () => {
             Jika Anda ingin menguji coba aplikasi kembali dengan data contoh awal Ju-Fat Cell, Anda dapat mereset data di sini. Pastikan unduh backup terlebih dahulu jika memiliki data penting.
           </p>
 
-          <button
-            onClick={() => {
-              if (
-                confirm(
-                  'PERINGATAN: Seluruh transaksi lokal dan produk kustom akan direset ke data contoh bawaan. Lanjutkan?'
-                )
-              ) {
-                resetAllDemoData();
-                alert('Aplikasi berhasil direset ke data contoh awal!');
-              }
-            }}
-            className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-xl transition cursor-pointer"
-          >
-            Reset ke Data Demo Awal
-          </button>
+          {confirmResetDemo ? (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2.5 text-xs">
+              <p className="font-bold text-rose-900">
+                Yakin reset seluruh transaksi lokal &amp; produk kustom ke data contoh bawaan?
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetAllDemoData();
+                    setConfirmResetDemo(false);
+                    setModeToast('Aplikasi berhasil direset ke data contoh bawaan.');
+                    setTimeout(() => setModeToast(''), 4000);
+                  }}
+                  className="px-3.5 min-h-[36px] bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg cursor-pointer"
+                >
+                  Ya, Reset Sekarang
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetDemo(false)}
+                  className="px-3.5 min-h-[36px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold rounded-lg cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmResetDemo(true)}
+              className="px-4 min-h-[38px] bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Reset ke Data Demo Awal
+            </button>
+          )}
         </div>
+        )}
       </div>
 
       {/* Modal: Keluar dari Mode Demo & Mulai Toko Nyata */}

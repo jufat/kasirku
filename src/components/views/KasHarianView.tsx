@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Wallet,
   ArrowDownLeft,
@@ -8,22 +8,11 @@ import {
   Search,
   Filter,
   CheckCircle,
-  Calendar,
-  Layers,
   Edit3,
-  CreditCard,
   QrCode,
-  AlertCircle,
-  RotateCcw,
-  Sparkles,
-  TrendingUp,
   Receipt,
   Banknote,
-  Clock,
   ChevronRight,
-  ChevronLeft,
-  ChevronsRight,
-  ChevronsLeft,
   ArrowUp,
   ArrowDown,
   Eye,
@@ -60,12 +49,9 @@ export const KasHarianView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [isThermalPrintModalOpen, setIsThermalPrintModalOpen] = useState(false);
 
-  // Top & Table Scroll Synchronized References
+  // Scroll References
   const pageContainerRef = useRef<HTMLDivElement>(null);
-  const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
-  const [tableWidth, setTableWidth] = useState(1050);
-  const [scrollProgress, setScrollProgress] = useState(0); // 0% (Left) to 100% (Right)
   const [isScrolledDown, setIsScrolledDown] = useState(false);
   const [showKpiCards, setShowKpiCards] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -73,8 +59,6 @@ export const KasHarianView: React.FC = () => {
     }
     return true;
   });
-  const isSyncingTopRef = useRef(false);
-  const isSyncingTableRef = useRef(false);
 
   // Dynamic Drawer Cash & Modal Awal Editor State
   const [isCashDrawerModalOpen, setIsCashDrawerModalOpen] = useState(false);
@@ -153,129 +137,25 @@ export const KasHarianView: React.FC = () => {
     return acc - m.amount;
   }, 0);
 
-  // Sync scrollbar width & state
-  useEffect(() => {
-    const updateDimensions = () => {
-      if (tableScrollRef.current) {
-        const sw = tableScrollRef.current.scrollWidth;
-        const cw = tableScrollRef.current.clientWidth;
-        setTableWidth(Math.max(sw, 980));
-        const maxScroll = sw - cw;
-        if (maxScroll > 0) {
-          const ratio = (tableScrollRef.current.scrollLeft / maxScroll) * 100;
-          setScrollProgress(Math.min(100, Math.max(0, Math.round(ratio))));
-        } else {
-          setScrollProgress(0);
-        }
-      }
-    };
-
-    updateDimensions();
-    window.addEventListener('resize', updateDimensions);
-    const timer = setTimeout(updateDimensions, 100);
-    return () => {
-      window.removeEventListener('resize', updateDimensions);
-      clearTimeout(timer);
-    };
-  }, [filteredMutations, activeLedgerTab, filterType]);
-
-  // Sync from top scrollbar to table
-  const handleTopScroll = () => {
-    if (isSyncingTopRef.current) {
-      isSyncingTopRef.current = false;
-      return;
-    }
-    if (tableScrollRef.current && topScrollRef.current) {
-      isSyncingTableRef.current = true;
-      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-      syncProgress();
-    }
-  };
-
-  // Sync from table to top scrollbar & check vertical scroll
   const handleTableScroll = () => {
-    if (isSyncingTableRef.current) {
-      isSyncingTableRef.current = false;
-      return;
-    }
-    if (topScrollRef.current && tableScrollRef.current) {
-      isSyncingTopRef.current = true;
-      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-      syncProgress();
-    }
     if (tableScrollRef.current) {
       setIsScrolledDown(tableScrollRef.current.scrollTop > 120);
     }
   };
 
-  const syncProgress = () => {
-    if (tableScrollRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = tableScrollRef.current;
-      const maxScroll = scrollWidth - clientWidth;
-      if (maxScroll > 0) {
-        setScrollProgress(Math.min(100, Math.max(0, Math.round((scrollLeft / maxScroll) * 100))));
-      } else {
-        setScrollProgress(0);
-      }
-    }
-  };
-
-  // Horizontal Quick Scroll helper
-  const scrollHorizontally = (direction: 'left' | 'right' | 'start' | 'end') => {
-    if (!tableScrollRef.current) return;
-    const cw = tableScrollRef.current.clientWidth;
-    const step = Math.max(260, Math.round(cw * 0.45));
-    let targetLeft = tableScrollRef.current.scrollLeft;
-
-    if (direction === 'left') {
-      targetLeft = Math.max(0, tableScrollRef.current.scrollLeft - step);
-    } else if (direction === 'right') {
-      targetLeft = tableScrollRef.current.scrollLeft + step;
-    } else if (direction === 'start') {
-      targetLeft = 0;
-    } else if (direction === 'end') {
-      targetLeft = tableScrollRef.current.scrollWidth;
-    }
-
-    tableScrollRef.current.scrollTo({ left: targetLeft, behavior: 'smooth' });
-    if (topScrollRef.current) {
-      topScrollRef.current.scrollTo({ left: targetLeft, behavior: 'smooth' });
-    }
-  };
-
-  // Direct Slider Drag Handler from Top
-  const handleSliderChange = (percentage: number) => {
-    setScrollProgress(percentage);
-    if (tableScrollRef.current) {
-      const { scrollWidth, clientWidth } = tableScrollRef.current;
-      const maxScroll = Math.max(1, scrollWidth - clientWidth);
-      const targetLeft = (percentage / 100) * maxScroll;
-      tableScrollRef.current.scrollLeft = targetLeft;
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollLeft = targetLeft;
-      }
-    }
-  };
-
   // Instant Column Jump Handler from Top
-  const jumpToColumn = (column: 'waktu' | 'kategori' | 'keterangan' | 'metode' | 'tipe' | 'nominal' | 'saldo' | 'petugas') => {
+  const jumpToColumn = (column: 'waktu' | 'kategori' | 'keterangan' | 'nominal' | 'saldo') => {
     if (!tableScrollRef.current) return;
     const { scrollWidth, clientWidth } = tableScrollRef.current;
     const maxScroll = Math.max(1, scrollWidth - clientWidth);
     let target = 0;
     if (column === 'waktu') target = 0;
-    else if (column === 'kategori') target = maxScroll * 0.15;
-    else if (column === 'keterangan') target = maxScroll * 0.32;
-    else if (column === 'metode') target = maxScroll * 0.52;
-    else if (column === 'tipe') target = maxScroll * 0.65;
-    else if (column === 'nominal') target = maxScroll * 0.8;
-    else if (column === 'saldo') target = maxScroll * 0.95;
-    else if (column === 'petugas') target = maxScroll;
+    else if (column === 'kategori') target = maxScroll * 0.16;
+    else if (column === 'keterangan') target = maxScroll * 0.35;
+    else if (column === 'nominal') target = maxScroll * 0.78;
+    else if (column === 'saldo') target = maxScroll;
 
     tableScrollRef.current.scrollTo({ left: target, behavior: 'smooth' });
-    if (topScrollRef.current) {
-      topScrollRef.current.scrollTo({ left: target, behavior: 'smooth' });
-    }
   };
 
   // Vertical Scroll back to very top
@@ -359,16 +239,11 @@ export const KasHarianView: React.FC = () => {
       <div className="p-4 sm:p-5 bg-white border-b border-slate-200 shrink-0">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 leading-tight">
-                Buku Arus Kas Harian & Mutasi Laci
-              </h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-100 text-teal-800">
-                Ju-Fat Cell
-              </span>
-            </div>
+            <h2 className="text-base sm:text-lg font-extrabold text-slate-900 leading-tight">
+              Buku Arus Kas Harian & Mutasi Laci
+            </h2>
             <p className="text-xs text-slate-500">
-              Pencatatan kas masuk, keluar, saldo laci bebas ditulis angka berapa saja (termasuk pecahan receh non-bulat).
+              Pencatatan kas masuk, keluar, dan penyesuaian saldo laci bebas angka berapa saja.
             </p>
 
             {/* Sub-Tabs: Buku Kas vs Mutasi Laci & Quick Controls */}
@@ -573,7 +448,7 @@ export const KasHarianView: React.FC = () => {
 
             {/* 6. Total Kasbon / Piutang Berjalan */}
             <div
-              onClick={() => setActiveTab('hutang')}
+              onClick={() => setActiveTab('hutang_retur')}
               className="col-span-2 sm:col-span-1 bg-purple-50/80 hover:bg-purple-100 border border-purple-200 rounded-xl p-3 flex items-center justify-between transition cursor-pointer group"
               title="Klik untuk membuka buku hutang / kasbon pelanggan"
             >
@@ -621,7 +496,7 @@ export const KasHarianView: React.FC = () => {
               QRIS: Rp {totalNonTunai.toLocaleString('id-ID')}
             </div>
             <div
-              onClick={() => setActiveTab('hutang')}
+              onClick={() => setActiveTab('hutang_retur')}
               className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-xl font-bold shrink-0 border border-purple-200 cursor-pointer"
               title="Buka buku kasbon"
             >
@@ -633,17 +508,27 @@ export const KasHarianView: React.FC = () => {
 
       {/* Filter and Search Bar */}
       <div className="p-3 bg-white border-b border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 shrink-0">
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex flex-wrap items-center gap-2 flex-1">
           {/* Search box */}
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari transaksi, ketikan nominal bebas, atau nama..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
+              placeholder="Cari transaksi, nominal, atau petugas..."
+              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Hapus pencarian"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Type filter tabs */}
@@ -660,7 +545,7 @@ export const KasHarianView: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setFilterType(tab.id as any)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap active:scale-95 ${
+                  className={`px-3 py-1.5 min-h-[34px] text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap active:scale-95 ${
                     active
                       ? 'bg-white text-teal-950 shadow-sm font-black ring-1 ring-slate-200'
                       : 'text-slate-600 hover:text-slate-900 font-semibold'
@@ -674,13 +559,13 @@ export const KasHarianView: React.FC = () => {
         </div>
 
         {/* Dynamic Category Dropdown / Filter summary */}
-        <div className="flex items-center gap-2 justify-between md:justify-end text-xs">
+        <div className="flex items-center gap-2 flex-wrap justify-between md:justify-end text-xs">
           <div className="flex items-center gap-1.5">
             <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-2.5 py-1 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="px-2.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
             >
               {categoryOptions.map((opt) => (
                 <option key={opt.id} value={opt.id}>
@@ -690,183 +575,65 @@ export const KasHarianView: React.FC = () => {
             </select>
           </div>
 
-          <div className="px-2 py-1 bg-slate-100 rounded-lg text-[11px] font-mono font-bold text-slate-700">
+          <div className="px-2.5 py-1.5 bg-slate-100 rounded-lg text-[11px] font-mono font-bold text-slate-700 tabular-nums whitespace-nowrap">
             {filteredMutations.length} data ({filteredSum >= 0 ? '+' : ''}Rp {filteredSum.toLocaleString('id-ID')})
           </div>
+
+          {(search || filterType !== 'all' || selectedCategory !== 'all') && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setFilterType('all');
+                setSelectedCategory('all');
+              }}
+              className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg cursor-pointer whitespace-nowrap"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Mutations Table Container taking full available screen height on mobile with bottom nav clearance */}
+      {/* Mutations Table Container */}
       <div
         id="buku-kas-table-section"
-        className={`flex-1 p-2 sm:p-4 flex flex-col min-h-[480px] sm:min-h-[550px] md:min-h-0 ${
-          isBottomNavVisible
-            ? 'h-[calc(100dvh-175px)] md:h-auto pb-24 md:pb-4'
-            : 'h-[calc(100dvh-120px)] md:h-auto pb-8 md:pb-4'
+        className={`flex-1 p-2 sm:p-4 flex flex-col min-h-[420px] md:min-h-0 ${
+          isBottomNavVisible ? 'pb-20 md:pb-4' : 'pb-6 md:pb-4'
         }`}
       >
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col flex-1 h-full min-h-0 overflow-hidden relative">
-          {/* 1. TOP SCROLLBAR HUB: Slider + Navigation Buttons + Column Chips */}
-          <div className="bg-slate-50 border-b border-slate-200 p-2 sm:p-3 sm:px-4 space-y-2 sm:space-y-2.5 shrink-0">
-            {/* Row A: Title & Big Quick-Slide Buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                  <span>
-                    {scrollProgress <= 5
-                      ? '👁️ Kolom Kiri (Waktu & Keterangan)'
-                      : scrollProgress >= 88
-                      ? '👁️ Kolom Kanan (Nominal & Saldo Laci)'
-                      : `👁️ Posisi Kolom: ${scrollProgress}%`}
-                  </span>
-                </span>
-              </div>
-
-              {/* Quick Slide Buttons directly accessible from the top */}
-              <div className="flex items-center gap-1.5">
+          {/* Compact Column Jump Strip */}
+          <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2 shrink-0 overflow-x-auto">
+            <div className="flex items-center gap-1.5 text-[11px] shrink-0">
+              <span className="text-slate-500 font-bold mr-1">Lompat Kolom:</span>
+              {[
+                { id: 'waktu', label: 'Waktu' },
+                { id: 'kategori', label: 'Kategori' },
+                { id: 'keterangan', label: 'Keterangan' },
+                { id: 'nominal', label: 'Nominal (Rp)' },
+                { id: 'saldo', label: 'Saldo Akhir' },
+              ].map((col) => (
                 <button
+                  key={col.id}
                   type="button"
-                  onClick={() => scrollHorizontally('start')}
-                  className="px-2.5 py-1 text-xs font-bold bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
-                  title="Geser langsung ke kolom paling awal (kiri)"
+                  onClick={() => jumpToColumn(col.id as any)}
+                  className={`px-2.5 py-1 min-h-[30px] rounded-lg border font-bold whitespace-nowrap cursor-pointer transition ${
+                    col.id === 'saldo'
+                      ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900'
+                      : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                  }`}
                 >
-                  <ChevronsLeft className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden sm:inline">Awal</span>
+                  {col.label}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => scrollHorizontally('left')}
-                  className="px-3 py-1 text-xs font-bold bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
-                  title="Geser kolom tabel ke kiri"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Geser Kiri</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => scrollHorizontally('right')}
-                  className="px-3 py-1 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
-                  title="Geser kolom tabel ke kanan (melihat Saldo Laci & Petugas)"
-                >
-                  <span>Geser Kanan</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-white" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => scrollHorizontally('end')}
-                  className="px-2.5 py-1 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs font-black active:scale-95"
-                  title="Geser langsung ke kolom saldo laci & petugas (kanan)"
-                >
-                  <span>Saldo Akhir</span>
-                  <ChevronsRight className="w-3.5 h-3.5 text-slate-950" />
-                </button>
-              </div>
+              ))}
             </div>
-
-            {/* Row B: Tactile Drag Slider for intuitive scrolling from the top */}
-            <div className="flex items-center gap-2.5 bg-white p-2 rounded-xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap hidden xs:inline flex items-center gap-1">
-                <span>Tarik Geser Slider:</span>
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={scrollProgress}
-                onChange={(e) => handleSliderChange(Number(e.target.value))}
-                className="w-full accent-teal-600 cursor-ew-resize h-2.5 bg-slate-200 rounded-lg focus:outline-none"
-                title="Tarik penggeser ini untuk menggeser kolom tabel dari kiri ke kanan"
-              />
-              <span className="text-[11px] font-mono font-black text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 shrink-0">
-                {scrollProgress}%
-              </span>
-            </div>
-
-            {/* Row C: Clickable Column Jump Chips (Instant Scroll to Any Column from Top) */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[11px]">
-              <span className="text-slate-400 font-bold mr-1 shrink-0">Lompat Kolom:</span>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('waktu')}
-                className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 font-bold shrink-0 cursor-pointer transition"
-              >
-                🕒 Waktu
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('kategori')}
-                className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 font-bold shrink-0 cursor-pointer transition"
-              >
-                🏷️ Kategori
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('keterangan')}
-                className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 font-bold shrink-0 cursor-pointer transition"
-              >
-                📝 Keterangan
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('metode')}
-                className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 font-bold shrink-0 cursor-pointer transition"
-              >
-                💳 Metode
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('tipe')}
-                className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 font-bold shrink-0 cursor-pointer transition"
-              >
-                🔄 Tipe
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('nominal')}
-                className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded text-emerald-800 font-bold shrink-0 cursor-pointer transition"
-              >
-                💰 Nominal (Rp)
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('saldo')}
-                className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-amber-900 font-bold shrink-0 cursor-pointer transition"
-              >
-                💵 Saldo Kas Laci
-              </button>
-              <button
-                type="button"
-                onClick={() => jumpToColumn('petugas')}
-                className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded text-slate-700 font-bold shrink-0 cursor-pointer transition"
-              >
-                👤 Petugas
-              </button>
-            </div>
+            <span className="text-[11px] text-slate-400 hidden sm:inline whitespace-nowrap">
+              Geser tabel ke samping untuk detail penuh
+            </span>
           </div>
 
-          {/* 2. DEDICATED TOP HORIZONTAL SCROLLBAR TRACK (Native draggable scrollbar from the top) */}
-          <div
-            ref={topScrollRef}
-            onScroll={handleTopScroll}
-            className="overflow-x-auto overflow-y-hidden bg-slate-100/90 border-b border-slate-200 py-1.5 px-3 select-none shrink-0"
-            style={{ scrollbarWidth: 'thin' }}
-            title="Scrollbar Horisontal Atas: Tarik batang scroll ini untuk menggeser kolom tabel"
-          >
-            <div
-              style={{ width: `${Math.max(tableWidth, 1000)}px` }}
-              className="h-3 bg-gradient-to-r from-teal-500/20 via-slate-300/40 to-amber-500/20 rounded flex items-center justify-between px-2 text-[9px] font-mono font-bold text-slate-600 cursor-ew-resize"
-            >
-              <span>◀ Sisi Kiri: Waktu / Kategori / Keterangan</span>
-              <span className="opacity-90">Tarik scrollbar atas ini untuk menggeser tabel</span>
-              <span>Sisi Kanan: Nominal / Saldo Laci / Petugas ▶</span>
-            </div>
-          </div>
-
-          {/* 3. TABLE BODY CONTAINER (Sticky Thead + Bottom Scrollbar) */}
+          {/* Table Body Container */}
           <div
             ref={tableScrollRef}
             onScroll={handleTableScroll}

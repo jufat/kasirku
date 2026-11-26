@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   ShoppingCart,
   Zap,
@@ -8,22 +8,15 @@ import {
   Package,
   BookOpen,
   Settings,
-  ShieldCheck,
   User,
   Power,
   Store,
   ChevronRight,
-  TrendingUp,
   CreditCard,
-  Sparkles,
   X,
-  Cloud,
   RefreshCw,
-  Smartphone,
   Printer,
   Sun,
-  Moon,
-  Clock,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 
@@ -45,35 +38,6 @@ export const Sidebar: React.FC = () => {
     printOrders,
   } = usePOS();
 
-  const [sidebarClock, setSidebarClock] = useState<{ date: string; time: string }>({
-    date: '',
-    time: '',
-  });
-
-  useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      const date = now.toLocaleDateString('id-ID', {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
-      const time = now
-        .toLocaleTimeString('id-ID', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-        })
-        .replace(/\./g, ':');
-      setSidebarClock({ date, time: `${time} WIB` });
-    };
-    updateClock();
-    const timer = setInterval(updateClock, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
   const activePrintOrdersCount = printOrders.filter(
     (o) => o.status === 'antrean' || o.status === 'proses'
@@ -84,7 +48,7 @@ export const Sidebar: React.FC = () => {
       id: 'kasir',
       name: 'Kasir (Penjualan)',
       icon: ShoppingCart,
-      badge: cartTotalCount > 0 ? `${cartTotalCount} item` : undefined,
+      badge: cartTotalCount > 0 ? `${cartTotalCount}` : undefined,
       badgeColor: 'bg-amber-400 text-amber-950 font-bold',
     },
     {
@@ -92,8 +56,6 @@ export const Sidebar: React.FC = () => {
       name: 'ATM Mini & EDC',
       icon: CreditCard,
       sublabel: 'Tarik, Transfer, M-Banking & QRIS',
-      badge: 'LIVE',
-      badgeColor: 'bg-amber-300 text-amber-950 font-extrabold',
     },
     {
       id: 'ppob',
@@ -112,8 +74,8 @@ export const Sidebar: React.FC = () => {
       name: 'Percetakan & Copy',
       icon: Printer,
       sublabel: 'Print, Foto, Banner, Jilid',
-      badge: activePrintOrdersCount > 0 ? `${activePrintOrdersCount} Order` : undefined,
-      badgeColor: 'bg-indigo-300 text-indigo-950 font-extrabold',
+      badge: activePrintOrdersCount > 0 ? `${activePrintOrdersCount}` : undefined,
+      badgeColor: 'bg-indigo-200 text-indigo-950 font-extrabold',
     },
   ];
 
@@ -134,8 +96,8 @@ export const Sidebar: React.FC = () => {
       name: 'Manajemen Stok',
       icon: Package,
       sublabel: 'HPP & Laba Satuan',
-      badge: lowStockCount > 0 ? `${lowStockCount} Menipis` : undefined,
-      badgeColor: 'bg-rose-500 text-white font-extrabold animate-pulse ring-1 ring-white/50',
+      badge: lowStockCount > 0 ? `${lowStockCount} Tipis` : undefined,
+      badgeColor: 'bg-rose-500 text-white font-extrabold',
     },
     {
       id: 'hutang_retur',
@@ -147,7 +109,7 @@ export const Sidebar: React.FC = () => {
       id: 'pengaturan',
       name: 'Sistem & Database',
       icon: Settings,
-      sublabel: 'Shift & Backup',
+      sublabel: 'Shift, Toko & Backup',
     },
   ];
 
@@ -160,10 +122,10 @@ export const Sidebar: React.FC = () => {
             <img
               src={storeProfile.logo}
               alt={storeProfile.name}
-              className="w-11 h-11 rounded-xl object-contain bg-white p-1 border border-white/40 shadow-md shrink-0"
+              className="w-10 h-10 rounded-xl object-contain bg-white p-1 border border-white/40 shadow-sm shrink-0"
             />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 via-teal-300 to-emerald-500 flex items-center justify-center shadow-md border border-white/30 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 via-teal-300 to-emerald-500 flex items-center justify-center shadow-sm border border-white/30 shrink-0">
               <Store className="w-5 h-5 text-teal-950" />
             </div>
           )}
@@ -172,15 +134,11 @@ export const Sidebar: React.FC = () => {
               <h1 className="font-extrabold text-base tracking-tight text-white leading-tight truncate">
                 {storeProfile.name || 'Ju-Fat Cell'}
               </h1>
-              <span
-                className={`px-1.5 py-0.5 text-[8px] font-extrabold uppercase rounded shadow-xs shrink-0 ${
-                  storeProfile.isDemoMode
-                    ? 'bg-amber-400 text-amber-950 ring-1 ring-amber-300'
-                    : 'bg-emerald-300 text-emerald-950 ring-1 ring-emerald-200'
-                }`}
-              >
-                {storeProfile.isDemoMode ? 'DEMO' : 'LIVE'}
-              </span>
+              {storeProfile.isDemoMode && (
+                <span className="px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded bg-amber-400 text-amber-950 shrink-0">
+                  DEMO
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-teal-100 font-medium truncate mt-0.5">
               {storeProfile.subtitle || 'Modern POS & Agency'}
@@ -190,45 +148,45 @@ export const Sidebar: React.FC = () => {
 
         {isMobile && (
           <button
+            type="button"
             onClick={() => setIsMobileSidebarOpen(false)}
-            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer"
+            className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer"
             title="Tutup Menu"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         )}
       </div>
 
       {/* Nav List Scrollable */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
         {/* Operasional Section */}
         <div>
-          <div className="px-3 mb-2 flex items-center justify-between text-[11px] font-bold text-teal-200 uppercase tracking-wider">
-            <span>Operasional Konter</span>
-            <span className="text-[10px] text-amber-300 font-mono bg-amber-400/20 px-1.5 py-0.2 rounded font-bold">
-              Aktif
-            </span>
+          <div className="px-3 mb-2 text-[11px] font-bold text-teal-200 uppercase tracking-wider">
+            Operasional Konter
           </div>
-          <nav className="space-y-1.5">
+          <nav className="space-y-1">
             {operationalNav.map((item) => {
               const Icon = item.icon;
-              const isActive = activeTab === item.id;
+              const isActive =
+                activeTab === item.id || (item.id === 'atm_mini' && activeTab === 'transfer');
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => {
                     setActiveTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 group text-left cursor-pointer active:scale-[0.98] ${
+                  className={`w-full min-h-[44px] flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition-colors duration-150 group text-left cursor-pointer active:scale-[0.98] ${
                     isActive
-                      ? 'bg-white text-teal-900 shadow-lg shadow-black/10 ring-2 ring-white/80'
+                      ? 'bg-white text-teal-900 shadow-md'
                       : 'text-teal-50 hover:bg-white/15 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                         isActive
                           ? 'bg-teal-100 text-teal-800'
                           : 'bg-white/10 text-teal-200'
@@ -251,9 +209,9 @@ export const Sidebar: React.FC = () => {
                   </div>
                   {item.badge ? (
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono ${
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono tabular-nums ${
                         isActive
-                          ? 'bg-amber-400 text-amber-950 ring-1 ring-amber-300'
+                          ? 'bg-amber-400 text-amber-950'
                           : item.badgeColor
                       }`}
                     >
@@ -274,36 +232,30 @@ export const Sidebar: React.FC = () => {
 
         {/* Manajemen & Owner Section */}
         <div>
-          <div className="px-3 mb-2 flex items-center justify-between text-[11px] font-bold text-teal-200 uppercase tracking-wider">
-            <span>Manajemen & Owner</span>
-            <button
-              onClick={toggleRole}
-              title="Ganti Mode Akses (Kasir 1 / Kasir 2 / Owner)"
-              className="text-[10px] text-amber-300 hover:text-amber-200 underline cursor-pointer font-bold"
-            >
-              Akses: {shift.cashierSlot === 'owner' ? '👑 Owner' : shift.cashierSlot === 'kasir_1' ? '👤 Shift 1' : '👤 Shift 2'}
-            </button>
+          <div className="px-3 mb-2 text-[11px] font-bold text-teal-200 uppercase tracking-wider">
+            Manajemen & Owner
           </div>
-          <nav className="space-y-1.5">
+          <nav className="space-y-1">
             {managementNav.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => {
                     setActiveTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 group text-left cursor-pointer active:scale-[0.98] ${
+                  className={`w-full min-h-[44px] flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition-colors duration-150 group text-left cursor-pointer active:scale-[0.98] ${
                     isActive
-                      ? 'bg-white text-teal-900 shadow-lg shadow-black/10 ring-2 ring-white/80'
+                      ? 'bg-white text-teal-900 shadow-md'
                       : 'text-teal-50 hover:bg-white/15 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                         isActive
                           ? 'bg-teal-100 text-teal-800'
                           : 'bg-white/10 text-teal-200'
@@ -326,9 +278,9 @@ export const Sidebar: React.FC = () => {
                   </div>
                   {item.badge ? (
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono ${
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono tabular-nums ${
                         isActive
-                          ? 'bg-rose-500 text-white ring-1 ring-white/50'
+                          ? 'bg-rose-500 text-white'
                           : item.badgeColor
                       }`}
                     >
@@ -347,49 +299,47 @@ export const Sidebar: React.FC = () => {
           </nav>
         </div>
 
-        {/* Sync PC & HP Feature Highlight Card */}
-        <div className="pt-2">
+        {/* Sync PC & HP Card */}
+        <div>
           <button
+            type="button"
             onClick={() => {
               setIsSyncModalOpen(true);
               setIsMobileSidebarOpen(false);
             }}
-            className="w-full p-3 rounded-2xl bg-gradient-to-br from-teal-950/40 to-emerald-950/50 border border-teal-300/30 hover:border-teal-200/60 transition group text-left cursor-pointer shadow-md"
+            className="w-full min-h-[44px] p-3 rounded-xl bg-teal-950/35 border border-teal-300/25 hover:border-teal-200/50 transition group text-left cursor-pointer"
           >
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-teal-400/20 text-teal-200 flex items-center justify-center shrink-0">
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                </div>
+                <RefreshCw className={`w-3.5 h-3.5 text-teal-200 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span className="text-xs font-bold text-white leading-tight">
                   Sinkron PC & HP
                 </span>
               </div>
               <span
-                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded font-mono ${
+                className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded font-mono ${
                   syncCode
-                    ? 'bg-emerald-400 text-emerald-950 ring-1 ring-emerald-300'
+                    ? 'bg-emerald-400 text-emerald-950'
                     : 'bg-white/20 text-teal-100'
                 }`}
               >
-                {syncCode ? syncCode : 'KODE'}
+                {syncCode || 'KODE'}
               </span>
             </div>
-            <p className="text-[11px] text-teal-100 leading-snug">
+            <p className="text-[11px] text-teal-100/90 leading-snug">
               {syncCode
-                ? 'Terhubung! Data kasir, stok & mutasi tersinkronisasi.'
-                : 'Hubungkan HP kasir dengan PC via 6 digit kode atau QR.'}
+                ? 'Terhubung dengan perangkat lain.'
+                : 'Hubungkan HP kasir & PC via kode.'}
             </p>
           </button>
         </div>
       </div>
 
-      {/* Footer Sidebar: User Account, Shift Status, Tutup Shift & E2EE */}
-      <div className="p-3 border-t border-white/15 bg-black/20 space-y-2.5 backdrop-blur-xs">
-        {/* User profile row */}
+      {/* Footer Sidebar: User Account & Shift Control */}
+      <div className="p-3 border-t border-white/15 bg-black/20 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/30 flex items-center justify-center shrink-0">
               <User className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
@@ -398,7 +348,7 @@ export const Sidebar: React.FC = () => {
                   {shift.cashierName}
                 </p>
                 {shift.isSwappedShift && (
-                  <span className="text-[8px] bg-amber-400 text-amber-950 px-1 rounded font-extrabold shrink-0 uppercase">
+                  <span className="text-[9px] bg-amber-400 text-amber-950 px-1 rounded font-extrabold shrink-0 uppercase">
                     Tukar
                   </span>
                 )}
@@ -409,44 +359,32 @@ export const Sidebar: React.FC = () => {
             </div>
           </div>
           <button
+            type="button"
             onClick={toggleRole}
-            className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md transition cursor-pointer shrink-0 shadow-xs uppercase font-mono ${
+            className={`min-h-[32px] text-[10px] font-extrabold px-2.5 py-1 rounded-lg transition cursor-pointer shrink-0 uppercase font-mono whitespace-nowrap ${
               shift.cashierSlot === 'owner'
                 ? 'bg-amber-400 text-amber-950 hover:bg-amber-300'
                 : shift.cashierSlot === 'kasir_1'
                 ? 'bg-emerald-300 text-emerald-950 hover:bg-emerald-200'
                 : 'bg-teal-200 text-teal-950 hover:bg-teal-100'
             }`}
-            title="Klik untuk ganti hak akses (Kasir 1 / Kasir 2 / Owner)"
+            title="Ketuk untuk ganti peran (Owner / Shift 1 / Shift 2)"
           >
             {shift.cashierSlot === 'owner'
-              ? '👑 OWNER'
+              ? 'Owner'
               : shift.cashierSlot === 'kasir_1'
-              ? '👤 SHIFT 1'
-              : '👤 SHIFT 2'}
+              ? 'Shift 1'
+              : 'Shift 2'}
           </button>
-        </div>
-
-        {/* Live Digital Clock */}
-        <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px]">
-          <div className="flex items-center gap-1.5 text-teal-100/90 min-w-0">
-            <Clock className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-            <span className="truncate font-medium">
-              {sidebarClock.date || 'Memuat tanggal...'}
-            </span>
-          </div>
-          <span className="font-mono tabular-nums font-extrabold text-white whitespace-nowrap shrink-0">
-            {sidebarClock.time || '--:--:-- WIB'}
-          </span>
         </div>
 
         {/* Shift status & Buka/Tutup Kasir action */}
         {shift.isOpen ? (
-          <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-            <div className="text-[11px] leading-tight">
+          <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+            <div className="text-[11px] leading-tight min-w-0">
               <div className="text-teal-100 font-semibold flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse inline-block" />
-                <span>{shift.shiftName}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-300 inline-block shrink-0" />
+                <span className="truncate">{shift.shiftName}</span>
               </div>
               <div className="text-[10px] text-teal-200/80 font-mono">
                 Buka: {shift.startTime}
@@ -454,53 +392,44 @@ export const Sidebar: React.FC = () => {
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setIsShiftModalOpen(true);
                 setIsMobileSidebarOpen(false);
               }}
-              className="px-2.5 py-1 text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white rounded-lg flex items-center gap-1 transition shadow-xs cursor-pointer shrink-0"
+              className="min-h-[36px] px-3 py-1.5 text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white rounded-lg flex items-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap"
               title="Rekonsiliasi Kas & Tutup Kasir"
             >
-              <Power className="w-3 h-3" />
+              <Power className="w-3.5 h-3.5" />
               <span>Tutup Kasir</span>
             </button>
           </div>
         ) : (
           <div className="pt-2 border-t border-white/10 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-[11px] leading-tight">
-                <div className="text-amber-300 font-extrabold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
-                  <span>REGISTER: TUTUP (OFF)</span>
-                </div>
-                <div className="text-[10px] text-teal-200/90 font-mono">
-                  Tutup: {shift.closedAt || '22:15 WIB'}
-                </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <div className="text-amber-300 font-extrabold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
+                <span>KASIR TUTUP</span>
               </div>
-              <span className="text-[9px] bg-black/40 text-amber-200 px-1.5 py-0.5 rounded font-mono font-bold">
-                Standby
+              <span className="text-[10px] text-teal-200 font-mono">
+                {shift.closedAt || 'Standby'}
               </span>
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setIsShiftModalOpen(true);
                 setIsMobileSidebarOpen(false);
               }}
-              className="w-full py-1.5 px-2 text-xs font-black bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:from-amber-300 hover:to-amber-200 text-amber-950 rounded-lg flex items-center justify-center gap-1.5 transition shadow-md cursor-pointer shrink-0 active:scale-95"
-              title="Buka Kasir & Mulai Shift Pagi"
+              className="w-full min-h-[40px] py-2 px-3 text-xs font-black bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 whitespace-nowrap"
+              title="Buka Kasir & Mulai Shift"
             >
-              <Sun className="w-3.5 h-3.5 text-amber-900" />
-              <span>☀️ Buka Kasir / Shift Pagi</span>
+              <Sun className="w-4 h-4 text-amber-900" />
+              <span>Buka Kasir</span>
             </button>
           </div>
         )}
-
-        {/* Security badge: E2EE & 2FA */}
-        <div className="pt-1 flex items-center justify-center gap-1.5 text-[10px] text-teal-100 font-medium bg-white/10 py-1 rounded-lg border border-white/15">
-          <ShieldCheck className="w-3.5 h-3.5 text-teal-300 shrink-0" />
-          <span>E2EE & 2FA Terverifikasi</span>
-        </div>
       </div>
     </>
   );

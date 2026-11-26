@@ -1,13 +1,21 @@
 export type ProductCategory = string;
 
+export interface ProductPriceTier {
+  id?: string;
+  qty: number; // Jumlah satuan dasar per paket grosir (misal: 3, 4, 500)
+  price: number; // Total harga paket untuk qty tersebut (misal: 5000, 1000, 55000)
+  label?: string; // Label opsional, misal: "Paket 3", "Per 4 Lembar", "1 Rim"
+}
+
 export interface Product {
   id: string;
   sku: string;
   name: string;
   category: ProductCategory;
-  hpp: number; // Harga Pokok Penjualan
-  price: number; // Harga Jual
-  stock: number;
+  hpp: number; // Harga Pokok Penjualan (per satuan dasar)
+  price: number; // Harga Jual Eceran (per satuan dasar)
+  priceTiers?: ProductPriceTier[]; // Daftar harga grosir / paket kelipatan (opsional)
+  stock: number; // Stok di gudang dalam satuan dasar (misal: lembar / pcs)
   minStock: number;
   unit: string;
   image?: string;
@@ -17,6 +25,10 @@ export interface Product {
 export type CartItemType = 'produk' | 'ppob' | 'percetakan' | 'service' | 'atm_mini';
 
 export interface CartItemMetadata {
+  // Wholesale / Tiered Pricing specific
+  pricingSummary?: string;
+  pricingSavings?: number;
+  retailSubtotal?: number;
   // PPOB specific
   ppobCategory?: PPOBCategory;
   targetNumber?: string;
@@ -208,6 +220,14 @@ export interface ServiceTicket {
   warrantyDays: number;
   technicianNote?: string;
   discount?: number;
+  initialEstimatedCost?: number;
+  costRevisionHistory?: {
+    date: string;
+    reason: string;
+    prevTotal: number;
+    newTotal: number;
+    addedAmount: number;
+  }[];
   remainingDebt?: number;
   isPartialPayment?: boolean;
   dueDate?: string;

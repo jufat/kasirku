@@ -35,6 +35,8 @@ export const INITIAL_CATEGORIES: string[] = [
   'Case & Pelindung',
   'Powerbank',
   'Perdana & Voucher',
+  'ATK & Kertas',
+  'Minuman & Es',
   'Aksesoris & Lainnya',
   'Sparepart HP',
 ];
@@ -162,6 +164,37 @@ export const INITIAL_PRODUCTS: Product[] = [
     minStock: 3,
     unit: 'pcs',
     barcode: '89910012310',
+  },
+  {
+    id: 'prod-011',
+    sku: 'MIN-ES-SGR',
+    name: 'Es Minuman Segar Konter (Ecer & Paket 3)',
+    category: 'Minuman & Es',
+    hpp: 1000,
+    price: 2000,
+    priceTiers: [
+      { id: 'tier-3', qty: 3, price: 5000, label: 'Paket 3' },
+    ],
+    stock: 60,
+    minStock: 12,
+    unit: 'pcs',
+    barcode: '89910012311',
+  },
+  {
+    id: 'prod-012',
+    sku: 'ATK-HVS-A4',
+    name: 'Kertas HVS A4 75gr (Ecer / Per 4 Lbr / 1 Rim)',
+    category: 'ATK & Kertas',
+    hpp: 95,
+    price: 500,
+    priceTiers: [
+      { id: 'tier-4', qty: 4, price: 1000, label: 'Per 4 Lbr' },
+      { id: 'tier-500', qty: 500, price: 55000, label: '1 Rim' },
+    ],
+    stock: 1500,
+    minStock: 250,
+    unit: 'lembar',
+    barcode: '89910012312',
   },
 ];
 

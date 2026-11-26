@@ -137,8 +137,7 @@ const LiveThermalReceiptPaper: React.FC<LiveThermalReceiptPaperProps> = ({
 
         <div className="flex items-center gap-1.5">
           <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/80 border border-emerald-300 px-2 py-0.5 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-            Live Preview Real-Time
+            Live Preview Struk
           </span>
           {onClose && (
             <button
@@ -492,6 +491,12 @@ export const PercetakanView: React.FC = () => {
   );
   const [fileOrNote, setFileOrNote] = useState('');
   const [successToast, setSuccessToast] = useState('');
+  const [calcError, setCalcError] = useState('');
+  const [checkoutError, setCheckoutError] = useState('');
+  const [serviceFormError, setServiceFormError] = useState('');
+  const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<string | null>(null);
+  const [confirmDeleteServiceId, setConfirmDeleteServiceId] = useState<string | null>(null);
+  const [confirmResetServices, setConfirmResetServices] = useState(false);
 
   // Settle & Pickup Modal State for Percetakan
   const [settlingPrintOrder, setSettlingPrintOrder] = useState<PrintOrder | null>(null);
@@ -503,6 +508,7 @@ export const PercetakanView: React.FC = () => {
   );
   const [settlePrintPhone, setSettlePrintPhone] = useState('');
   const [settlePrintNote, setSettlePrintNote] = useState('');
+  const [settlePrintError, setSettlePrintError] = useState('');
 
   const handleOpenSettlePrintOrder = (order: PrintOrder) => {
     const rem = order.remainingAmount ?? Math.max(0, order.totalAmount - order.downPayment);
@@ -514,6 +520,7 @@ export const PercetakanView: React.FC = () => {
       setSettlePrintPhone(order.customerPhone && order.customerPhone !== '-' ? order.customerPhone : '');
       setSettlePrintDueDate(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
       setSettlePrintNote(`Pelunasan cetak ${order.id} - ${order.customerName}`);
+      setSettlePrintError('');
     } else {
       updatePrintOrderStatus(order.id, 'diambil');
       openReceipt({
@@ -527,11 +534,12 @@ export const PercetakanView: React.FC = () => {
 
   const handleConfirmSettlePrintOrder = () => {
     if (!settlingPrintOrder) return;
+    setSettlePrintError('');
     const baseRem = settlingPrintOrder.remainingAmount ?? Math.max(0, settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment);
     const actualRemaining = Math.max(0, baseRem - settlePrintDiscount);
 
     if (actualRemaining === 0 && !isOwner) {
-      alert('Pelunasan Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      setSettlePrintError('Pelunasan Rp 0 (Diskon 100%) hanya diizinkan untuk Owner yang sedang bertugas.');
       return;
     }
 
@@ -599,6 +607,7 @@ export const PercetakanView: React.FC = () => {
   const handleOpenEditService = (service: PrintServiceItem) => {
     setEditingService(service);
     setIsCreatingNewService(false);
+    setServiceFormError('');
     setFormName(service.name);
     setFormCategory(service.category);
     setFormUnit(service.unit);
@@ -611,6 +620,7 @@ export const PercetakanView: React.FC = () => {
   const handleOpenCreateService = () => {
     setEditingService(null);
     setIsCreatingNewService(true);
+    setServiceFormError('');
     setFormName('');
     setFormCategory('print_dokumen');
     setFormUnit('lembar');
@@ -627,16 +637,17 @@ export const PercetakanView: React.FC = () => {
   // Helper: Save service changes (Edit or Create)
   const handleSaveService = (e: React.FormEvent) => {
     e.preventDefault();
+    setServiceFormError('');
     if (!formName.trim()) {
-      alert('Nama layanan percetakan wajib diisi!');
+      setServiceFormError('Nama layanan percetakan wajib diisi.');
       return;
     }
     if (formPrice <= 0) {
-      alert('Harga satuan dasar harus lebih dari 0!');
+      setServiceFormError('Harga satuan dasar harus lebih dari 0.');
       return;
     }
     if (!formUnit.trim()) {
-      alert('Satuan hitung (cth: lembar, pcs, meter) wajib diisi!');
+      setServiceFormError('Satuan hitung (contoh: lembar, pcs, meter) wajib diisi.');
       return;
     }
 
@@ -676,39 +687,29 @@ export const PercetakanView: React.FC = () => {
     setTimeout(() => setSuccessToast(''), 4000);
   };
 
-  // Helper: Delete service
-  const handleDeleteService = (service: PrintServiceItem) => {
-    if (
-      confirm(
-        `Hapus layanan percetakan "${service.name}" (${service.unit})?\nLayanan ini akan dihapus dari daftar tarif percetakan.`
-      )
-    ) {
-      deletePrintService(service.id);
-      if (calcServiceId === service.id) {
-        const remaining = printServices.filter((s) => s.id !== service.id);
-        if (remaining.length > 0) {
-          setCalcServiceId(remaining[0].id);
-          setCustomUnitPrice(null);
-        }
+  // Helper: Delete service (triggered after inline confirm)
+  const handleConfirmDeleteService = (service: PrintServiceItem) => {
+    deletePrintService(service.id);
+    if (calcServiceId === service.id) {
+      const remaining = printServices.filter((s) => s.id !== service.id);
+      if (remaining.length > 0) {
+        setCalcServiceId(remaining[0].id);
+        setCustomUnitPrice(null);
       }
-      setSuccessToast(`Layanan "${service.name}" berhasil dihapus dari daftar tarif.`);
-      setTimeout(() => setSuccessToast(''), 4000);
     }
+    setConfirmDeleteServiceId(null);
+    setSuccessToast(`Layanan "${service.name}" berhasil dihapus dari daftar tarif.`);
+    setTimeout(() => setSuccessToast(''), 4000);
   };
 
-  // Helper: Reset services to default
-  const handleResetServices = () => {
-    if (
-      confirm(
-        'Kembalikan seluruh daftar harga percetakan ke tarif standar bawaan Ju-Fat Cell? Layanan yang ditambahkan atau diubah sendiri akan di-reset.'
-      )
-    ) {
-      resetPrintServices();
-      setCalcServiceId('srv-print-bw');
-      setCustomUnitPrice(null);
-      setSuccessToast('Tarif percetakan berhasil dikembalikan ke standar awal Ju-Fat!');
-      setTimeout(() => setSuccessToast(''), 4000);
-    }
+  // Helper: Reset services to default (triggered after inline confirm)
+  const handleConfirmResetServices = () => {
+    resetPrintServices();
+    setCalcServiceId('srv-print-bw');
+    setCustomUnitPrice(null);
+    setConfirmResetServices(false);
+    setSuccessToast('Tarif percetakan berhasil dikembalikan ke standar awal Ju-Fat!');
+    setTimeout(() => setSuccessToast(''), 4000);
   };
 
   // Tier helpers in Editor Modal
@@ -786,8 +787,9 @@ export const PercetakanView: React.FC = () => {
 
   // Add calculated item to current order
   const handleAddCalculatedToOrder = () => {
+    setCalcError('');
     if (calcQty <= 0) {
-      alert('Jumlah (Qty) minimal 1!');
+      setCalcError('Jumlah (Qty) minimal 1.');
       return;
     }
 
@@ -806,12 +808,14 @@ export const PercetakanView: React.FC = () => {
 
     setOrderItems((prev) => [...prev, newItem]);
     setCalcSpecNote('');
+    setCheckoutError('');
   };
 
   // Send currently calculated item directly into global Master Cart
   const handleSendActivePrintItemToMasterCart = () => {
+    setCalcError('');
     if (calcQty <= 0) {
-      alert('Jumlah (Qty) minimal 1!');
+      setCalcError('Jumlah (Qty) minimal 1.');
       return;
     }
     const newItem: PrintOrderItem = {
@@ -931,20 +935,21 @@ export const PercetakanView: React.FC = () => {
   // Mode Langsung Bayar (Direct POS Checkout on the spot)
   const handleDirectPayment = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setCheckoutError('');
 
     if (orderItems.length === 0) {
-      alert('Tambahkan minimal 1 item percetakan / fotokopi terlebih dahulu!');
+      setCheckoutError('Tambahkan minimal 1 item percetakan atau fotokopi terlebih dahulu.');
       return;
     }
 
     if (totalOrderAmount === 0 && !isOwner) {
-      alert('Pembayaran Rp 0 (Gratis) khusus diizinkan untuk OWNER yang sedang bertugas!');
+      setCheckoutError('Pembayaran Rp 0 (Gratis) hanya diizinkan untuk Owner yang sedang bertugas.');
       return;
     }
 
     const isHutang = paymentMethod === 'hutang';
     if (isHutang && (!customerName.trim() || customerName.trim().toLowerCase() === 'pelanggan umum')) {
-      alert('Mohon masukkan Nama Orang / Pelanggan yang Kasbon agar tersimpan jelas di Buku Hutang & Kasbon!');
+      setCheckoutError('Masukkan Nama Pelanggan yang jelas saat memilih metode Kasbon.');
       return;
     }
 
@@ -962,7 +967,7 @@ export const PercetakanView: React.FC = () => {
         downPayment: paidAmount,
         remainingAmount: remainingAmount,
         paymentMethod,
-        status: 'selesai', // Langsung selesai & lunas di tempat!
+        status: 'selesai',
         deadline: 'Selesai di tempat',
         fileOrNote: fileOrNote.trim() || undefined,
       },
@@ -988,6 +993,7 @@ export const PercetakanView: React.FC = () => {
     setCashTendered(0);
     setDiscountAmount(0);
     setFileOrNote('');
+    setCheckoutError('');
   };
 
   // Filtered orders list
@@ -1299,7 +1305,7 @@ export const PercetakanView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setCalcQty((prev) => Math.max(1, prev - 1))}
-                      className="w-7 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer border border-slate-200"
+                      className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer border border-slate-200 shrink-0"
                     >
                       -
                     </button>
@@ -1307,13 +1313,16 @@ export const PercetakanView: React.FC = () => {
                       type="number"
                       min="1"
                       value={calcQty || ''}
-                      onChange={(e) => setCalcQty(Math.max(1, Number(e.target.value) || 0))}
-                      className="w-full text-center py-1 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs focus:ring-1 focus:ring-teal-500"
+                      onChange={(e) => {
+                        setCalcQty(Math.max(1, Number(e.target.value) || 0));
+                        if (calcError) setCalcError('');
+                      }}
+                      className="w-full h-9 text-center py-1 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs focus:ring-1 focus:ring-teal-500"
                     />
                     <button
                       type="button"
                       onClick={() => setCalcQty((prev) => prev + 1)}
-                      className="w-7 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer border border-slate-200"
+                      className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer border border-slate-200 shrink-0"
                     >
                       +
                     </button>
@@ -1329,7 +1338,7 @@ export const PercetakanView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setCustomUnitPrice(null)}
-                        className="text-[9px] text-amber-700 hover:underline font-bold"
+                        className="text-[10px] text-amber-700 hover:underline font-bold cursor-pointer"
                       >
                         Reset
                       </button>
@@ -1342,7 +1351,7 @@ export const PercetakanView: React.FC = () => {
                     value={effectiveUnitPrice || ''}
                     onChange={(e) => setCustomUnitPrice(Number(e.target.value) || 0)}
                     placeholder="0"
-                    className={`w-full px-2 py-1 text-right text-xs font-mono font-bold rounded-lg border focus:ring-1 ${
+                    className={`w-full h-9 px-2.5 py-1 text-right text-xs font-mono font-bold rounded-lg border focus:ring-1 ${
                       isCustomOverridden
                         ? 'bg-amber-50 border-amber-400 text-amber-950 focus:ring-amber-500'
                         : 'bg-white border-slate-300 text-slate-900 focus:ring-teal-500'
@@ -1358,14 +1367,21 @@ export const PercetakanView: React.FC = () => {
                 value={calcSpecNote}
                 onChange={(e) => setCalcSpecNote(e.target.value)}
                 placeholder="Catatan spesifikasi (opsional, cth: Kertas F4, bolak-balik)..."
-                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                className="w-full px-2.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
               />
+
+              {calcError && (
+                <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs font-bold text-rose-700 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{calcError}</span>
+                </div>
+              )}
 
               {/* Add Calculated Item Button */}
               <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
                 <div className="text-xs">
                   <span className="text-[10px] text-slate-500 block">Subtotal:</span>
-                  <span className="font-mono font-extrabold text-teal-800 text-sm">
+                  <span className="font-mono font-extrabold text-teal-800 text-sm tabular-nums">
                     Rp {calcSubtotal.toLocaleString('id-ID')}
                   </span>
                 </div>
@@ -1373,7 +1389,7 @@ export const PercetakanView: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSendActivePrintItemToMasterCart}
-                    className="px-3 py-2 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+                    className="px-3 py-2 min-h-[38px] bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 font-bold text-xs rounded-xl shadow-2xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                     title="Masukkan item cetak ini ke Keranjang Besar untuk digabung dengan belanja kasir/PPOB"
                   >
                     <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
@@ -1382,7 +1398,7 @@ export const PercetakanView: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleAddCalculatedToOrder}
-                    className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+                    className="px-4 py-2 min-h-[38px] bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
                   >
                     <Plus className="w-4 h-4 stroke-[2.5]" />
                     <span>Masukkan Tagihan</span>
@@ -1465,7 +1481,7 @@ export const PercetakanView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleUpdateItemQty(item.id, item.quantity - 1)}
-                          className="w-5 h-6 rounded bg-white border border-slate-300 text-slate-700 font-bold flex items-center justify-center cursor-pointer hover:bg-slate-100"
+                          className="w-8 h-8 rounded-lg bg-white border border-slate-300 text-slate-700 font-bold flex items-center justify-center cursor-pointer hover:bg-slate-100 shrink-0"
                         >
                           -
                         </button>
@@ -1474,12 +1490,12 @@ export const PercetakanView: React.FC = () => {
                           min="1"
                           value={item.quantity}
                           onChange={(e) => handleUpdateItemQty(item.id, Number(e.target.value) || 1)}
-                          className="w-11 text-center py-0.5 bg-white border border-slate-300 rounded font-mono font-bold text-xs"
+                          className="w-12 h-8 text-center py-0.5 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
                         />
                         <button
                           type="button"
                           onClick={() => handleUpdateItemQty(item.id, item.quantity + 1)}
-                          className="w-5 h-6 rounded bg-white border border-slate-300 text-slate-700 font-bold flex items-center justify-center cursor-pointer hover:bg-slate-100"
+                          className="w-8 h-8 rounded-lg bg-white border border-slate-300 text-slate-700 font-bold flex items-center justify-center cursor-pointer hover:bg-slate-100 shrink-0"
                         >
                           +
                         </button>
@@ -1603,11 +1619,12 @@ export const PercetakanView: React.FC = () => {
                   onClick={() => {
                     if (isOwner) {
                       setDiscountAmount(rawTotalOrderAmount);
+                      setCheckoutError('');
                     } else {
-                      alert('Diskon 100% (Bayar Rp 0) hanya diizinkan bila yang bertugas di kasir adalah OWNER!');
+                      setCheckoutError('Diskon 100% (Bayar Rp 0) hanya diizinkan bila kasir berstatus Owner.');
                     }
                   }}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                  className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black border transition cursor-pointer flex items-center gap-1 ${
                     discountAmount === rawTotalOrderAmount && rawTotalOrderAmount > 0
                       ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-xs'
                       : isOwner
@@ -1616,7 +1633,7 @@ export const PercetakanView: React.FC = () => {
                   }`}
                   title={isOwner ? 'Khusus Owner: Gratiskan Order (Rp 0)' : 'Hanya untuk Owner'}
                 >
-                  <span>👑 100% (Rp 0)</span>
+                  <span>100% (Rp 0)</span>
                 </button>
               </div>
 
@@ -1633,14 +1650,15 @@ export const PercetakanView: React.FC = () => {
                     onChange={(e) => {
                       const val = Number(e.target.value) || 0;
                       if (!isOwner && val >= rawTotalOrderAmount && rawTotalOrderAmount > 0) {
-                        alert('Hanya OWNER yang dapat memberikan diskon hingga total bayar Rp 0!');
+                        setCheckoutError('Hanya Owner yang dapat memberikan diskon hingga total bayar Rp 0.');
                         setDiscountAmount(Math.max(0, rawTotalOrderAmount - 500));
                         return;
                       }
+                      setCheckoutError('');
                       setDiscountAmount(val);
                     }}
                     placeholder="0"
-                    className="w-32 text-right px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs font-bold text-teal-300 focus:outline-none focus:border-teal-400"
+                    className="w-32 text-right px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-bold text-teal-300 focus:outline-none focus:border-teal-400"
                   />
                 </div>
               </div>
@@ -1836,6 +1854,13 @@ export const PercetakanView: React.FC = () => {
               </div>
             )}
 
+            {checkoutError && (
+              <div className="p-2.5 bg-rose-950/90 border border-rose-500/70 rounded-xl text-xs font-bold text-rose-200 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span>{checkoutError}</span>
+              </div>
+            )}
+
             {/* Primary Action Button */}
             <button
               type="button"
@@ -1856,7 +1881,7 @@ export const PercetakanView: React.FC = () => {
                 {orderItems.length === 0
                   ? 'PILIH ITEM CETAK DI ATAS'
                   : totalOrderAmount === 0 && isOwner
-                  ? '🎁 BAYAR Rp 0 & CETAK STRUK (OWNER GRATIS)'
+                  ? 'BAYAR Rp 0 & CETAK STRUK (OWNER)'
                   : paymentMethod === 'hutang'
                   ? `CATAT KASBON & STRUK (Rp ${totalOrderAmount.toLocaleString('id-ID')})`
                   : `BAYAR & CETAK STRUK (Rp ${totalOrderAmount.toLocaleString('id-ID')})`}
@@ -1955,7 +1980,6 @@ export const PercetakanView: React.FC = () => {
             >
               <Receipt className="w-3.5 h-3.5" />
               <span>Live Struk Termal</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               {orderItems.length > 0 && (
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
                   rightColumnTab === 'receipt_preview' || mobileTab === 'preview'
@@ -2009,9 +2033,8 @@ export const PercetakanView: React.FC = () => {
                 <Sparkles className="w-4 h-4" />
                 <span>Simulasi Real-Time Struk Kasir Termal</span>
               </div>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Live Preview
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 border border-emerald-800 px-2.5 py-0.5 rounded-full">
+                Preview Termal
               </span>
             </div>
 
@@ -2296,18 +2319,37 @@ export const PercetakanView: React.FC = () => {
                         <span>Struk Termal</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Hapus order percetakan ${order.id}?`)) {
-                            deletePrintOrder(order.id);
-                          }
-                        }}
-                        className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-xl transition cursor-pointer"
-                        title="Hapus order"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {confirmDeleteOrderId === order.id ? (
+                        <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-2 py-1">
+                          <span className="text-[11px] font-bold text-rose-800">Hapus?</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              deletePrintOrder(order.id);
+                              setConfirmDeleteOrderId(null);
+                            }}
+                            className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold rounded-lg cursor-pointer"
+                          >
+                            Ya
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteOrderId(null)}
+                            className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-lg border border-slate-200 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteOrderId(order.id)}
+                          className="min-w-[36px] min-h-[36px] p-2 bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-xl transition cursor-pointer flex items-center justify-center"
+                          title="Hapus order"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2374,27 +2416,47 @@ export const PercetakanView: React.FC = () => {
                 </div>
 
                 {/* Primary Action Buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => {
                       handleOpenCreateService();
                     }}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    className="px-3.5 py-2 min-h-[38px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                   >
                     <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                     <span>Tambah Layanan Baru</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleResetServices}
-                    className="px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer"
-                    title="Kembalikan semua tarif ke standar pabrik Ju-Fat"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden sm:inline">Reset Standar</span>
-                  </button>
+                  {confirmResetServices ? (
+                    <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-xl px-2.5 py-1">
+                      <span className="text-[11px] font-bold text-amber-900">Reset semua tarif?</span>
+                      <button
+                        type="button"
+                        onClick={handleConfirmResetServices}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold rounded-lg cursor-pointer"
+                      >
+                        Ya, Reset
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmResetServices(false)}
+                        className="px-2 py-1 bg-white border border-slate-200 text-slate-700 text-[11px] font-bold rounded-lg cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmResetServices(true)}
+                      className="px-3 py-2 min-h-[38px] bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                      title="Kembalikan semua tarif ke standar Ju-Fat"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="hidden sm:inline">Reset Standar</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2556,28 +2618,48 @@ export const PercetakanView: React.FC = () => {
 
                         {/* Card Action Controls */}
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {/* Edit Button */}
                             <button
                               type="button"
                               onClick={() => handleOpenEditService(srv)}
-                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 transition flex items-center gap-1 cursor-pointer"
+                              className="px-3 py-1.5 min-h-[34px] text-xs font-bold rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 transition flex items-center gap-1 cursor-pointer"
                               title="Ubah nama, kategori, harga standar & tingkat grosir"
                             >
                               <Edit2 className="w-3 h-3 text-amber-700" />
                               <span>Ubah Harga</span>
                             </button>
 
-                            {/* Delete Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteService(srv)}
-                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 transition flex items-center gap-1 cursor-pointer"
-                              title="Hapus layanan ini dari daftar tarif"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Hapus</span>
-                            </button>
+                            {/* Delete Button with inline confirm */}
+                            {confirmDeleteServiceId === srv.id ? (
+                              <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
+                                <span className="text-[11px] font-bold text-rose-800">Hapus?</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmDeleteService(srv)}
+                                  className="px-2 py-0.5 bg-rose-600 text-white text-[11px] font-bold rounded cursor-pointer"
+                                >
+                                  Ya
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteServiceId(null)}
+                                  className="px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[11px] font-bold rounded cursor-pointer"
+                                >
+                                  Batal
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteServiceId(srv.id)}
+                                className="px-3 py-1.5 min-h-[34px] text-xs font-bold rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 transition flex items-center gap-1 cursor-pointer"
+                                title="Hapus layanan ini dari daftar tarif"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
                           </div>
 
                           {/* Select into Calculator */}
@@ -2588,7 +2670,7 @@ export const PercetakanView: React.FC = () => {
                               setCustomUnitPrice(null);
                               setShowTierGuideModal(false);
                             }}
-                            className="px-3 py-1 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            className="px-3 py-1.5 min-h-[34px] text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
                           >
                             <span>Pilih ke Kalkulator</span>
                             <ArrowRight className="w-3 h-3" />
@@ -2888,25 +2970,34 @@ export const PercetakanView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Form Footer Buttons */}
-              <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingService(null);
-                    setIsCreatingNewService(false);
-                  }}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-gradient-to-r from-indigo-600 via-teal-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white text-xs font-extrabold rounded-xl shadow-md transition cursor-pointer active:scale-95 flex items-center gap-1.5"
-                >
-                  <CheckCircle className="w-4 h-4 text-emerald-300" />
-                  <span>{editingService ? 'Simpan Perubahan Tarif' : 'Tambahkan Layanan Baru'}</span>
-                </button>
+              {/* Form Error + Footer Buttons */}
+              <div className="p-3.5 bg-slate-50 border-t border-slate-200 space-y-2.5 shrink-0">
+                {serviceFormError && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{serviceFormError}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingService(null);
+                      setIsCreatingNewService(false);
+                      setServiceFormError('');
+                    }}
+                    className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-gradient-to-r from-indigo-600 via-teal-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white text-xs font-extrabold rounded-xl shadow-md transition cursor-pointer active:scale-95 flex items-center gap-1.5"
+                  >
+                    <CheckCircle className="w-4 h-4 text-emerald-300" />
+                    <span>{editingService ? 'Simpan Perubahan Tarif' : 'Tambahkan Layanan Baru'}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -3040,11 +3131,12 @@ export const PercetakanView: React.FC = () => {
                         if (isOwner) {
                           setSettlePrintDiscount(baseRem);
                           setSettlePrintCashReceived(0);
+                          setSettlePrintError('');
                         } else {
-                          alert('Pelunasan Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                          setSettlePrintError('Pelunasan Rp 0 (Diskon 100%) hanya diizinkan untuk Owner yang sedang bertugas.');
                         }
                       }}
-                      className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                      className={`px-2.5 py-1 rounded text-[11px] font-black border transition cursor-pointer flex items-center gap-1 ${
                         settlePrintDiscount === (settlingPrintOrder.remainingAmount ?? (settlingPrintOrder.totalAmount - settlingPrintOrder.downPayment))
                           ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
                           : isOwner
@@ -3052,7 +3144,7 @@ export const PercetakanView: React.FC = () => {
                           : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
                       }`}
                     >
-                      <span>👑 100% Sisa Rp 0</span>
+                      <span>100% Sisa Rp 0</span>
                     </button>
                   </div>
 
@@ -3249,13 +3341,22 @@ export const PercetakanView: React.FC = () => {
                   </div>
                 </div>
               )}
+              {settlePrintError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{settlePrintError}</span>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
             <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setSettlingPrintOrder(null)}
+                onClick={() => {
+                  setSettlingPrintOrder(null);
+                  setSettlePrintError('');
+                }}
                 className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
               >
                 Batal

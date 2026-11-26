@@ -230,7 +230,20 @@ export const ThermalReceiptModal: React.FC = () => {
         } else if (item.itemType === 'atm_mini' && item.metadata) {
           lines.push(`  Rek/HP: ${item.metadata.targetAccountOrPhone || item.metadata.bankName || '-'}`);
         }
-        lines.push(`  ${item.quantity} ${item.product.unit || 'pcs'} x Rp ${item.product.price.toLocaleString('id-ID')} = Rp ${item.subtotal.toLocaleString('id-ID')}`);
+        if (item.metadata?.pricingSummary) {
+          lines.push(
+            `  ${item.quantity} ${item.product.unit || 'pcs'} (${item.metadata.pricingSummary}) = Rp ${item.subtotal.toLocaleString('id-ID')}`
+          );
+          if ((item.metadata.pricingSavings || 0) > 0) {
+            lines.push(
+              `  Hemat Grosir: Rp ${item.metadata.pricingSavings!.toLocaleString('id-ID')}`
+            );
+          }
+        } else {
+          lines.push(
+            `  ${item.quantity} ${item.product.unit || 'pcs'} x Rp ${item.product.price.toLocaleString('id-ID')} = Rp ${item.subtotal.toLocaleString('id-ID')}`
+          );
+        }
       });
       lines.push(divider);
       if (posTx.discount > 0) lines.push(`Diskon    : -Rp ${posTx.discount.toLocaleString('id-ID')}`);
@@ -330,6 +343,22 @@ export const ThermalReceiptModal: React.FC = () => {
       lines.push(`Teknisi   : ${srvTx.technicianName || 'Kang Ju-Fat'}`);
       lines.push(divider);
       lines.push(`Keluhan   : ${srvTx.problemDescription}`);
+      if (srvTx.technicianNote) {
+        lines.push(`Catatan   : ${srvTx.technicianNote}`);
+      }
+      if (
+        srvTx.initialEstimatedCost !== undefined &&
+        srvTx.initialEstimatedCost !== srvTx.totalCost
+      ) {
+        const diff = srvTx.totalCost - srvTx.initialEstimatedCost;
+        lines.push(
+          `Est. Awal : Rp ${srvTx.initialEstimatedCost.toLocaleString('id-ID')} (${diff >= 0 ? '+' : '-'}Rp ${Math.abs(diff).toLocaleString('id-ID')})`
+        );
+        const latestRev = srvTx.costRevisionHistory?.[srvTx.costRevisionHistory.length - 1];
+        if (latestRev?.reason) {
+          lines.push(`Revisi    : ${latestRev.reason}`);
+        }
+      }
       lines.push(`Sparepart : Rp ${srvTx.sparepartCost.toLocaleString('id-ID')}`);
       lines.push(`Jasa Servis: Rp ${srvTx.laborFee.toLocaleString('id-ID')}`);
       if (srvTx.discount && srvTx.discount > 0) {
@@ -1020,15 +1049,22 @@ export const ThermalReceiptModal: React.FC = () => {
                       {detailText && (
                         <div className="text-[9.5px] text-slate-500 pl-1">{detailText}</div>
                       )}
-                      <div className="flex justify-between text-slate-600 text-[10px]">
+                      <div className="flex justify-between gap-2 text-slate-600 text-[10px]">
                         <span>
-                          {item.quantity} {item.product.unit || 'pcs'} x Rp{' '}
-                          {item.product.price.toLocaleString('id-ID')}
+                          {item.quantity} {item.product.unit || 'pcs'}
+                          {item.metadata?.pricingSummary
+                            ? ` (${item.metadata.pricingSummary})`
+                            : ` x Rp ${item.product.price.toLocaleString('id-ID')}`}
                         </span>
-                        <span className="font-bold text-slate-900">
+                        <span className="font-bold text-slate-900 shrink-0 tabular-nums">
                           Rp {item.subtotal.toLocaleString('id-ID')}
                         </span>
                       </div>
+                      {(item.metadata?.pricingSavings || 0) > 0 && (
+                        <div className="text-[9px] text-emerald-700 font-semibold pl-1 tabular-nums">
+                          Hemat Grosir: Rp {item.metadata!.pricingSavings!.toLocaleString('id-ID')}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1075,13 +1111,29 @@ export const ThermalReceiptModal: React.FC = () => {
                   </div>
                 )}
                 <div className="flex justify-between pt-1">
-                  <span className="text-slate-600">Estimasi Sparepart :</span>
+                  <span className="text-slate-600">Sparepart (Aktual) :</span>
                   <span className="font-mono">Rp {srvTx.sparepartCost.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Jasa Teknisi       :</span>
                   <span className="font-mono">Rp {srvTx.laborFee.toLocaleString('id-ID')}</span>
                 </div>
+                {srvTx.initialEstimatedCost !== undefined &&
+                  srvTx.initialEstimatedCost !== srvTx.totalCost && (
+                    <div className="mt-1 p-1.5 bg-amber-50 border border-amber-200 rounded text-[9.5px] text-amber-950 space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Estimasi Awal:</span>
+                        <span className="font-mono line-through">
+                          Rp {srvTx.initialEstimatedCost.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      {srvTx.costRevisionHistory && srvTx.costRevisionHistory.length > 0 && (
+                        <div className="italic text-amber-900">
+                          Revisi: {srvTx.costRevisionHistory[srvTx.costRevisionHistory.length - 1].reason}
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
             )}
 

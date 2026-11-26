@@ -9,8 +9,6 @@ import {
   History,
   Printer,
   Sparkles,
-  Wifi,
-  BatteryCharging,
   Layers,
   Search,
   ShieldCheck,
@@ -183,6 +181,14 @@ export const AtmMiniView: React.FC = () => {
   const [counterFeeDiscount, setCounterFeeDiscount] = useState<number>(0);
   const [note, setNote] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const showError = (msg: string) => {
+    setErrorMessage(msg);
+    setTimeout(() => {
+      setErrorMessage((prev) => (prev === msg ? '' : prev));
+    }, 5500);
+  };
 
   // Table filter
   const [filterType, setFilterType] = useState<string>('all');
@@ -458,35 +464,36 @@ export const AtmMiniView: React.FC = () => {
     e.preventDefault();
 
     if (nominal <= 0) {
-      alert('Nominal transaksi harus lebih dari Rp 0!');
+      showError('Nominal transaksi harus lebih dari Rp 0!');
       return;
     }
 
     if (effectiveCounterFee === 0 && !isOwner && counterFeeDiscount > 0) {
-      alert('Jasa Konter Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      showError('Jasa Konter Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
       return;
     }
 
     if (primaryTab === 'tarik_tunai') {
       if (tarikChannel === 'ewallet' && !targetAccountOrPhone.trim()) {
-        alert('Nomor HP Akun E-Wallet nasabah wajib diisi untuk penarikan tunai!');
+        showError('Nomor HP Akun E-Wallet nasabah wajib diisi untuk penarikan tunai!');
         return;
       }
     } else {
       if (transferChannel === 'kartu_debit' && !targetAccountOrPhone.trim()) {
-        alert('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
+        showError('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
         return;
       }
       if (transferChannel === 'ewallet' && !targetAccountOrPhone.trim()) {
-        alert('Nomor handphone akun e-wallet tujuan wajib diisi!');
+        showError('Nomor handphone akun e-wallet tujuan wajib diisi!');
         return;
       }
       if (transferChannel === 'mbanking' && !targetAccountOrPhone.trim()) {
-        alert('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
+        showError('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
         return;
       }
     }
 
+    setErrorMessage('');
     // Default payment method & cash received in modal
     setAtmMiniPaymentMethod('tunai');
     setCashReceivedInput(isTunaiKonter ? totalAdmin : totalDebited);
@@ -499,25 +506,26 @@ export const AtmMiniView: React.FC = () => {
   const handleAddTransferToMasterCart = (closeModal: boolean = false) => {
     if (primaryTab !== 'transfer_topup') return;
     if (nominal <= 0) {
-      alert('Nominal transaksi harus lebih dari Rp 0!');
+      showError('Nominal transaksi harus lebih dari Rp 0!');
       return;
     }
     if (effectiveCounterFee === 0 && !isOwner && counterFeeDiscount > 0) {
-      alert('Jasa Konter Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      showError('Jasa Konter Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
       return;
     }
     if (transferChannel === 'kartu_debit' && !targetAccountOrPhone.trim()) {
-      alert('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
+      showError('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
       return;
     }
     if (transferChannel === 'ewallet' && !targetAccountOrPhone.trim()) {
-      alert('Nomor handphone akun e-wallet tujuan wajib diisi!');
+      showError('Nomor handphone akun e-wallet tujuan wajib diisi!');
       return;
     }
     if (transferChannel === 'mbanking' && !targetAccountOrPhone.trim()) {
-      alert('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
+      showError('Nomor Rekening Tujuan & Bank Penerima wajib diisi!');
       return;
     }
+    setErrorMessage('');
 
     let providerName = bankName;
     let actualCardType: AtmMiniTransaction['cardType'] = cardType;
@@ -958,51 +966,32 @@ export const AtmMiniView: React.FC = () => {
           mobileTab === 'terminal' ? 'flex' : 'hidden'
         } md:flex w-full md:w-[490px] bg-white md:border-r border-slate-200 flex-col h-full shadow-xs shrink-0 overflow-y-auto pb-10 md:pb-4`}
       >
-        {/* Terminal Header & Device Status */}
+        {/* Terminal Header */}
         <div className="p-3.5 sm:p-4 bg-gradient-to-r from-teal-700 via-emerald-600 to-cyan-700 text-white shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-bold shadow-md">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-bold shadow-md shrink-0">
                 <CreditCard className="w-5 h-5 stroke-[2.5]" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-extrabold tracking-tight">
-                    {isCurrentChannelCard ? 'ATM Mini & Mesin EDC' : 'ATM Mini & Layanan Digital'}
-                  </h3>
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                    isCurrentChannelCard ? 'bg-amber-300 text-amber-950' : 'bg-emerald-300 text-emerald-950'
-                  }`}>
-                    {isCurrentChannelCard ? 'EDC Online' : 'Online'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-teal-100">
+              <div className="min-w-0">
+                <h3 className="text-base font-extrabold tracking-tight truncate">
+                  {isCurrentChannelCard ? 'ATM Mini & Mesin EDC' : 'ATM Mini & Layanan Digital'}
+                </h3>
+                <p className="text-[11px] text-teal-100 truncate">
                   {isCurrentChannelCard
-                    ? 'Terminal: EDC-JUFAT-01 · Sunmi P2 Pro Multi-Payment'
+                    ? 'Tarik Tunai, Transfer Antar Bank & EDC Konter'
                     : primaryTab === 'tarik_tunai'
                     ? tarikChannel === 'qris'
-                      ? 'Layanan Tarik Tunai QRIS Dinamis & Statis (Non-EDC)'
+                      ? 'Layanan Tarik Tunai QRIS'
                       : tarikChannel === 'ewallet'
-                      ? `Layanan Tarik Tunai E-Wallet (${ewalletProvider})`
-                      : `Layanan Tarik Tunai M-Banking (${mbankingApp.split(' ')[0]})`
+                      ? `Tarik Tunai E-Wallet (${ewalletProvider})`
+                      : `Tarik Tunai M-Banking (${mbankingApp.split(' ')[0]})`
                     : transferChannel === 'qris'
-                    ? 'Layanan Pembayaran QRIS Merchant Nasional (Non-EDC)'
+                    ? 'Pembayaran QRIS Merchant'
                     : transferChannel === 'ewallet'
-                    ? `Layanan Top Up E-Wallet Digital (${ewalletProvider})`
-                    : `Layanan Transfer Bank (${mbankingApp.split(' ')[0]})`}
+                    ? `Top Up E-Wallet (${ewalletProvider})`
+                    : `Transfer Bank (${mbankingApp.split(' ')[0]})`}
                 </p>
-              </div>
-            </div>
-
-            {/* Device telemetry status */}
-            <div className="text-right text-[10px] text-emerald-200/90 font-mono space-y-0.5">
-              <div className="flex items-center gap-1 justify-end">
-                <Wifi className="w-3 h-3 text-emerald-300" />
-                <span>4G LTE 98%</span>
-              </div>
-              <div className="flex items-center gap-1 justify-end">
-                <BatteryCharging className="w-3 h-3 text-emerald-300" />
-                <span>Baterai 95%</span>
               </div>
             </div>
           </div>
@@ -1049,16 +1038,13 @@ export const AtmMiniView: React.FC = () => {
 
         {/* Transaction Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-5 pb-12 sm:pb-8 space-y-4 flex-1">
-          {/* Real-Time Live Synced Balances Status Bar */}
+          {/* Real-Time Synced Balances Status Bar */}
           <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-emerald-50/90 to-sky-50/90 border border-emerald-200/80 rounded-xl text-xs gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-              </span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-flex rounded-full h-2 w-2 bg-emerald-600 shrink-0" />
               <div className="min-w-0">
                 <span className="text-[10px] text-slate-500 font-semibold block">Kas Fisik Laci:</span>
-                <span className="font-mono font-black text-emerald-900 text-xs truncate block">
+                <span className="font-mono font-black text-emerald-900 text-xs truncate block tabular-nums">
                   Rp {drawerCashBalance.toLocaleString('id-ID')}
                 </span>
               </div>
@@ -1071,7 +1057,7 @@ export const AtmMiniView: React.FC = () => {
                 <span className="text-[10px] text-slate-500 font-semibold block">
                   {isCurrentChannelCard ? 'Saldo Rekening EDC:' : 'Saldo Rekening Digital:'}
                 </span>
-                <span className="font-mono font-black text-sky-900 text-xs truncate block">
+                <span className="font-mono font-black text-sky-900 text-xs truncate block tabular-nums">
                   Rp {digitalBalance.toLocaleString('id-ID')}
                 </span>
               </div>
@@ -1083,7 +1069,7 @@ export const AtmMiniView: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsQuickImportOpen(true)}
-            className="w-full px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl flex items-center justify-between gap-2 transition cursor-pointer active:scale-[0.99] shadow-2xs"
+            className="w-full min-h-[42px] px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl flex items-center justify-between gap-2 transition cursor-pointer active:scale-[0.99] shadow-2xs"
           >
             <span className="flex items-center gap-2 min-w-0">
               <span className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
@@ -1098,6 +1084,23 @@ export const AtmMiniView: React.FC = () => {
             </span>
           </button>
 
+          {errorMessage && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between gap-2 font-bold">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorMessage('')}
+                className="p-1 text-rose-500 hover:text-rose-800 rounded-md cursor-pointer shrink-0"
+                aria-label="Tutup pesan error"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {toastMessage && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between gap-2 font-bold animate-fade-in flex-wrap">
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1108,7 +1111,7 @@ export const AtmMiniView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsMasterCartModalOpen(true)}
-                  className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                  className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs whitespace-nowrap shrink-0"
                 >
                   <ShoppingCart className="w-3 h-3 text-amber-300" />
                   <span>Buka Keranjang Besar ({cartTotalCount})</span>
@@ -1767,39 +1770,39 @@ export const AtmMiniView: React.FC = () => {
             </div>
 
             {/* Quick Presets & Dynamic Additives */}
-            <div className="space-y-1.5 pt-0.5">
+            <div className="space-y-2 pt-0.5">
               <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
                 <span>Pilih Cepat (Nominal Langsung):</span>
               </div>
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+              <div className="grid grid-cols-4 gap-1.5">
                 {[50000, 100000, 200000, 500000, 1000000, 1500000, 2000000, 5000000].map(
                   (amt) => (
                     <button
                       key={amt}
                       type="button"
                       onClick={() => setNominal(amt)}
-                      className={`py-1 px-1 text-[11px] font-mono font-bold rounded-lg border transition cursor-pointer text-center ${
+                      className={`min-h-[38px] py-2 px-2 text-xs font-mono font-bold rounded-lg border transition cursor-pointer text-center active:scale-95 tabular-nums ${
                         nominal === amt
-                          ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                          ? 'bg-teal-700 text-white border-teal-800 shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
                       }`}
                     >
-                      {amt >= 1000000 ? `${amt / 1000000}Jt` : `${amt / 1000}rb`}
+                      {amt >= 1000000 ? `${amt / 1000000} Jt` : `${amt / 1000} rb`}
                     </button>
                   )
                 )}
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium pt-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium pt-0.5">
                 <span>Tambah Cepat (+ Akumulasi):</span>
               </div>
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-5 gap-1.5">
                 {[10000, 50000, 100000, 500000, 1000000].map((addAmt) => (
                   <button
                     key={addAmt}
                     type="button"
                     onClick={() => setNominal((prev) => prev + addAmt)}
-                    className="py-1 px-1 text-[11px] font-mono font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 transition cursor-pointer text-center"
+                    className="min-h-[36px] py-1.5 px-1 text-xs font-mono font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 transition cursor-pointer text-center active:scale-95 tabular-nums"
                     title={`Tambah +Rp ${addAmt.toLocaleString('id-ID')}`}
                   >
                     +{addAmt >= 1000000 ? `${addAmt / 1000000}Jt` : `${addAmt / 1000}rb`}
@@ -1877,7 +1880,7 @@ export const AtmMiniView: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {[
                     { label: '0', val: 0 },
                     { label: '1rb', val: 1000 },
@@ -1889,7 +1892,7 @@ export const AtmMiniView: React.FC = () => {
                       key={p.label}
                       type="button"
                       onClick={() => setCounterFeeDiscount(p.val)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer whitespace-nowrap ${
                         counterFeeDiscount === p.val
                           ? 'bg-emerald-600 text-white border-emerald-600 font-black'
                           : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -1905,10 +1908,10 @@ export const AtmMiniView: React.FC = () => {
                       if (isOwner) {
                         setCounterFeeDiscount(counterFee);
                       } else {
-                        alert('Gratis Jasa Konter (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                        showError('Gratis Jasa Konter (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
                       }
                     }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-black border transition cursor-pointer flex items-center gap-1 whitespace-nowrap ${
                       counterFeeDiscount === counterFee && counterFee > 0
                         ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
                         : isOwner
@@ -1916,7 +1919,7 @@ export const AtmMiniView: React.FC = () => {
                         : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
                     }`}
                   >
-                    <span>👑 Bebas Jasa (Rp 0)</span>
+                    <span>Bebas Jasa (Rp 0)</span>
                   </button>
                 </div>
 
@@ -2208,20 +2211,30 @@ export const AtmMiniView: React.FC = () => {
 
         {/* Filter and Search Bar */}
         <div className="p-3.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari trace no, nama nasabah, bank, M-Banking, QRIS..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                aria-label="Hapus pencarian"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-1 overflow-x-auto">
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full">
             {[
-              { id: 'all', label: 'Semua Transaksi' },
+              { id: 'all', label: 'Semua' },
               { id: 'kartu_debit', label: 'Kartu Debit' },
               { id: 'ewallet', label: 'E-Wallet' },
               { id: 'mbanking', label: 'M-Banking' },
@@ -2231,11 +2244,12 @@ export const AtmMiniView: React.FC = () => {
               return (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => setFilterType(tab.id)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer shrink-0 ${
+                  className={`min-h-[38px] px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 whitespace-nowrap ${
                     active
                       ? 'bg-teal-700 text-white shadow-xs font-black ring-1 ring-teal-800'
-                      : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-900'
+                      : 'bg-slate-100 text-slate-700 hover:bg-teal-50 hover:text-teal-900'
                   }`}
                 >
                   {tab.label}
@@ -2349,18 +2363,18 @@ export const AtmMiniView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setSelectedTxDetail(tx)}
-                            className="px-2 py-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 rounded border border-teal-200 transition cursor-pointer"
-                            title="Lihat Dialog Rincian Pembayaran"
+                            className="min-h-[34px] px-2.5 py-1.5 text-xs font-bold text-teal-800 hover:text-teal-950 bg-teal-50 hover:bg-teal-100 rounded-lg border border-teal-200 transition cursor-pointer whitespace-nowrap"
+                            title="Lihat Rincian Pembayaran"
                           >
                             Detail
                           </button>
                           <button
                             type="button"
                             onClick={() => openReceipt(tx)}
-                            className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded flex items-center gap-1 transition cursor-pointer"
+                            className="min-h-[34px] px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
                             title="Cetak Struk Transaksi"
                           >
-                            <Printer className="w-3 h-3 text-slate-500" />
+                            <Printer className="w-3.5 h-3.5 text-slate-600" />
                             <span>Struk</span>
                           </button>
                         </div>
@@ -2629,7 +2643,7 @@ export const AtmMiniView: React.FC = () => {
                       }}
                       placeholder="Ketik nama orang yang berhutang (cth: Pak Sugeng, Mas Budi, Bu Erni)..."
                       className={`w-full px-3 py-2 text-xs bg-white border-2 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs ${
-                        atmMiniKasbonError ? 'border-rose-500 bg-rose-50/50 animate-pulse' : 'border-amber-400'
+                        atmMiniKasbonError ? 'border-rose-500 bg-rose-50/50' : 'border-amber-400'
                       }`}
                     />
                     {atmMiniKasbonError && (
@@ -2979,18 +2993,18 @@ export const AtmMiniView: React.FC = () => {
                 )
               )}
 
-              {/* Simulated EDC Hardware Status Indicator - Hanya untuk Kartu Debit */}
+              {/* Status Otorisasi EDC - Hanya untuk Kartu Debit */}
               {((primaryTab === 'tarik_tunai' && tarikChannel === 'kartu_debit') ||
                 (primaryTab === 'transfer_topup' && transferChannel === 'kartu_debit')) && (
-                <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between text-[11px] text-slate-600">
+                <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between text-[11px] text-slate-700">
                   <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
                     <span className="font-semibold text-slate-800">
-                      Mesin EDC Siap · Otorisasi PIN / Chip Sukses
+                      Siap Diproses via Mesin EDC
                     </span>
                   </div>
                   <span className="font-mono text-[10px] text-slate-500">
-                    Trace: TRC-{Math.floor(100000 + Math.random() * 900000)}
+                    Kartu {cardType}
                   </span>
                 </div>
               )}

@@ -50,7 +50,14 @@ import {
   normalizeProductRecord,
   computeStockValuation,
   StockValuationAudit,
+  findMatchingProductIndex,
+  mergeProductRecords,
+  deduplicateProducts,
 } from '../utils/stockValuation';
+import {
+  calculateTieredPricing,
+  serializePriceTiersText,
+} from '../utils/tieredPricing';
 
 interface POSContextType {
   // Navigation & Role
@@ -78,7 +85,7 @@ interface POSContextType {
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   cart: CartItem[];
-  addToCart: (product: Product) => void;
+  addToCart: (product: Product, addQty?: number) => void;
   addPPOBToCart: (
     pkg: { name: string; price: number; hpp: number; category: PPOBCategory; provider: string; desc?: string },
     targetNumber: string,
@@ -217,6 +224,18 @@ interface POSContextType {
     note?: string,
     partialPaidAmount?: number
   ) => void;
+  updateServiceTicket: (
+    id: string,
+    updates: {
+      problemDescription?: string;
+      sparepartCost: number;
+      laborFee: number;
+      discount?: number;
+      technicianNote?: string;
+      warrantyDays?: number;
+      revisionReason?: string;
+    }
+  ) => ServiceTicket | null;
   deleteServiceTicket: (id: string) => void;
 
   // Percetakan & Fotokopi
@@ -267,17 +286,41 @@ interface POSContextType {
   addReturnRecord: (ret: Omit<ReturnRecord, 'id' | 'returNo' | 'date'>) => void;
 
   // Product Catalog Management
-  addProduct: (newProd: Omit<Product, 'id'>) => void;
+  addProduct: (
+    newProd: Omit<Product, 'id'>,
+    options?: { hppMode?: 'weighted' | 'latest' }
+  ) => {
+    product: Product;
+    merged: boolean;
+    addedStock: number;
+    assetHppDelta: number;
+    revenueDelta: number;
+    nextTotalAssetHpp: number;
+    nextTotalRevenue: number;
+  };
   updateProduct: (product: Product) => void;
   deleteProduct: (id: string) => void;
-  restockProduct: (id: string, addQty: number, newHpp?: number) => void;
+  restockProduct: (
+    id: string,
+    addQty: number,
+    newHpp?: number,
+    options?: { newPrice?: number; hppMode?: 'weighted' | 'latest' }
+  ) => void;
   recalculateProductCatalog: () => StockValuationAudit;
+  deduplicateTwinProducts: () => { removedDuplicateCount: number; mergedNames: string[] };
 
   // Categories & Excel Operations
   categories: string[];
   addCategory: (categoryName: string) => boolean;
   deleteCategory: (categoryName: string) => void;
-  importProductsFromExcel: (newProds: Omit<Product, 'id'>[]) => number;
+  importProductsFromExcel: (newProds: Omit<Product, 'id'>[]) => {
+    totalRows: number;
+    addedCount: number;
+    mergedCount: number;
+    totalUnitsAdded: number;
+    assetHppDelta: number;
+    revenueDelta: number;
+  };
   exportProductsToExcel: () => void;
   downloadExcelTemplate: () => void;
 
@@ -381,7 +424,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed: Product[] = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map((p) => normalizeProductRecord(p).product);
+          const deduped = deduplicateProducts(parsed);
+          if (deduped.removedDuplicateCount > 0) {
+            try {
+              localStorage.setItem('jufat_products', JSON.stringify(deduped.products));
+            } catch {
+              // ignore storage errors
+            }
+          }
+          return deduped.products;
         }
       }
     } catch {
@@ -789,33 +840,54 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cartSubtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
   const cartTotalCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, addQty: number = 1) => {
     if (product.stock <= 0) return;
+    const cleanAdd = Math.max(1, Math.round(Number(addQty) || 1));
+
     setCart((prev) => {
       const existing = prev.find(
         (item) => (!item.itemType || item.itemType === 'produk') && item.product.id === product.id
       );
       if (existing) {
         if (existing.quantity >= product.stock) return prev;
+        const nextQty = Math.min(product.stock, existing.quantity + cleanAdd);
+        const pricing = calculateTieredPricing(product, nextQty);
         return prev.map((item) =>
           (!item.itemType || item.itemType === 'produk') && item.product.id === product.id
             ? {
                 ...item,
-                quantity: item.quantity + 1,
-                subtotal: (item.quantity + 1) * item.product.price - item.discount,
+                product,
+                quantity: nextQty,
+                subtotal: Math.max(0, pricing.totalPrice - item.discount),
+                metadata: {
+                  ...item.metadata,
+                  pricingSummary: pricing.hasWholesaleApplied ? pricing.summaryLabel : undefined,
+                  pricingSavings: pricing.savings > 0 ? pricing.savings : undefined,
+                  retailSubtotal: pricing.retailTotal,
+                },
               }
             : item
         );
       }
+
+      const initialQty = Math.min(product.stock, cleanAdd);
+      const pricing = calculateTieredPricing(product, initialQty);
       return [
         ...prev,
         {
           id: product.id,
           itemType: 'produk',
           product,
-          quantity: 1,
+          quantity: initialQty,
           discount: 0,
-          subtotal: product.price,
+          subtotal: pricing.totalPrice,
+          metadata: pricing.hasWholesaleApplied || pricing.savings > 0
+            ? {
+                pricingSummary: pricing.hasWholesaleApplied ? pricing.summaryLabel : undefined,
+                pricingSavings: pricing.savings > 0 ? pricing.savings : undefined,
+                retailSubtotal: pricing.retailTotal,
+              }
+            : undefined,
         },
       ];
     });
@@ -1107,19 +1179,40 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       removeFromCart(productId);
       return;
     }
+    const cleanQty = Math.max(1, Math.round(Number(quantity) || 1));
     setCart((prev) =>
       prev.map((item) => {
         const matches = (item.id && item.id === productId) || item.product.id === productId;
-        if (matches) {
-          const maxStock = (!item.itemType || item.itemType === 'produk') ? item.product.stock : 9999;
-          const clampedQty = Math.min(quantity, maxStock);
+        if (!matches) return item;
+
+        const isRetailProduct = !item.itemType || item.itemType === 'produk';
+        const latestProduct = isRetailProduct
+          ? products.find((p) => p.id === item.product.id) || item.product
+          : item.product;
+        const maxStock = isRetailProduct ? latestProduct.stock : 9999;
+        const clampedQty = Math.min(cleanQty, maxStock);
+
+        if (isRetailProduct) {
+          const pricing = calculateTieredPricing(latestProduct, clampedQty);
           return {
             ...item,
+            product: latestProduct,
             quantity: clampedQty,
-            subtotal: clampedQty * item.product.price - item.discount,
+            subtotal: Math.max(0, pricing.totalPrice - item.discount),
+            metadata: {
+              ...item.metadata,
+              pricingSummary: pricing.hasWholesaleApplied ? pricing.summaryLabel : undefined,
+              pricingSavings: pricing.savings > 0 ? pricing.savings : undefined,
+              retailSubtotal: pricing.retailTotal,
+            },
           };
         }
-        return item;
+
+        return {
+          ...item,
+          quantity: clampedQty,
+          subtotal: Math.max(0, clampedQty * item.product.price - item.discount),
+        };
       })
     );
   };
@@ -2137,6 +2230,128 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const updateServiceTicket = (
+    id: string,
+    updates: {
+      problemDescription?: string;
+      sparepartCost: number;
+      laborFee: number;
+      discount?: number;
+      technicianNote?: string;
+      warrantyDays?: number;
+      revisionReason?: string;
+    }
+  ): ServiceTicket | null => {
+    const target = services.find((s) => s.id === id);
+    if (!target) return null;
+
+    const cleanSparepart = Math.max(0, Math.round(Number(updates.sparepartCost) || 0));
+    const cleanLabor = Math.max(0, Math.round(Number(updates.laborFee) || 0));
+    const cleanDiscount = Math.max(0, Math.round(Number(updates.discount) || 0));
+    const nextTotal = Math.max(0, cleanSparepart + cleanLabor - cleanDiscount);
+    const nextProblem =
+      updates.problemDescription !== undefined
+        ? updates.problemDescription.trim() || target.problemDescription
+        : target.problemDescription;
+    const nextNote =
+      updates.technicianNote !== undefined ? updates.technicianNote.trim() : target.technicianNote;
+    const nextWarranty =
+      updates.warrantyDays !== undefined
+        ? Math.max(0, Math.round(Number(updates.warrantyDays) || 0))
+        : target.warrantyDays;
+
+    const costChanged = nextTotal !== target.totalCost;
+    const initialEstimatedCost =
+      target.initialEstimatedCost !== undefined
+        ? target.initialEstimatedCost
+        : costChanged
+        ? target.totalCost
+        : undefined;
+
+    const existingHistory = target.costRevisionHistory || [];
+    const nextHistory =
+      costChanged || (updates.revisionReason && updates.revisionReason.trim().length > 0)
+        ? [
+            ...existingHistory,
+            {
+              date: new Date().toLocaleString('id-ID'),
+              reason:
+                updates.revisionReason?.trim() ||
+                'Penyesuaian estimasi biaya setelah pemeriksaan teknisi',
+              prevTotal: target.totalCost,
+              newTotal: nextTotal,
+              addedAmount: nextTotal - target.totalCost,
+            },
+          ]
+        : existingHistory;
+
+    const nextRemainingDebt =
+      target.remainingDebt !== undefined
+        ? Math.max(0, nextTotal - target.downPayment)
+        : undefined;
+
+    const updatedTicket: ServiceTicket = {
+      ...target,
+      problemDescription: nextProblem,
+      sparepartCost: cleanSparepart,
+      laborFee: cleanLabor,
+      discount: cleanDiscount > 0 ? cleanDiscount : undefined,
+      totalCost: nextTotal,
+      technicianNote: nextNote || undefined,
+      warrantyDays: nextWarranty,
+      initialEstimatedCost,
+      costRevisionHistory: nextHistory.length > 0 ? nextHistory : undefined,
+      remainingDebt: nextRemainingDebt && nextRemainingDebt > 0 ? nextRemainingDebt : undefined,
+    };
+
+    setServices((prev) => prev.map((s) => (s.id === id ? updatedTicket : s)));
+
+    // Sync unpaid DebtRecord if any exists for this service ticket
+    setDebts((prevDebts) =>
+      prevDebts.map((d) => {
+        if (d.invoiceOrRef === id && d.status !== 'lunas') {
+          const rem = Math.max(0, nextTotal - d.paidAmount);
+          return {
+            ...d,
+            totalAmount: nextTotal,
+            remainingAmount: rem,
+            status: rem === 0 ? 'lunas' : d.paidAmount > 0 ? 'cicilan' : 'belum_lunas',
+            note: updates.revisionReason?.trim()
+              ? `${d.note} [Revisi: ${updates.revisionReason.trim()}]`
+              : d.note,
+          };
+        }
+        return d;
+      })
+    );
+
+    // Sync matching item in Keranjang Besar if present
+    setCart((prevCart) =>
+      prevCart.map((item) => {
+        if (item.itemType === 'service' && item.metadata?.serviceTicketId === id) {
+          const rem = Math.max(0, nextTotal - updatedTicket.downPayment);
+          return {
+            ...item,
+            product: {
+              ...item.product,
+              hpp: Math.max(0, cleanSparepart - updatedTicket.downPayment),
+              price: rem,
+            },
+            subtotal: Math.max(0, rem - item.discount),
+            metadata: {
+              ...item.metadata,
+              problemDescription: nextProblem,
+              originalTotalCost: nextTotal,
+            },
+          };
+        }
+        return item;
+      })
+    );
+
+    return updatedTicket;
+  };
+
   const deleteServiceTicket = (id: string) => {
     setServices((prev) => prev.filter((s) => s.id !== id));
   };
@@ -2522,44 +2737,163 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setReturns((prev) => [newRecord, ...prev]);
   };
 
+  const syncProductInCart = (updatedProd: Product) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if ((!item.itemType || item.itemType === 'produk') && item.product.id === updatedProd.id) {
+          const clampedQty = Math.min(item.quantity, Math.max(0, updatedProd.stock));
+          const pricing = calculateTieredPricing(updatedProd, clampedQty);
+          return {
+            ...item,
+            product: updatedProd,
+            quantity: clampedQty,
+            subtotal: Math.max(0, pricing.totalPrice - item.discount),
+            metadata: {
+              ...item.metadata,
+              pricingSummary: pricing.hasWholesaleApplied ? pricing.summaryLabel : undefined,
+              pricingSavings: pricing.savings > 0 ? pricing.savings : undefined,
+              retailSubtotal: pricing.retailTotal,
+            },
+          };
+        }
+        return item;
+      })
+    );
+  };
+
   // Product Catalog
-  const addProduct = (newProd: Omit<Product, 'id'>) => {
-    const { product } = normalizeProductRecord({
+  const addProduct = (
+    newProd: Omit<Product, 'id'>,
+    options?: { hppMode?: 'weighted' | 'latest' }
+  ) => {
+    const { product: incoming } = normalizeProductRecord({
       ...newProd,
-      id: `prod-${Date.now()}`,
+      id: `prod-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
     });
-    setProducts((prev) => [product, ...prev]);
+
+    if (
+      incoming.category &&
+      !categories.some((c) => c.toLowerCase() === incoming.category.toLowerCase())
+    ) {
+      setCategories((prev) => [...prev, incoming.category]);
+    }
+
+    const prevValuation = computeStockValuation(products);
+    const matchIdx = findMatchingProductIndex(products, incoming);
+
+    if (matchIdx >= 0) {
+      const existing = products[matchIdx];
+      const mergedProduct = mergeProductRecords(existing, incoming, {
+        hppMode: options?.hppMode ?? 'weighted',
+        preferIncomingPrice: true,
+      });
+      const nextList = products.map((p, idx) => (idx === matchIdx ? mergedProduct : p));
+      setProducts(nextList);
+      syncProductInCart(mergedProduct);
+
+      const nextValuation = computeStockValuation(nextList);
+      return {
+        product: mergedProduct,
+        merged: true,
+        addedStock: incoming.stock,
+        assetHppDelta: nextValuation.totalAssetHpp - prevValuation.totalAssetHpp,
+        revenueDelta: nextValuation.totalPotentialRevenue - prevValuation.totalPotentialRevenue,
+        nextTotalAssetHpp: nextValuation.totalAssetHpp,
+        nextTotalRevenue: nextValuation.totalPotentialRevenue,
+      };
+    }
+
+    const nextList = [incoming, ...products];
+    setProducts(nextList);
+    const nextValuation = computeStockValuation(nextList);
+    return {
+      product: incoming,
+      merged: false,
+      addedStock: incoming.stock,
+      assetHppDelta: nextValuation.totalAssetHpp - prevValuation.totalAssetHpp,
+      revenueDelta: nextValuation.totalPotentialRevenue - prevValuation.totalPotentialRevenue,
+      nextTotalAssetHpp: nextValuation.totalAssetHpp,
+      nextTotalRevenue: nextValuation.totalPotentialRevenue,
+    };
   };
 
   const updateProduct = (updated: Product) => {
     const { product } = normalizeProductRecord(updated);
     setProducts((prev) => prev.map((p) => (p.id === product.id ? product : p)));
+    syncProductInCart(product);
   };
 
   const deleteProduct = (id: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const restockProduct = (id: string, addQty: number, newHpp?: number) => {
+  const restockProduct = (
+    id: string,
+    addQty: number,
+    newHpp?: number,
+    options?: { newPrice?: number; hppMode?: 'weighted' | 'latest' }
+  ) => {
     const cleanQty = Math.max(0, Math.round(Number(addQty) || 0));
     const cleanNewHpp =
       newHpp !== undefined && Number.isFinite(newHpp) && newHpp > 0
         ? Math.round(newHpp)
         : undefined;
+    const cleanNewPrice =
+      options?.newPrice !== undefined && Number.isFinite(options.newPrice) && options.newPrice > 0
+        ? Math.round(options.newPrice)
+        : undefined;
+    const hppMode = options?.hppMode ?? 'weighted';
 
+    let updatedTarget: Product | null = null;
     setProducts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
           const baseStock = Math.max(0, Math.round(Number(p.stock) || 0));
-          return {
+          const oldHpp = Math.max(0, Math.round(Number(p.hpp) || 0));
+          const nextStock = Math.max(0, baseStock + cleanQty);
+
+          let nextHpp = oldHpp;
+          if (cleanNewHpp !== undefined) {
+            if (hppMode === 'latest' || baseStock <= 0 || oldHpp <= 0) {
+              nextHpp = cleanNewHpp;
+            } else {
+              nextHpp = Math.round(
+                (baseStock * oldHpp + cleanQty * cleanNewHpp) / Math.max(1, nextStock)
+              );
+            }
+          }
+
+          updatedTarget = {
             ...p,
-            stock: Math.max(0, baseStock + cleanQty),
-            ...(cleanNewHpp !== undefined ? { hpp: cleanNewHpp } : {}),
+            stock: nextStock,
+            hpp: nextHpp,
+            ...(cleanNewPrice !== undefined ? { price: cleanNewPrice } : {}),
           };
+          return updatedTarget;
         }
         return p;
       })
     );
+
+    if (updatedTarget) {
+      syncProductInCart(updatedTarget);
+    }
+  };
+
+  const deduplicateTwinProducts = () => {
+    const deduped = deduplicateProducts(products);
+    if (deduped.removedDuplicateCount > 0) {
+      setProducts(deduped.products);
+      try {
+        localStorage.setItem('jufat_products', JSON.stringify(deduped.products));
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return {
+      removedDuplicateCount: deduped.removedDuplicateCount,
+      mergedNames: deduped.mergedNames,
+    };
   };
 
   const recalculateProductCatalog = (): StockValuationAudit => {
@@ -2579,14 +2913,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return res.product;
     });
 
-    setProducts(normalizedList);
+    const deduped = deduplicateProducts(normalizedList);
+    setProducts(deduped.products);
     try {
-      localStorage.setItem('jufat_products', JSON.stringify(normalizedList));
+      localStorage.setItem('jufat_products', JSON.stringify(deduped.products));
     } catch {
       // ignore storage errors
     }
 
-    const valuation = computeStockValuation(normalizedList);
+    const valuation = computeStockValuation(deduped.products);
     return {
       ...valuation,
       auditedAt: new Date().toLocaleTimeString('id-ID', {
@@ -2595,6 +2930,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         second: '2-digit',
       }),
       fixedCount,
+      mergedDuplicateCount: deduped.removedDuplicateCount,
+      mergedNames: deduped.mergedNames,
       previousAssetHpp: Number.isFinite(prevRawHpp) ? Math.round(prevRawHpp) : 0,
       previousPotentialRevenue: Number.isFinite(prevRawRev) ? Math.round(prevRawRev) : 0,
       assetDiff:
@@ -2621,8 +2958,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Excel Product Operations
-  const importProductsFromExcel = (newProds: Omit<Product, 'id'>[]): number => {
-    if (newProds.length === 0) return 0;
+  const importProductsFromExcel = (newProds: Omit<Product, 'id'>[]) => {
+    if (newProds.length === 0) {
+      return {
+        totalRows: 0,
+        addedCount: 0,
+        mergedCount: 0,
+        totalUnitsAdded: 0,
+        assetHppDelta: 0,
+        revenueDelta: 0,
+      };
+    }
 
     // Automatically register any new categories found in the Excel import
     const newCatNames: string[] = [];
@@ -2640,15 +2986,59 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCategories((prev) => [...prev, ...newCatNames]);
     }
 
-    const generated = newProds.map((p, idx) =>
-      normalizeProductRecord({
+    const prevValuation = computeStockValuation(products);
+    const workingList = [...products];
+    const newlyAdded: Product[] = [];
+    let addedCount = 0;
+    let mergedCount = 0;
+    let totalUnitsAdded = 0;
+
+    newProds.forEach((p, idx) => {
+      const normalized = normalizeProductRecord({
         ...p,
         id: `prod-${Date.now()}-${idx}-${Math.floor(100 + Math.random() * 900)}`,
-      }).product
-    );
+      }).product;
+      totalUnitsAdded += normalized.stock;
 
-    setProducts((prev) => [...generated, ...prev]);
-    return generated.length;
+      const matchInNew = findMatchingProductIndex(newlyAdded, normalized);
+      if (matchInNew >= 0) {
+        newlyAdded[matchInNew] = mergeProductRecords(newlyAdded[matchInNew], normalized, {
+          hppMode: 'weighted',
+          preferIncomingPrice: true,
+        });
+        mergedCount += 1;
+        return;
+      }
+
+      const matchInExisting = findMatchingProductIndex(workingList, normalized);
+      if (matchInExisting >= 0) {
+        workingList[matchInExisting] = mergeProductRecords(
+          workingList[matchInExisting],
+          normalized,
+          {
+            hppMode: 'weighted',
+            preferIncomingPrice: true,
+          }
+        );
+        mergedCount += 1;
+      } else {
+        newlyAdded.push(normalized);
+        addedCount += 1;
+      }
+    });
+
+    const finalProducts = [...newlyAdded, ...workingList];
+    setProducts(finalProducts);
+
+    const nextValuation = computeStockValuation(finalProducts);
+    return {
+      totalRows: newProds.length,
+      addedCount,
+      mergedCount,
+      totalUnitsAdded,
+      assetHppDelta: nextValuation.totalAssetHpp - prevValuation.totalAssetHpp,
+      revenueDelta: nextValuation.totalPotentialRevenue - prevValuation.totalPotentialRevenue,
+    };
   };
 
   const exportProductsToExcel = () => {
@@ -2658,6 +3048,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'Kategori': p.category,
       'HPP (Modal)': p.hpp,
       'Harga Jual': p.price,
+      'Harga Grosir / Paket': serializePriceTiersText(p.priceTiers),
       'Laba Satuan': p.price - p.hpp,
       'Stok (Pcs)': p.stock,
       'Batas Minimum Stok': p.minStock,
@@ -2677,25 +3068,27 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const downloadExcelTemplate = () => {
     const templateData = [
       {
-        'Kode SKU': 'ACC-CHG-33W',
-        'Nama Produk': 'Charger 33W Fast Charging Quick Adapter',
-        'Kategori': 'Kabel & Charger',
-        'HPP (Modal)': 35000,
-        'Harga Jual': 55000,
-        'Stok': 20,
-        'Batas Minimum Stok': 5,
+        'Kode SKU': 'MIN-ES-01',
+        'Nama Produk': 'Es Minuman Segar (Ecer & Paket 3)',
+        'Kategori': 'Minuman & Es',
+        'HPP (Modal)': 1000,
+        'Harga Jual': 2000,
+        'Harga Grosir / Paket': '3=5000 (Paket 3)',
+        'Stok': 60,
+        'Batas Minimum Stok': 12,
         'Satuan': 'pcs',
         'Barcode': '89910012399',
       },
       {
-        'Kode SKU': 'ACC-TWS-MINI',
-        'Nama Produk': 'TWS Wireless Bluetooth Earbuds Stereo',
-        'Kategori': 'Audio & TWS',
-        'HPP (Modal)': 65000,
-        'Harga Jual': 110000,
-        'Stok': 12,
-        'Batas Minimum Stok': 4,
-        'Satuan': 'pcs',
+        'Kode SKU': 'ATK-HVS-A4',
+        'Nama Produk': 'Kertas HVS A4 75gr (Ecer / Per 4 Lbr / 1 Rim)',
+        'Kategori': 'ATK & Kertas',
+        'HPP (Modal)': 95,
+        'Harga Jual': 500,
+        'Harga Grosir / Paket': '4=1000 (Per 4 Lbr); 500=55000 (1 Rim)',
+        'Stok': 1500,
+        'Batas Minimum Stok': 250,
+        'Satuan': 'lembar',
         'Barcode': '89910012398',
       },
       {
@@ -2704,6 +3097,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'Kategori': 'Case & Pelindung',
         'HPP (Modal)': 7000,
         'Harga Jual': 15000,
+        'Harga Grosir / Paket': '',
         'Stok': 30,
         'Batas Minimum Stok': 10,
         'Satuan': 'pcs',
@@ -3454,6 +3848,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         services,
         addServiceTicket,
         updateServiceStatus,
+        updateServiceTicket,
         deleteServiceTicket,
         printOrders,
         addPrintOrder,
@@ -3485,6 +3880,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteProduct,
         restockProduct,
         recalculateProductCatalog,
+        deduplicateTwinProducts,
         receiptData,
         isReceiptModalOpen,
         openReceipt,

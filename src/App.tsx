@@ -4,7 +4,6 @@ import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { KasirView } from './components/views/KasirView';
 import { AtmMiniView } from './components/views/AtmMiniView';
-import { TransferAgencyView } from './components/views/TransferAgencyView';
 import { PPOBView } from './components/views/PPOBView';
 import { ServiceHPView } from './components/views/ServiceHPView';
 import { PercetakanView } from './components/views/PercetakanView';
@@ -28,7 +27,6 @@ const AppContent: React.FC = () => {
       case 'kasir':
         return <KasirView />;
       case 'atm_mini':
-        return <AtmMiniView />;
       case 'transfer':
         return <AtmMiniView />;
       case 'ppob':
@@ -54,7 +52,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="flex h-dvh w-screen overflow-hidden bg-[#f8fafc] text-slate-800 antialiased font-sans">
-      {/* Fresh Vibrant Mint & Teal POS Sidebar (Desktop & Mobile Drawer) */}
+      {/* Persistent Navigation Sidebar (Desktop & Mobile Drawer) */}
       <Sidebar />
 
       {/* Main Content Area */}
@@ -62,10 +60,10 @@ const AppContent: React.FC = () => {
         {/* Top Header Navigation */}
         <TopHeader />
 
-        {/* Dynamic Viewport with dynamic mobile bottom bar clearance (pb-14 when hidden for floating pill clearance, pb-20 when visible) */}
+        {/* Dynamic Viewport with clean mobile bottom bar clearance */}
         <main
           className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-200 ${
-            isBottomNavVisible ? 'pb-20 md:pb-0' : 'pb-14 md:pb-0'
+            isBottomNavVisible ? 'pb-16 md:pb-0' : 'pb-12 md:pb-0'
           }`}
         >
           {renderActiveView()}

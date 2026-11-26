@@ -4,19 +4,13 @@ import {
   RotateCcw,
   Plus,
   Search,
-  CheckCircle,
   AlertCircle,
-  Clock,
-  Phone,
-  User,
-  DollarSign,
-  Wallet,
   Crown,
   Percent,
-  Gift,
+  X,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
-import { DebtRecord, ReturnRecord } from '../../types/pos';
+import { DebtRecord } from '../../types/pos';
 
 export const HutangReturView: React.FC = () => {
   const {
@@ -33,11 +27,14 @@ export const HutangReturView: React.FC = () => {
 
   const [activeSubTab, setActiveSubTab] = useState<'hutang' | 'retur'>('hutang');
   const [search, setSearch] = useState('');
+  const [debtStatusFilter, setDebtStatusFilter] = useState<'all' | 'belum_lunas' | 'cicilan' | 'lunas'>('all');
+  const [returnStatusFilter, setReturnStatusFilter] = useState<'all' | 'menunggu_supplier' | 'diganti_unit' | 'refund_dana'>('all');
 
   // Debt Pay Modal
   const [payingDebt, setPayingDebt] = useState<DebtRecord | null>(null);
   const [payAmount, setPayAmount] = useState<number>(0);
   const [debtDiscount, setDebtDiscount] = useState<number>(0);
+  const [payDebtError, setPayDebtError] = useState<string>('');
 
   // New Debt Modal
   const [isNewDebtOpen, setIsNewDebtOpen] = useState(false);
@@ -53,7 +50,7 @@ export const HutangReturView: React.FC = () => {
   const [retSku, setRetSku] = useState('');
   const [retSupplier, setRetSupplier] = useState('');
   const [retQty, setRetQty] = useState(1);
-  const [retHpp, setRetHpp] = useState(25000);
+  const [retHpp] = useState(25000);
   const [retReason, setRetReason] = useState('');
 
   // Total outstanding debt
@@ -61,22 +58,48 @@ export const HutangReturView: React.FC = () => {
     .filter((d) => d.status !== 'lunas')
     .reduce((acc, d) => acc + d.remainingAmount, 0);
 
+  const normalizedQuery = search.trim().toLowerCase();
+
+  const filteredDebts = debts.filter((d) => {
+    const matchesStatus = debtStatusFilter === 'all' || d.status === debtStatusFilter;
+    const matchesSearch =
+      !normalizedQuery ||
+      d.customerName.toLowerCase().includes(normalizedQuery) ||
+      d.customerPhone.toLowerCase().includes(normalizedQuery) ||
+      d.invoiceOrRef.toLowerCase().includes(normalizedQuery) ||
+      (d.note && d.note.toLowerCase().includes(normalizedQuery));
+    return matchesStatus && matchesSearch;
+  });
+
+  const filteredReturns = returns.filter((r) => {
+    const matchesStatus = returnStatusFilter === 'all' || r.status === returnStatusFilter;
+    const matchesSearch =
+      !normalizedQuery ||
+      r.productName.toLowerCase().includes(normalizedQuery) ||
+      r.sku.toLowerCase().includes(normalizedQuery) ||
+      r.supplierName.toLowerCase().includes(normalizedQuery) ||
+      r.returNo.toLowerCase().includes(normalizedQuery) ||
+      (r.reason && r.reason.toLowerCase().includes(normalizedQuery));
+    return matchesStatus && matchesSearch;
+  });
+
   const handlePaySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!payingDebt) return;
+    setPayDebtError('');
     const baseRemaining = payingDebt.remainingAmount;
     const actualPayAmount = Math.max(0, payAmount);
     const actualDiscount = Math.max(0, debtDiscount);
     const totalCovered = actualPayAmount + actualDiscount;
 
     if (totalCovered <= 0) {
-      alert('Masukkan nominal pembayaran diterima atau tentukan nominal diskon/pemutihan!');
+      setPayDebtError('Masukkan nominal pembayaran diterima atau tentukan nominal diskon/pemutihan.');
       return;
     }
 
     if (actualPayAmount === 0 && actualDiscount >= baseRemaining) {
       if (!isOwner) {
-        alert('⚠️ Pemutihan Piutang 100% (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+        setPayDebtError('Pemutihan Piutang 100% (Rp 0) hanya diizinkan untuk Owner yang sedang bertugas.');
         return;
       }
     }
@@ -85,6 +108,7 @@ export const HutangReturView: React.FC = () => {
     setPayingDebt(null);
     setPayAmount(0);
     setDebtDiscount(0);
+    setPayDebtError('');
   };
 
   const handleCreateDebt = (e: React.FormEvent) => {
@@ -192,28 +216,86 @@ export const HutangReturView: React.FC = () => {
       {activeSubTab === 'hutang' ? (
         /* TAB 1: BUKU PIUTANG */
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Piutang Summary Strip */}
-          <div className="p-4 bg-purple-50/60 border-b border-purple-200/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-purple-900 uppercase">
-                Total Sisa Piutang Belum Lunas:
-              </span>
-              <span className="text-lg font-extrabold text-purple-950 font-mono">
-                Rp {totalOutstanding.toLocaleString('id-ID')}
-              </span>
+          {/* Piutang Summary & Search/Filter Strip */}
+          <div className="p-3 sm:p-4 bg-purple-50/60 border-b border-purple-200/60 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-xs font-bold text-purple-900 uppercase">
+                  Total Sisa Piutang Belum Lunas:
+                </span>
+                <span className="text-lg font-extrabold text-purple-950 font-mono tabular-nums">
+                  Rp {totalOutstanding.toLocaleString('id-ID')}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsNewDebtOpen(true)}
+                className="px-3.5 py-2 min-h-[38px] text-xs font-bold bg-purple-700 hover:bg-purple-600 text-white rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 active:scale-95 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Catat Kasbon Baru</span>
+              </button>
             </div>
 
-            <button
-              onClick={() => setIsNewDebtOpen(true)}
-              className="px-3 py-1.5 text-xs font-bold bg-purple-700 hover:bg-purple-600 text-white rounded-lg shadow-xs flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Catat Kasbon Baru</span>
-            </button>
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Cari nama pelanggan, HP, no ref, atau catatan..."
+                  className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    aria-label="Hapus pencarian"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                {[
+                  { id: 'all', label: 'Semua', count: debts.length },
+                  { id: 'belum_lunas', label: 'Belum Lunas', count: debts.filter((d) => d.status === 'belum_lunas').length },
+                  { id: 'cicilan', label: 'Cicilan', count: debts.filter((d) => d.status === 'cicilan').length },
+                  { id: 'lunas', label: 'Lunas', count: debts.filter((d) => d.status === 'lunas').length },
+                ].map((f) => {
+                  const active = debtStatusFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setDebtStatusFilter(f.id as any)}
+                      className={`px-3 py-1.5 min-h-[34px] text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                        active
+                          ? 'bg-purple-700 text-white shadow-xs'
+                          : 'bg-white border border-purple-200 text-slate-700 hover:bg-purple-100/60'
+                      }`}
+                    >
+                      <span>{f.label}</span>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 rounded-full ${
+                          active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {f.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/* Table */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20 md:pb-6">
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[700px] text-left border-collapse text-xs">
@@ -231,14 +313,30 @@ export const HutangReturView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {debts.length === 0 ? (
+                  {filteredDebts.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-400">
-                        Tidak ada catatan piutang aktif
+                      <td colSpan={9} className="py-10 text-center text-slate-400 space-y-2">
+                        <p className="font-semibold text-slate-600">
+                          {search || debtStatusFilter !== 'all'
+                            ? 'Tidak ada catatan piutang yang cocok dengan filter.'
+                            : 'Tidak ada catatan piutang aktif'}
+                        </p>
+                        {(search || debtStatusFilter !== 'all') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearch('');
+                              setDebtStatusFilter('all');
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg cursor-pointer"
+                          >
+                            Reset Filter
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ) : (
-                    debts.map((d) => (
+                    filteredDebts.map((d) => (
                       <tr key={d.id} className="hover:bg-slate-50/80 transition">
                         <td className="py-2.5 px-3 font-mono">
                           <div className="font-bold text-slate-800">{d.invoiceOrRef}</div>
@@ -267,7 +365,7 @@ export const HutangReturView: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase whitespace-nowrap ${
                               d.status === 'lunas'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : d.status === 'cicilan'
@@ -281,12 +379,14 @@ export const HutangReturView: React.FC = () => {
                         <td className="py-2.5 px-3 text-center">
                           {d.status !== 'lunas' ? (
                             <button
+                              type="button"
                               onClick={() => {
                                 setPayingDebt(d);
                                 setDebtDiscount(0);
                                 setPayAmount(d.remainingAmount);
+                                setPayDebtError('');
                               }}
-                              className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded transition shadow-xs cursor-pointer"
+                              className="px-3 py-1.5 min-h-[34px] text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition shadow-xs cursor-pointer whitespace-nowrap"
                             >
                               Bayar / Cicil
                             </button>
@@ -308,21 +408,79 @@ export const HutangReturView: React.FC = () => {
       ) : (
         /* TAB 2: BARANG RETUR */
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <span className="text-xs text-slate-600 font-medium">
-              Daftar barang rusak / cacat pabrik yang dikembalikan ke distributor
-            </span>
+          <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-slate-600 font-medium">
+                Daftar barang rusak / cacat pabrik yang dikembalikan ke distributor
+              </span>
 
-            <button
-              onClick={() => setIsNewReturnOpen(true)}
-              className="px-3 py-1.5 text-xs font-bold bg-purple-700 hover:bg-purple-600 text-white rounded-lg shadow-xs flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Catat Retur Baru</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setIsNewReturnOpen(true)}
+                className="px-3.5 py-2 min-h-[38px] text-xs font-bold bg-purple-700 hover:bg-purple-600 text-white rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 active:scale-95 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Catat Retur Baru</span>
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Cari produk, SKU, supplier, atau no retur..."
+                  className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    aria-label="Hapus pencarian"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                {[
+                  { id: 'all', label: 'Semua', count: returns.length },
+                  { id: 'menunggu_supplier', label: 'Menunggu Supplier', count: returns.filter((r) => r.status === 'menunggu_supplier').length },
+                  { id: 'diganti_unit', label: 'Diganti Unit', count: returns.filter((r) => r.status === 'diganti_unit').length },
+                  { id: 'refund_dana', label: 'Refund Dana', count: returns.filter((r) => r.status === 'refund_dana').length },
+                ].map((f) => {
+                  const active = returnStatusFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setReturnStatusFilter(f.id as any)}
+                      className={`px-3 py-1.5 min-h-[34px] text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                        active
+                          ? 'bg-purple-700 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>{f.label}</span>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 rounded-full ${
+                          active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {f.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20 md:pb-6">
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[700px] text-left border-collapse text-xs">
@@ -339,14 +497,30 @@ export const HutangReturView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {returns.length === 0 ? (
+                  {filteredReturns.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400">
-                        Tidak ada barang retur aktif
+                      <td colSpan={8} className="py-10 text-center text-slate-400 space-y-2">
+                        <p className="font-semibold text-slate-600">
+                          {search || returnStatusFilter !== 'all'
+                            ? 'Tidak ada barang retur yang cocok dengan filter.'
+                            : 'Tidak ada barang retur aktif'}
+                        </p>
+                        {(search || returnStatusFilter !== 'all') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearch('');
+                              setReturnStatusFilter('all');
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg cursor-pointer"
+                          >
+                            Reset Filter
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ) : (
-                    returns.map((r) => (
+                    filteredReturns.map((r) => (
                       <tr key={r.id} className="hover:bg-slate-50/80 transition">
                         <td className="py-2.5 px-3 font-mono">
                           <div className="font-bold text-slate-800">{r.returNo}</div>
@@ -368,7 +542,7 @@ export const HutangReturView: React.FC = () => {
                         <td className="py-2.5 px-3 text-slate-600">{r.reason}</td>
                         <td className="py-2.5 px-3 text-center">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase whitespace-nowrap ${
                               r.status === 'diganti_unit'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : r.status === 'refund_dana'
@@ -380,17 +554,19 @@ export const HutangReturView: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
+                              type="button"
                               onClick={() => updateReturnStatus(r.id, 'diganti_unit')}
-                              className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded cursor-pointer"
+                              className="px-2.5 py-1.5 min-h-[34px] text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg cursor-pointer whitespace-nowrap"
                               title="Tandai telah diganti unit baru"
                             >
                               Ganti Unit
                             </button>
                             <button
+                              type="button"
                               onClick={() => updateReturnStatus(r.id, 'refund_dana')}
-                              className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded cursor-pointer"
+                              className="px-2.5 py-1.5 min-h-[34px] text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded-lg cursor-pointer whitespace-nowrap"
                               title="Tandai telah di-refund dana"
                             >
                               Refund
@@ -602,13 +778,14 @@ export const HutangReturView: React.FC = () => {
                       type="button"
                       onClick={() => {
                         if (!isOwner) {
-                          alert('⚠️ Pemutihan Piutang 100% (Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                          setPayDebtError('Pemutihan Piutang 100% (Rp 0) hanya diizinkan untuk Owner yang sedang bertugas.');
                           return;
                         }
+                        setPayDebtError('');
                         setDebtDiscount(baseRemaining);
                         setPayAmount(0);
                       }}
-                      className={`px-2 py-0.5 rounded text-[10.5px] font-black transition cursor-pointer flex items-center gap-1 ${
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black transition cursor-pointer flex items-center gap-1 ${
                         isFullWriteOff
                           ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-xs ring-1 ring-amber-600'
                           : 'bg-amber-100 border border-amber-400 text-amber-900 hover:bg-amber-200'
@@ -616,7 +793,7 @@ export const HutangReturView: React.FC = () => {
                       title="Pemutihan piutang khusus Owner"
                     >
                       <Crown className="w-3 h-3 text-amber-950" />
-                      <span>👑 100% Pemutihan (Rp 0 - Owner)</span>
+                      <span>100% Pemutihan (Rp 0 - Owner)</span>
                     </button>
                   </div>
 
@@ -632,22 +809,25 @@ export const HutangReturView: React.FC = () => {
 
                 {/* Input Pembayaran Diterima */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <label className="font-bold text-slate-800 text-[11px] block">
                       Nominal Pembayaran Diterima (Rp) *
                     </label>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setPayAmount(cleanRemaining)}
-                        className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded cursor-pointer transition"
+                        onClick={() => {
+                          setPayAmount(cleanRemaining);
+                          setPayDebtError('');
+                        }}
+                        className="text-[11px] font-extrabold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-lg cursor-pointer transition"
                       >
                         Bayar Pas (Rp {cleanRemaining.toLocaleString('id-ID')})
                       </button>
                       <button
                         type="button"
                         onClick={() => setPayAmount(0)}
-                        className="text-[10px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded cursor-pointer transition"
+                        className="text-[11px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded-lg cursor-pointer transition"
                       >
                         Nol (0)
                       </button>
@@ -659,7 +839,10 @@ export const HutangReturView: React.FC = () => {
                     step="any"
                     min="0"
                     value={payAmount === 0 ? (isZeroPayment ? 0 : '') : payAmount}
-                    onChange={(e) => setPayAmount(Math.max(0, Number(e.target.value) || 0))}
+                    onChange={(e) => {
+                      setPayAmount(Math.max(0, Number(e.target.value) || 0));
+                      if (payDebtError) setPayDebtError('');
+                    }}
                     placeholder="Masukkan nominal bayar..."
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-purple-600 focus:outline-none"
                   />
@@ -689,14 +872,22 @@ export const HutangReturView: React.FC = () => {
                   </div>
                 </div>
 
+                {payDebtError && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-800 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span>{payDebtError}</span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => {
                       setPayingDebt(null);
                       setDebtDiscount(0);
+                      setPayDebtError('');
                     }}
-                    className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 font-semibold cursor-pointer"
+                    className="px-3.5 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold cursor-pointer"
                   >
                     Batal
                   </button>

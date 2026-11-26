@@ -98,10 +98,7 @@ export const CashMutationModal: React.FC = () => {
         {/* Real-Time Auto-Sync Notification & Live Pulse Badge */}
         <div className="bg-emerald-50/90 border-b border-emerald-200 px-3.5 py-2 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-            </span>
+            <span className="inline-flex rounded-full h-2 w-2 bg-emerald-600 shrink-0"></span>
             <span className="font-bold text-emerald-950 text-[11px] truncate">
               Auto-Sync Aktif: Terhubung langsung ke Kasir POS & ATM Mini
             </span>

@@ -74,6 +74,60 @@ const parseExactRupiah = (raw: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const MasterQtyInput: React.FC<{
+  quantity: number;
+  maxStock: number;
+  onChangeQty: (qty: number) => void;
+}> = ({ quantity, maxStock, onChangeQty }) => {
+  const [draft, setDraft] = useState<string>(String(quantity));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setDraft(String(quantity));
+    }
+  }, [quantity, isFocused]);
+
+  return (
+    <input
+      type="number"
+      min={1}
+      max={maxStock}
+      aria-label="Jumlah item"
+      value={isFocused ? draft : String(quantity)}
+      onFocus={(e) => {
+        setIsFocused(true);
+        setDraft(String(quantity));
+        e.currentTarget.select();
+      }}
+      onChange={(e) => {
+        const val = e.target.value;
+        setDraft(val);
+        const parsed = parseInt(val, 10);
+        if (Number.isFinite(parsed) && parsed >= 1) {
+          onChangeQty(Math.min(parsed, maxStock));
+        }
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        const parsed = parseInt(draft, 10);
+        if (Number.isFinite(parsed) && parsed >= 1) {
+          onChangeQty(Math.min(parsed, maxStock));
+        } else {
+          setDraft(String(quantity));
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-11 text-center text-xs font-bold font-mono tabular-nums text-slate-900 bg-transparent focus:bg-teal-50 focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+    />
+  );
+};
+
 export const MasterCartModal: React.FC = () => {
   const {
     cart,
@@ -278,7 +332,11 @@ export const MasterCartModal: React.FC = () => {
         .filter(Boolean)
         .join(' · ');
     }
-    return `Rp ${item.product.price.toLocaleString('id-ID')} / ${item.product.unit || 'pcs'}`;
+    const unitLabel = item.product.unit || 'pcs';
+    if (m?.pricingSummary) {
+      return `Paket: ${m.pricingSummary} · Potong stok -${item.quantity} ${unitLabel}`;
+    }
+    return `Ecer Rp ${item.product.price.toLocaleString('id-ID')} / ${unitLabel} · Potong stok -${item.quantity} ${unitLabel}`;
   };
 
   const quickTabs = [
@@ -417,6 +475,8 @@ export const MasterCartModal: React.FC = () => {
                 const canAdjustQty = itemType === 'produk' || itemType === 'percetakan';
                 const maxStock = itemType === 'produk' ? item.product.stock : 9999;
 
+                const savings = itemType === 'produk' ? item.metadata?.pricingSavings || 0 : 0;
+
                 return (
                   <div
                     key={itemKey}
@@ -432,6 +492,11 @@ export const MasterCartModal: React.FC = () => {
                         <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
                           {item.product.name}
                         </h4>
+                        {savings > 0 && (
+                          <span className="px-1.5 py-0.5 text-[9.5px] font-extrabold rounded bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap shrink-0">
+                            Hemat Rp {savings.toLocaleString('id-ID')}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-500 font-medium break-words">
                         {renderItemSubtitle(item)}
@@ -449,9 +514,11 @@ export const MasterCartModal: React.FC = () => {
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="w-8 text-center text-xs font-bold font-mono tabular-nums text-slate-900">
-                            {item.quantity}
-                          </span>
+                          <MasterQtyInput
+                            quantity={item.quantity}
+                            maxStock={maxStock}
+                            onChangeQty={(qty) => updateCartQuantity(itemKey, qty)}
+                          />
                           <button
                             type="button"
                             onClick={() => updateCartQuantity(itemKey, item.quantity + 1)}
@@ -472,6 +539,11 @@ export const MasterCartModal: React.FC = () => {
                         <span className="text-xs sm:text-sm font-extrabold text-slate-900 font-mono tabular-nums block">
                           Rp {item.subtotal.toLocaleString('id-ID')}
                         </span>
+                        {savings > 0 && item.metadata?.retailSubtotal && (
+                          <span className="text-[10px] font-mono tabular-nums text-slate-400 line-through block">
+                            Rp {item.metadata.retailSubtotal.toLocaleString('id-ID')}
+                          </span>
+                        )}
                       </div>
 
                       <button
@@ -520,6 +592,20 @@ export const MasterCartModal: React.FC = () => {
                   Rp {cartSubtotal.toLocaleString('id-ID')}
                 </span>
               </div>
+              {(() => {
+                const totalWholesaleSavings = cart.reduce(
+                  (sum, c) => sum + (c.metadata?.pricingSavings || 0),
+                  0
+                );
+                return totalWholesaleSavings > 0 ? (
+                  <div className="flex justify-between text-[11px] text-emerald-700 font-semibold">
+                    <span>Hemat Harga Grosir:</span>
+                    <span className="font-mono tabular-nums font-bold">
+                      -Rp {totalWholesaleSavings.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                ) : null;
+              })()}
 
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="flex items-center gap-1 font-bold text-slate-700">

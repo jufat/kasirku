@@ -138,9 +138,19 @@ export const PPOBView: React.FC = () => {
   const [customWifiOtherName, setCustomWifiOtherName] = useState<string>('');
 
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [pkgFormError, setPkgFormError] = useState('');
+  const [checkoutError, setCheckoutError] = useState('');
   const [mobileTab, setMobileTab] = useState<'buy' | 'history'>('buy');
   const [lastTxForReceipt, setLastTxForReceipt] = useState<PPOBTransaction | null>(null);
   const [isQuickImportOpen, setIsQuickImportOpen] = useState(false);
+
+  const showError = (msg: string) => {
+    setErrorMessage(msg);
+    setTimeout(() => {
+      setErrorMessage((prev) => (prev === msg ? '' : prev));
+    }, 5500);
+  };
 
   // Past customer lookup (PPOB, E-Wallet/ATM Mini, Agen & kontak toko)
   const lastAutoFilledNameRef = useRef<string>('');
@@ -216,13 +226,13 @@ export const PPOBView: React.FC = () => {
   const handlePayCustomPlnBill = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber.trim()) {
-      alert('Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!');
+      showError('Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!');
       return;
     }
     const amount = Number(customPlnBillAmount) || 0;
     const admin = Number(customPlnAdminFee) || 0;
     if (amount <= 0) {
-      alert('Nominal tagihan listrik harus lebih dari Rp 0!');
+      showError('Nominal tagihan listrik harus lebih dari Rp 0!');
       return;
     }
 
@@ -247,13 +257,13 @@ export const PPOBView: React.FC = () => {
   const handlePayCustomWifiBill = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber.trim()) {
-      alert('Nomor Pelanggan / ID Sambungan Wifi wajib diisi!');
+      showError('Nomor Pelanggan / ID Sambungan Wifi wajib diisi!');
       return;
     }
     const amount = Number(customWifiBillAmount) || 0;
     const admin = Number(customWifiAdminFee) || 0;
     if (amount <= 0) {
-      alert('Nominal tagihan wifi harus lebih dari Rp 0!');
+      showError('Nominal tagihan wifi harus lebih dari Rp 0!');
       return;
     }
 
@@ -275,7 +285,7 @@ export const PPOBView: React.FC = () => {
   const resolveTargetForCart = (pkg: PPOBPackage): string | null => {
     if (pkg.category === 'game' || category === 'game') {
       if (!gameUserId.trim()) {
-        alert('User ID / Player ID Game wajib diisi sebelum masuk Keranjang Besar!');
+        showError('User ID / Player ID Game wajib diisi sebelum masuk Keranjang Besar!');
         return null;
       }
       return gameZoneId.trim()
@@ -283,7 +293,7 @@ export const PPOBView: React.FC = () => {
         : gameUserId.trim();
     }
     if (!phoneNumber.trim()) {
-      alert(
+      showError(
         category === 'pln'
           ? 'Nomor Meteran / ID Pelanggan PLN Prabayar wajib diisi!'
           : category === 'pln_bulanan'
@@ -303,9 +313,10 @@ export const PPOBView: React.FC = () => {
 
     const discountedPrice = Math.max(0, pkg.price - overrideDiscount);
     if (discountedPrice === 0 && !isOwner) {
-      alert('Transaksi PPOB Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      showError('Transaksi PPOB Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
       return;
     }
+    setErrorMessage('');
 
     const periodVal = pkg.category === 'pln_bulanan' ? plnPeriod : undefined;
     addPPOBToCart(
@@ -507,7 +518,7 @@ export const PPOBView: React.FC = () => {
     let target = phoneNumber.trim();
     if (category === 'game') {
       if (!gameUserId.trim()) {
-        alert('User ID / Player ID Game wajib diisi!');
+        showError('User ID / Player ID Game wajib diisi!');
         return;
       }
       target = gameZoneId.trim()
@@ -515,7 +526,7 @@ export const PPOBView: React.FC = () => {
         : gameUserId.trim();
     } else {
       if (!phoneNumber.trim()) {
-        alert(
+        showError(
           category === 'pln'
             ? 'Nomor Meteran / ID Pelanggan PLN Prabayar wajib diisi!'
             : category === 'pln_bulanan'
@@ -528,6 +539,8 @@ export const PPOBView: React.FC = () => {
       }
     }
 
+    setErrorMessage('');
+    setCheckoutError('');
     setSelectedPackageForCheckout(pkg);
     setPpobDiscount(0);
     setPpobCashReceived(pkg.price);
@@ -543,7 +556,7 @@ export const PPOBView: React.FC = () => {
     const pkg = selectedPackageForCheckout;
 
     if (finalPPOBPrice === 0 && !isOwner) {
-      alert('Transaksi PPOB Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      setCheckoutError('Transaksi PPOB Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
       return;
     }
 
@@ -664,9 +677,10 @@ export const PPOBView: React.FC = () => {
   const handleSavePackage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pkgName.trim()) {
-      alert('Nama paket wajib diisi!');
+      setPkgFormError('Nama paket wajib diisi!');
       return;
     }
+    setPkgFormError('');
 
     if (packageModalMode === 'edit' && editingPackage) {
       updatePPOBPackage({
@@ -944,31 +958,19 @@ export const PPOBView: React.FC = () => {
             </button>
           </div>
 
-          {/* Category Tabs with Restored & Visible Horizontal Scroll + Quick Arrows */}
-          <div className="relative group">
-            {/* Left Scroll Arrow */}
-            <button
-              type="button"
-              onClick={() => scrollCategories('left')}
-              className="hidden sm:flex absolute -left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-white hover:bg-teal-50 border border-slate-300 rounded-full items-center justify-center shadow-md text-slate-700 hover:text-teal-700 transition cursor-pointer active:scale-95"
-              title="Geser menu ke kiri"
-              aria-label="Geser menu ke kiri"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            {/* Scrollable Container with Visible Styled Scrollbar */}
+          {/* Category Tabs: wrap cleanly on desktop, horizontal swipe on mobile */}
+          <div className="relative">
             <div
               ref={categoryScrollRef}
-              className="flex items-center gap-2 overflow-x-auto pb-2.5 pt-0.5 px-0.5 scroll-smooth touch-pan-x [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-slate-200/80 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-500/80 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-teal-600"
+              className="flex md:flex-wrap items-center gap-1.5 overflow-x-auto md:overflow-visible pb-1.5 md:pb-0 px-0.5 scroll-smooth touch-pan-x"
             >
               {[
                 { id: 'pulsa', label: 'Pulsa Reguler', icon: Phone },
                 { id: 'data', label: 'Paket Data / Kuota', icon: Smartphone },
-                { id: 'pln', label: 'Token PLN (Prabayar)', icon: Zap },
-                { id: 'pln_bulanan', label: 'Listrik Bulanan (PLN)', icon: Receipt, highlight: 'amber' },
-                { id: 'wifi', label: 'Tagihan Wifi / Internet', icon: Wifi, highlight: 'sky' },
-                { id: 'game', label: 'Top Up Game & Voucher', icon: Gamepad2, highlight: 'violet' },
+                { id: 'pln', label: 'Token PLN', icon: Zap },
+                { id: 'pln_bulanan', label: 'Listrik Bulanan', icon: Receipt, highlight: 'amber' },
+                { id: 'wifi', label: 'Wifi / Internet', icon: Wifi, highlight: 'sky' },
+                { id: 'game', label: 'Top Up Game', icon: Gamepad2, highlight: 'violet' },
                 { id: 'bpjs', label: 'BPJS Kesehatan', icon: HeartPulse },
                 { id: 'pdam', label: 'PDAM & Utilitas', icon: Droplets },
               ].map((c) => {
@@ -977,15 +979,17 @@ export const PPOBView: React.FC = () => {
                 return (
                   <button
                     key={c.id}
+                    type="button"
                     onClick={(e) => {
                       setCategory(c.id as PPOBCategory);
+                      setErrorMessage('');
                       e.currentTarget.scrollIntoView({
                         behavior: 'smooth',
                         block: 'nearest',
                         inline: 'center',
                       });
                     }}
-                    className={`px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition shrink-0 cursor-pointer shadow-2xs whitespace-nowrap select-none ${
+                    className={`min-h-[40px] px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition shrink-0 cursor-pointer shadow-2xs whitespace-nowrap select-none active:scale-95 ${
                       active
                         ? c.highlight === 'violet'
                           ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-sm font-extrabold ring-2 ring-violet-300'
@@ -997,7 +1001,7 @@ export const PPOBView: React.FC = () => {
                         : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 font-medium'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${
+                    <Icon className={`w-4 h-4 shrink-0 ${
                       c.highlight === 'violet' && !active
                         ? 'text-violet-600'
                         : c.highlight === 'amber' && !active
@@ -1007,32 +1011,10 @@ export const PPOBView: React.FC = () => {
                         : ''
                     }`} />
                     <span>{c.label}</span>
-                    {(c.id === 'pln_bulanan' || c.id === 'wifi' || c.id === 'game') && !active && (
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold uppercase ${
-                        c.id === 'pln_bulanan'
-                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                          : c.id === 'wifi'
-                          ? 'bg-sky-100 text-sky-900 border border-sky-300'
-                          : 'bg-violet-100 text-violet-900 border border-violet-300'
-                      }`}>
-                        Baru
-                      </span>
-                    )}
                   </button>
                 );
               })}
             </div>
-
-            {/* Right Scroll Arrow */}
-            <button
-              type="button"
-              onClick={() => scrollCategories('right')}
-              className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-white hover:bg-teal-50 border border-slate-300 rounded-full items-center justify-center shadow-md text-slate-700 hover:text-teal-700 transition cursor-pointer active:scale-95"
-              title="Geser menu ke kanan"
-              aria-label="Geser menu ke kanan"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
           </div>
 
           {/* DYNAMIC FORMS BY CATEGORY */}
@@ -1187,15 +1169,25 @@ export const PPOBView: React.FC = () => {
                   <ShieldCheck className="w-3.5 h-3.5 text-violet-600 shrink-0" />
                   <span>Top up instan resmi & otomatis masuk langsung ke akun pemain.</span>
                 </div>
-                <div className="relative w-full sm:w-48 shrink-0">
-                  <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="relative w-full sm:w-52 shrink-0">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={gameSearchQuery}
                     onChange={(e) => setGameSearchQuery(e.target.value)}
                     placeholder="Cari item / nominal..."
-                    className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-100 rounded-md border border-slate-200 focus:bg-white focus:outline-none"
+                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-100 rounded-lg border border-slate-200 focus:bg-white focus:outline-none focus:ring-1 focus:ring-violet-500"
                   />
+                  {gameSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setGameSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      aria-label="Hapus pencarian game"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1350,13 +1342,13 @@ export const PPOBView: React.FC = () => {
                       type="button"
                       onClick={() => {
                         if (!phoneNumber.trim()) {
-                          alert('Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!');
+                          showError('Nomor Meteran / ID Pelanggan PLN Pascabayar wajib diisi!');
                           return;
                         }
                         const amount = Number(customPlnBillAmount) || 0;
                         const admin = Number(customPlnAdminFee) || 0;
                         if (amount <= 0) {
-                          alert('Nominal tagihan listrik harus lebih dari Rp 0!');
+                          showError('Nominal tagihan listrik harus lebih dari Rp 0!');
                           return;
                         }
                         handleAddPPOBToMasterCart({
@@ -1621,13 +1613,13 @@ export const PPOBView: React.FC = () => {
                       type="button"
                       onClick={() => {
                         if (!phoneNumber.trim()) {
-                          alert('Nomor Pelanggan / ID Sambungan Wifi wajib diisi!');
+                          showError('Nomor Pelanggan / ID Sambungan Wifi wajib diisi!');
                           return;
                         }
                         const amount = Number(customWifiBillAmount) || 0;
                         const admin = Number(customWifiAdminFee) || 0;
                         if (amount <= 0) {
-                          alert('Nominal tagihan wifi harus lebih dari Rp 0!');
+                          showError('Nominal tagihan wifi harus lebih dari Rp 0!');
                           return;
                         }
                         const providerName = resolvedWifiProvider;
@@ -1770,6 +1762,24 @@ export const PPOBView: React.FC = () => {
           )}
         </div>
 
+        {/* Inline Error Banner */}
+        {errorMessage && (
+          <div className="mx-3 sm:mx-4 mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between gap-2 font-bold shrink-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage('')}
+              className="p-1 text-rose-500 hover:text-rose-800 rounded-md cursor-pointer shrink-0"
+              aria-label="Tutup pesan error"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Success Banner */}
         {successMessage && (
           <div className="mx-3 sm:mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center justify-between gap-2 font-medium animate-fadeIn flex-wrap shrink-0">
@@ -1876,10 +1886,10 @@ export const PPOBView: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={(e) => openEditPackageModal(pkg, e)}
-                                className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition cursor-pointer"
+                                className="min-w-[34px] min-h-[34px] flex items-center justify-center text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
                                 title="Edit Paket"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Edit2 className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
@@ -1887,10 +1897,10 @@ export const PPOBView: React.FC = () => {
                                   e.stopPropagation();
                                   setPackageToDelete(pkg);
                                 }}
-                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                                className="min-w-[34px] min-h-[34px] flex items-center justify-center text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
                                 title="Hapus Paket"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -1925,17 +1935,17 @@ export const PPOBView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleAddPPOBToMasterCart(pkg)}
-                              className="px-2 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[11px] font-bold rounded-lg transition flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                              className="min-h-[38px] px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
                               title="Gabungkan item ini ke Keranjang Besar untuk bayar sekaligus"
                             >
-                              <ShoppingCart className="w-3 h-3 text-teal-600" />
+                              <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
                               <span>+ Keranjang</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => handleInitiatePurchase(pkg)}
-                              className={`px-3 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap ${
+                              className={`min-h-[38px] px-3.5 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap ${
                                 isGame
                                   ? 'bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
                                   : 'bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
@@ -2114,6 +2124,12 @@ export const PPOBView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSavePackage} className="space-y-3 text-xs">
+              {pkgFormError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{pkgFormError}</span>
+                </div>
+              )}
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Nama Paket / Item *</label>
                 <input
@@ -2556,11 +2572,12 @@ export const PPOBView: React.FC = () => {
                         if (isOwner) {
                           setPpobDiscount(selectedPackageForCheckout.price);
                           setPpobCashReceived(0);
+                          setCheckoutError('');
                         } else {
-                          alert('Diskon 100% (Bayar Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                          setCheckoutError('Diskon 100% (Bayar Rp 0) hanya diizinkan untuk OWNER yang sedang bertugas!');
                         }
                       }}
-                      className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-black border transition cursor-pointer flex items-center gap-1 ${
                         ppobDiscount === selectedPackageForCheckout.price
                           ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
                           : isOwner
@@ -2568,7 +2585,7 @@ export const PPOBView: React.FC = () => {
                           : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
                       }`}
                     >
-                      <span>👑 100% (Rp 0)</span>
+                      <span>100% (Rp 0)</span>
                     </button>
                   </div>
 
@@ -2584,11 +2601,12 @@ export const PPOBView: React.FC = () => {
                           const sanitized = sanitizeRupiahInput(e.target.value);
                           const val = parseExactRupiah(sanitized);
                           if (!isOwner && val >= selectedPackageForCheckout.price) {
-                            alert('Hanya OWNER yang dapat menetapkan pembayaran PPOB Rp 0!');
+                            setCheckoutError('Hanya OWNER yang dapat menetapkan pembayaran PPOB Rp 0!');
                             setPpobDiscount(Math.max(0, selectedPackageForCheckout.price - 1));
                             setPpobCashReceived(selectedPackageForCheckout.price > 0 ? 1 : 0);
                             return;
                           }
+                          setCheckoutError('');
                           setPpobDiscountInput(sanitized);
                           setPpobCashReceived(Math.max(0, selectedPackageForCheckout.price - val));
                         }}
@@ -2599,6 +2617,13 @@ export const PPOBView: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {checkoutError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{checkoutError}</span>
+                </div>
+              )}
 
               {/* Payment Method Selector */}
               <div className="space-y-1.5">
@@ -2753,7 +2778,7 @@ export const PPOBView: React.FC = () => {
                       }}
                       placeholder="Ketik nama orang yang berhutang (cth: Pak Sugeng, Mas Budi, Bu Erni)..."
                       className={`w-full px-3 py-2 text-xs bg-white border-2 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs ${
-                        ppobKasbonError ? 'border-rose-500 bg-rose-50/50 animate-pulse' : 'border-amber-400'
+                        ppobKasbonError ? 'border-rose-500 bg-rose-50/50' : 'border-amber-400'
                       }`}
                     />
                     {ppobKasbonError && (

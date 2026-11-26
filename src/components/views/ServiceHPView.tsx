@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Wrench,
   Plus,
-  Clock,
   CheckCircle,
   AlertTriangle,
   User,
@@ -10,29 +9,38 @@ import {
   ShieldCheck,
   Printer,
   Search,
-  Filter,
-  Calendar,
-  Layers,
   Trash2,
   Banknote,
   QrCode,
   Receipt,
   X,
   Tag,
-  Crown,
-  Percent,
-  Gift,
   ShoppingCart,
+  Edit3,
+  Copy,
+  History,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { ServiceTicket, ServiceStatus } from '../../types/pos';
+import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
+import {
+  buildCustomerDirectory,
+  searchCustomerDirectory,
+  CustomerDirectoryEntry,
+} from '../../utils/customerLookup';
 
 export const ServiceHPView: React.FC = () => {
   const {
     shift,
     services,
+    atmMiniTransactions,
+    agencyTransactions,
+    ppobTransactions,
+    debts,
+    printOrders,
     addServiceTicket,
     updateServiceStatus,
+    updateServiceTicket,
     deleteServiceTicket,
     openReceipt,
     cart,
@@ -47,6 +55,21 @@ export const ServiceHPView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [ticketToDelete, setTicketToDelete] = useState<ServiceTicket | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [settleError, setSettleError] = useState<string | null>(null);
+
+  const customerDirectory = useMemo(
+    () =>
+      buildCustomerDirectory({
+        atmMiniTransactions,
+        agencyTransactions,
+        ppobTransactions,
+        services,
+        debts,
+        printOrders,
+      }),
+    [atmMiniTransactions, agencyTransactions, ppobTransactions, services, debts, printOrders]
+  );
 
   // Form states for new service ticket
   const [customerName, setCustomerName] = useState('');
@@ -62,7 +85,7 @@ export const ServiceHPView: React.FC = () => {
   const [dpDueDate, setDpDueDate] = useState(() =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
   );
-  const [technicianName, setTechnicianName] = useState('Kang Ju-Fat');
+  const [technicianName] = useState('Kang Ju-Fat');
   const [warrantyDays, setWarrantyDays] = useState(14);
   const [technicianNote, setTechnicianNote] = useState('');
   const [toastMessage, setToastMessage] = useState('');
@@ -77,6 +100,34 @@ export const ServiceHPView: React.FC = () => {
   );
   const [settlePhone, setSettlePhone] = useState('');
   const [settleNote, setSettleNote] = useState('');
+
+  // Cost Revision & Additional Findings Modal States
+  const [editingTicket, setEditingTicket] = useState<ServiceTicket | null>(null);
+  const [editProblem, setEditProblem] = useState('');
+  const [editSparepartCost, setEditSparepartCost] = useState<number>(0);
+  const [editLaborFee, setEditLaborFee] = useState<number>(0);
+  const [editDiscount, setEditDiscount] = useState<number>(0);
+  const [editTechnicianNote, setEditTechnicianNote] = useState('');
+  const [editWarrantyDays, setEditWarrantyDays] = useState<number>(14);
+  const [editRevisionReason, setEditRevisionReason] = useState('');
+  const [addonFinding, setAddonFinding] = useState('');
+  const [addonSparepart, setAddonSparepart] = useState<number>(0);
+  const [addonLabor, setAddonLabor] = useState<number>(0);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [copiedRevisionMsg, setCopiedRevisionMsg] = useState(false);
+
+  const filteredCustomerSuggestions = useMemo(
+    () => searchCustomerDirectory(customerDirectory, customerName, ['phone_general', 'ewallet', 'ppob_hp']),
+    [customerDirectory, customerName]
+  );
+
+  const handleSelectCustomer = (entry: CustomerDirectoryEntry) => {
+    setCustomerName(entry.customerName);
+    if (entry.targetValue && /^0\d{7,14}$/.test(entry.targetValue.replace(/[\s-]/g, ''))) {
+      setCustomerPhone(entry.targetValue);
+    }
+    setFormError(null);
+  };
 
   const rawTotalCost = sparepartCost + laborFee;
   const totalCost = Math.max(0, rawTotalCost - serviceDiscount);
@@ -94,13 +145,14 @@ export const ServiceHPView: React.FC = () => {
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!customerName || !deviceModel || !problemDescription) {
-      alert('Nama pelanggan, tipe HP, dan kerusakan wajib diisi!');
+      setFormError('Nama pelanggan, tipe HP, dan kerusakan wajib diisi.');
       return;
     }
 
     if (totalCost === 0 && !isOwner) {
-      alert('Estimasi biaya servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      setFormError('Estimasi biaya servis Rp 0 hanya diizinkan untuk shift Owner.');
       return;
     }
 
@@ -160,6 +212,7 @@ export const ServiceHPView: React.FC = () => {
       return;
     }
     setSettlingTicket(ticket);
+    setSettleError(null);
     setSettleServiceDiscount(0);
     setSettleMethod('tunai');
     setSettleCashReceived(remaining);
@@ -169,11 +222,12 @@ export const ServiceHPView: React.FC = () => {
 
   const handleConfirmSettle = () => {
     if (!settlingTicket) return;
+    setSettleError(null);
     const baseRemaining = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
     const actualRemaining = Math.max(0, baseRemaining - settleServiceDiscount);
 
     if (actualRemaining === 0 && !isOwner) {
-      alert('Pelunasan servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+      setSettleError('Pelunasan servis Rp 0 hanya diizinkan untuk shift Owner.');
       return;
     }
 
@@ -219,6 +273,137 @@ export const ServiceHPView: React.FC = () => {
     openReceipt(ticketCopy);
   };
 
+  const handleOpenEditTicket = (ticket: ServiceTicket) => {
+    setEditingTicket(ticket);
+    setEditProblem(ticket.problemDescription);
+    setEditSparepartCost(ticket.sparepartCost);
+    setEditLaborFee(ticket.laborFee);
+    setEditDiscount(ticket.discount || 0);
+    setEditTechnicianNote(ticket.technicianNote || '');
+    setEditWarrantyDays(ticket.warrantyDays);
+    setEditRevisionReason('');
+    setAddonFinding('');
+    setAddonSparepart(0);
+    setAddonLabor(0);
+    setEditError(null);
+    setCopiedRevisionMsg(false);
+  };
+
+  const handleApplyAddonFinding = () => {
+    const cleanFinding = addonFinding.trim();
+    const addSp = Math.max(0, Math.round(Number(addonSparepart) || 0));
+    const addLb = Math.max(0, Math.round(Number(addonLabor) || 0));
+    if (!cleanFinding && addSp === 0 && addLb === 0) {
+      setEditError('Isi nama temuan kerusakan tambahan atau nominal tambahannya terlebih dahulu.');
+      return;
+    }
+    setEditError(null);
+    setEditSparepartCost((prev) => prev + addSp);
+    setEditLaborFee((prev) => prev + addLb);
+
+    if (cleanFinding) {
+      setEditProblem((prev) =>
+        prev.toLowerCase().includes(cleanFinding.toLowerCase())
+          ? prev
+          : `${prev.trim()} + ${cleanFinding}`
+      );
+    }
+
+    const addedTotal = addSp + addLb;
+    const summaryReason = `${cleanFinding || 'Tambahan pemeriksaan'}${
+      addedTotal > 0 ? ` (+Rp ${addedTotal.toLocaleString('id-ID')})` : ''
+    }`;
+    setEditRevisionReason((prev) =>
+      prev.trim() ? `${prev.trim()}; ${summaryReason}` : summaryReason
+    );
+    setAddonFinding('');
+    setAddonSparepart(0);
+    setAddonLabor(0);
+  };
+
+  const handleSaveRevision = (andPrintReceipt: boolean) => {
+    if (!editingTicket) return;
+    setEditError(null);
+
+    // Auto-include pending add-on if user filled it without clicking "+ Masukkan"
+    let finalSparepart = Math.max(0, Math.round(Number(editSparepartCost) || 0));
+    let finalLabor = Math.max(0, Math.round(Number(editLaborFee) || 0));
+    let finalProblem = editProblem.trim() || editingTicket.problemDescription;
+    let finalReason = editRevisionReason.trim();
+
+    const pendingAddSp = Math.max(0, Math.round(Number(addonSparepart) || 0));
+    const pendingAddLb = Math.max(0, Math.round(Number(addonLabor) || 0));
+    const pendingFinding = addonFinding.trim();
+    if (pendingFinding || pendingAddSp > 0 || pendingAddLb > 0) {
+      finalSparepart += pendingAddSp;
+      finalLabor += pendingAddLb;
+      if (pendingFinding && !finalProblem.toLowerCase().includes(pendingFinding.toLowerCase())) {
+        finalProblem = `${finalProblem} + ${pendingFinding}`;
+      }
+      const addedSum = pendingAddSp + pendingAddLb;
+      const pendingPart = `${pendingFinding || 'Temuan tambahan'}${
+        addedSum > 0 ? ` (+Rp ${addedSum.toLocaleString('id-ID')})` : ''
+      }`;
+      finalReason = finalReason ? `${finalReason}; ${pendingPart}` : pendingPart;
+    }
+
+    const nextTotal = Math.max(0, finalSparepart + finalLabor - Math.max(0, editDiscount));
+    if (nextTotal === 0 && !isOwner) {
+      setEditError('Biaya servis Rp 0 hanya diizinkan untuk shift Owner.');
+      return;
+    }
+
+    const updated = updateServiceTicket(editingTicket.id, {
+      problemDescription: finalProblem,
+      sparepartCost: finalSparepart,
+      laborFee: finalLabor,
+      discount: editDiscount,
+      technicianNote: editTechnicianNote,
+      warrantyDays: editWarrantyDays,
+      revisionReason: finalReason || undefined,
+    });
+
+    setEditingTicket(null);
+    if (updated) {
+      const rem = Math.max(0, updated.totalCost - updated.downPayment);
+      setToastMessage(
+        `Estimasi servis ${updated.id} (${updated.deviceModel}) diperbarui jadi Rp ${updated.totalCost.toLocaleString('id-ID')} (Sisa bayar: Rp ${rem.toLocaleString('id-ID')}).`
+      );
+      setTimeout(() => setToastMessage(''), 5000);
+      if (andPrintReceipt) {
+        openReceipt(updated);
+      }
+    }
+  };
+
+  const handleCopyCustomerRevisionWA = () => {
+    if (!editingTicket) return;
+    const pendingSp = Math.max(0, Math.round(Number(addonSparepart) || 0));
+    const pendingLb = Math.max(0, Math.round(Number(addonLabor) || 0));
+    const nextTotal = Math.max(
+      0,
+      editSparepartCost + pendingSp + editLaborFee + pendingLb - Math.max(0, editDiscount)
+    );
+    const prevCost = editingTicket.initialEstimatedCost ?? editingTicket.totalCost;
+    const rem = Math.max(0, nextTotal - editingTicket.downPayment);
+    const reasonText =
+      editRevisionReason.trim() ||
+      addonFinding.trim() ||
+      'penambahan komponen/perbaikan setelah pengecekan';
+
+    const msg = [
+      `Halo Kak ${editingTicket.customerName}, info pengecekan servis HP *${editingTicket.deviceModel}* (Nota ${editingTicket.id}):`,
+      `Setelah dicek teknisi, ditemukan kendala tambahan: *${reasonText}*.`,
+      `Estimasi awal Rp ${prevCost.toLocaleString('id-ID')} disesuaikan menjadi *Rp ${nextTotal.toLocaleString('id-ID')}* (DP masuk Rp ${editingTicket.downPayment.toLocaleString('id-ID')}, sisa pelunasan Rp ${rem.toLocaleString('id-ID')}).`,
+      `Mohon konfirmasinya ya Kak agar bisa langsung kami lanjutkan pengerjaannya. Terima kasih.`,
+    ].join('\n');
+
+    navigator.clipboard?.writeText(msg).then(() => {
+      setCopiedRevisionMsg(true);
+      setTimeout(() => setCopiedRevisionMsg(false), 2500);
+    });
+  };
+
   const getStatusBadge = (status: ServiceStatus) => {
     switch (status) {
       case 'antrean':
@@ -246,10 +431,10 @@ export const ServiceHPView: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#f8f9fa] overflow-hidden">
-      {/* Top Action & Stats Bar */}
-      <div className="p-4 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-        {/* Search & Filter */}
-        <div className="flex items-center gap-2 flex-1 max-w-md">
+      {/* Top Action & Filter Bar */}
+      <div className="p-3.5 sm:p-4 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
+        {/* Search with Clear */}
+        <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-md">
           <div className="relative w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -257,18 +442,28 @@ export const ServiceHPView: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari nota servis, nama pelanggan, tipe HP..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
+              className="w-full min-h-[40px] pl-9 pr-9 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 cursor-pointer"
+                title="Hapus pencarian"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full">
           {[
             { id: 'all', label: 'Semua', count: services.length },
             {
               id: 'antrean',
-              label: 'Antrean Masuk',
+              label: 'Antrean',
               count: services.filter((s) => s.status === 'antrean').length,
               badgeColor: 'bg-amber-100 text-amber-800',
             },
@@ -286,7 +481,7 @@ export const ServiceHPView: React.FC = () => {
             },
             {
               id: 'diambil',
-              label: 'Sudah Diambil',
+              label: 'Diambil',
               count: services.filter((s) => s.status === 'diambil').length,
               badgeColor: 'bg-slate-200 text-slate-700',
             },
@@ -295,16 +490,17 @@ export const ServiceHPView: React.FC = () => {
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 flex items-center gap-1.5 active:scale-95 ${
+                className={`min-h-[38px] px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 flex items-center gap-1.5 active:scale-95 whitespace-nowrap ${
                   active
-                    ? 'bg-gradient-to-r from-teal-700 to-emerald-700 text-white shadow-sm ring-1 ring-teal-600 font-extrabold'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200/60 font-semibold'
+                    ? 'bg-teal-700 text-white shadow-xs font-extrabold'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/70'
                 }`}
               >
                 <span>{tab.label}</span>
                 <span
-                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                  className={`text-[10px] font-mono tabular-nums px-1.5 py-0.2 rounded-full font-bold ${
                     active ? 'bg-white/20 text-white' : tab.badgeColor || 'bg-slate-200 text-slate-700'
                   }`}
                 >
@@ -317,11 +513,15 @@ export const ServiceHPView: React.FC = () => {
 
         {/* Add Service Button */}
         <button
-          onClick={() => setIsModalOpen(true)}
-          className="px-3.5 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
+          type="button"
+          onClick={() => {
+            setFormError(null);
+            setIsModalOpen(true);
+          }}
+          className="min-h-[40px] px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
         >
           <Plus className="w-4 h-4" />
-          <span>Terima Service Baru</span>
+          <span>Terima Service</span>
         </button>
       </div>
 
@@ -418,8 +618,25 @@ export const ServiceHPView: React.FC = () => {
 
                   {/* Financial Breakdown */}
                   <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5 text-xs">
+                    {ticket.initialEstimatedCost !== undefined &&
+                      ticket.initialEstimatedCost !== ticket.totalCost && (
+                        <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10.5px] text-amber-950 space-y-0.5">
+                          <div className="flex items-center justify-between font-bold">
+                            <span>Estimasi Awal:</span>
+                            <span className="font-mono line-through text-slate-500">
+                              Rp {ticket.initialEstimatedCost.toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          {ticket.costRevisionHistory && ticket.costRevisionHistory.length > 0 && (
+                            <div className="text-[10px] text-amber-900 leading-snug">
+                              Revisi: {ticket.costRevisionHistory[ticket.costRevisionHistory.length - 1].reason}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                     <div className="flex justify-between text-slate-500">
-                      <span>Estimasi Sparepart + Jasa:</span>
+                      <span>Sparepart + Jasa:</span>
                       <span className="font-mono text-slate-700 font-semibold">
                         Rp {ticket.sparepartCost.toLocaleString('id-ID')} + Rp{' '}
                         {ticket.laborFee.toLocaleString('id-ID')}
@@ -452,24 +669,37 @@ export const ServiceHPView: React.FC = () => {
                   </div>
 
                   {/* Workflow Action Buttons */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         onClick={() => openReceipt(ticket)}
-                        className="px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-teal-900 bg-slate-100 hover:bg-teal-50 border border-slate-200 hover:border-teal-300 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                        className="px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-teal-900 bg-slate-100 hover:bg-teal-50 border border-slate-200 hover:border-teal-300 rounded-lg flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
                         title="Cetak Struk Termal Servis (58mm / 80mm)"
                       >
                         <Printer className="w-3.5 h-3.5 text-teal-600" />
-                        <span>Struk Termal</span>
+                        <span>Struk</span>
                       </button>
 
+                      {ticket.status !== 'diambil' && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditTicket(ticket)}
+                          className="px-2.5 py-1.5 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
+                          title="Ubah estimasi biaya atau tambah temuan kerusakan baru"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Revisi Biaya</span>
+                        </button>
+                      )}
+
                       <button
+                        type="button"
                         onClick={() => setTicketToDelete(ticket)}
                         className="p-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-200 rounded-lg flex items-center gap-1 transition cursor-pointer"
                         title="Hapus Tiket Servis"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Hapus</span>
                       </button>
                     </div>
 
@@ -579,16 +809,19 @@ export const ServiceHPView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateTicket} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Nama Pelanggan *</label>
-                  <input
-                    type="text"
-                    required
+                  <CustomerNameLookupInput
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Pak Budi"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none"
+                    onChange={(val) => {
+                      setCustomerName(val);
+                      if (formError) setFormError(null);
+                    }}
+                    onSelectSuggestion={handleSelectCustomer}
+                    suggestions={filteredCustomerSuggestions}
+                    placeholder="Ketik nama (otomatis cari No. HP)..."
+                    inputClassName="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:bg-white focus:outline-none text-xs"
                   />
                 </div>
                 <div>
@@ -722,8 +955,9 @@ export const ServiceHPView: React.FC = () => {
                         if (isOwner) {
                           setServiceDiscount(rawTotalCost);
                           setDownPayment(0);
+                          setFormError(null);
                         } else {
-                          alert('Biaya servis Rp 0 (Diskon 100%) hanya diizinkan bila yang bertugas adalah OWNER!');
+                          setFormError('Biaya servis Rp 0 hanya diizinkan untuk shift Owner.');
                         }
                       }}
                       className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
@@ -734,7 +968,7 @@ export const ServiceHPView: React.FC = () => {
                           : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
                       }`}
                     >
-                      <span>👑 100% (Rp 0)</span>
+                      <span>100% (Rp 0)</span>
                     </button>
                   </div>
 
@@ -750,10 +984,11 @@ export const ServiceHPView: React.FC = () => {
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
                           if (!isOwner && val >= rawTotalCost && rawTotalCost > 0) {
-                            alert('Hanya OWNER yang dapat menetapkan biaya servis Rp 0!');
+                            setFormError('Hanya Owner yang dapat menetapkan biaya servis Rp 0.');
                             setServiceDiscount(Math.max(0, rawTotalCost - 1000));
                             return;
                           }
+                          setFormError(null);
                           setServiceDiscount(val);
                         }}
                         placeholder="0"
@@ -868,17 +1103,24 @@ export const ServiceHPView: React.FC = () => {
                 </div>
               </div>
 
+              {formError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100 font-semibold"
+                  className="min-h-[40px] px-4 py-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-md shadow-emerald-950/20"
+                  className="min-h-[40px] px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-sm cursor-pointer"
                 >
                   Simpan & Cetak Nota Masuk
                 </button>
@@ -977,7 +1219,7 @@ export const ServiceHPView: React.FC = () => {
                   Kerusakan: {settlingTicket.problemDescription}
                 </div>
 
-                <div className="border-t border-slate-200 pt-2 grid grid-cols-3 gap-2 text-center text-[11px]">
+                    <div className="border-t border-slate-200 pt-2 grid grid-cols-3 gap-2 text-center text-[11px]">
                   <div className="bg-white p-1.5 rounded-lg border border-slate-200">
                     <span className="text-slate-400 block text-[10px]">Total Biaya:</span>
                     <span className="font-mono font-bold text-slate-800">
@@ -996,6 +1238,24 @@ export const ServiceHPView: React.FC = () => {
                       Rp {(settlingTicket.totalCost - settlingTicket.downPayment).toLocaleString('id-ID')}
                     </span>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10.5px] text-slate-500">
+                    Ada komponen tambahan / harga berubah?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = settlingTicket;
+                      setSettlingTicket(null);
+                      handleOpenEditTicket(target);
+                    }}
+                    className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Revisi Estimasi Biaya</span>
+                  </button>
                 </div>
 
                 {/* DISKON PELUNASAN SERVIS */}
@@ -1066,8 +1326,9 @@ export const ServiceHPView: React.FC = () => {
                         if (isOwner) {
                           setSettleServiceDiscount(baseRem);
                           setSettleCashReceived(0);
+                          setSettleError(null);
                         } else {
-                          alert('Pelunasan servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                          setSettleError('Pelunasan servis Rp 0 hanya diizinkan untuk shift Owner.');
                         }
                       }}
                       className={`px-2 py-0.5 rounded text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
@@ -1078,7 +1339,7 @@ export const ServiceHPView: React.FC = () => {
                           : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
                       }`}
                     >
-                      <span>👑 100% Sisa Rp 0</span>
+                      <span>100% Sisa Rp 0</span>
                     </button>
                   </div>
 
@@ -1301,11 +1562,17 @@ export const ServiceHPView: React.FC = () => {
             </div>
 
             {/* Modal Actions */}
+            {settleError && (
+              <div className="mx-4 mb-2 p-2.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{settleError}</span>
+              </div>
+            )}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setSettlingTicket(null)}
-                className="py-2.5 px-3 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                className="min-h-[40px] py-2.5 px-3 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition cursor-pointer"
               >
                 Batal
               </button>
@@ -1316,7 +1583,7 @@ export const ServiceHPView: React.FC = () => {
                   const baseRemaining = Math.max(0, settlingTicket.totalCost - settlingTicket.downPayment);
                   const actualRemaining = Math.max(0, baseRemaining - settleServiceDiscount);
                   if (actualRemaining === 0 && !isOwner) {
-                    alert('Pelunasan servis Rp 0 (Diskon 100%) hanya diizinkan untuk OWNER yang sedang bertugas!');
+                    setSettleError('Pelunasan servis Rp 0 hanya diizinkan untuk shift Owner.');
                     return;
                   }
                   const added = addServiceToCart(settlingTicket, actualRemaining);
@@ -1329,7 +1596,7 @@ export const ServiceHPView: React.FC = () => {
                     setIsMasterCartModalOpen(true);
                   }
                 }}
-                className="py-2.5 px-3 text-xs font-bold text-teal-800 bg-teal-50 border border-teal-300 rounded-xl hover:bg-teal-100 transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                className="min-h-[40px] py-2.5 px-3 text-xs font-bold text-teal-800 bg-teal-50 border border-teal-300 rounded-xl hover:bg-teal-100 transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
                 title="Masukkan pelunasan servis ini ke Keranjang Besar"
               >
                 <ShoppingCart className="w-3.5 h-3.5 text-teal-600" />
@@ -1361,6 +1628,350 @@ export const ServiceHPView: React.FC = () => {
                     ? `Bayar Sebagian (Rp ${settleCashReceived.toLocaleString('id-ID')}) & Sisa Kasbon`
                     : 'Konfirmasi Pelunasan & Serahkan HP'}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: Revisi Estimasi Biaya & Tambah Temuan Kerusakan Baru                */}
+      {/* ========================================================================= */}
+      {editingTicket && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92dvh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="px-5 py-3.5 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                  <Edit3 className="w-4 h-4 text-amber-200" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-extrabold tracking-tight truncate">
+                    Revisi Estimasi Biaya &amp; Tambah Temuan
+                  </h3>
+                  <p className="text-[11px] text-amber-100 truncate">
+                    {editingTicket.id} · {editingTicket.deviceModel} ({editingTicket.customerName})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingTicket(null)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs">
+              {/* Quick Add-On Finding Calculator */}
+              <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-xl space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-extrabold text-amber-950 block">
+                      + Tambah Kerusakan / Komponen Baru (Otomatis Menambah Estimasi)
+                    </span>
+                    <span className="text-[10.5px] text-amber-800 block">
+                      Contoh: Awalnya ganti baterai, setelah dibuka ternyata tombol power/volume rusak.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Preset common findings */}
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    'Tombol Power / Volume Rusak',
+                    'Konektor Cas / Mic',
+                    'Flexibel / Soket Putus',
+                    'Perbaikan Jalur / IC',
+                    'Ganti Backdoor / Frame',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setAddonFinding(preset)}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
+                        addonFinding === preset
+                          ? 'bg-amber-700 text-white border-amber-700'
+                          : 'bg-white hover:bg-amber-100 text-amber-900 border-amber-200'
+                      }`}
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                  <div className="sm:col-span-5">
+                    <label className="text-[10px] font-bold text-amber-950 block mb-0.5">
+                      Temuan Tambahan
+                    </label>
+                    <input
+                      type="text"
+                      value={addonFinding}
+                      onChange={(e) => setAddonFinding(e.target.value)}
+                      placeholder="Cth: Tombol Power Rusak"
+                      className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-600"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-bold text-amber-950 block mb-0.5">
+                      +Sparepart
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={addonSparepart || ''}
+                      onChange={(e) => setAddonSparepart(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-right text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-600"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-bold text-amber-950 block mb-0.5">
+                      +Jasa
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={addonLabor || ''}
+                      onChange={(e) => setAddonLabor(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-right text-emerald-800 focus:outline-none focus:ring-1 focus:ring-amber-600"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <button
+                      type="button"
+                      onClick={handleApplyAddonFinding}
+                      className="w-full min-h-[32px] px-2.5 py-1.5 bg-amber-700 hover:bg-amber-600 text-white font-bold rounded-lg transition cursor-pointer whitespace-nowrap"
+                    >
+                      + Masukkan
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Direct Cost & Problem Edit Fields */}
+              <div className="space-y-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Daftar Kerusakan / Tindakan Servis (Tercetak di Nota)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editProblem}
+                    onChange={(e) => setEditProblem(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Total Sparepart (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editSparepartCost}
+                      onChange={(e) => setEditSparepartCost(Number(e.target.value) || 0)}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Total Ongkos Jasa (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editLaborFee}
+                      onChange={(e) => setEditLaborFee(Number(e.target.value) || 0)}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-bold text-emerald-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Diskon (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editDiscount}
+                      onChange={(e) => setEditDiscount(Number(e.target.value) || 0)}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-semibold text-rose-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Alasan Perubahan Biaya (Untuk Nota &amp; Riwayat)
+                    </label>
+                    <input
+                      type="text"
+                      value={editRevisionReason}
+                      onChange={(e) => setEditRevisionReason(e.target.value)}
+                      placeholder="Cth: Tambah ganti tombol power rusak setelah dicek"
+                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Garansi (Hari)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editWarrantyDays}
+                      onChange={(e) => setEditWarrantyDays(Number(e.target.value) || 0)}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-right font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Catatan Teknisi (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editTechnicianNote}
+                    onChange={(e) => setEditTechnicianNote(e.target.value)}
+                    placeholder="Cth: Sudah dikonfirmasi ke pelanggan via WA"
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Live Cost Comparison Box */}
+              {(() => {
+                const pendingSp = Math.max(0, Math.round(Number(addonSparepart) || 0));
+                const pendingLb = Math.max(0, Math.round(Number(addonLabor) || 0));
+                const previewTotal = Math.max(
+                  0,
+                  editSparepartCost + pendingSp + editLaborFee + pendingLb - Math.max(0, editDiscount)
+                );
+                const diffFromCurrent = previewTotal - editingTicket.totalCost;
+                const previewRemaining = Math.max(0, previewTotal - editingTicket.downPayment);
+
+                return (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-white p-2 rounded-lg border border-slate-200">
+                        <span className="text-[10px] text-slate-500 font-semibold block">
+                          Estimasi Sebelumnya
+                        </span>
+                        <span className="font-mono font-bold text-slate-700 text-xs">
+                          Rp {editingTicket.totalCost.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-lg border border-emerald-300">
+                        <span className="text-[10px] text-emerald-700 font-bold block">
+                          Biaya Baru (Update)
+                        </span>
+                        <span className="font-mono font-black text-emerald-900 text-xs">
+                          Rp {previewTotal.toLocaleString('id-ID')}
+                        </span>
+                        {diffFromCurrent !== 0 && (
+                          <span
+                            className={`text-[9.5px] font-mono font-bold block ${
+                              diffFromCurrent > 0 ? 'text-amber-700' : 'text-teal-700'
+                            }`}
+                          >
+                            ({diffFromCurrent > 0 ? '+' : '-'}Rp{' '}
+                            {Math.abs(diffFromCurrent).toLocaleString('id-ID')})
+                          </span>
+                        )}
+                      </div>
+                      <div className="bg-white p-2 rounded-lg border border-rose-200">
+                        <span className="text-[10px] text-rose-700 font-bold block">
+                          Sisa Pelunasan Baru
+                        </span>
+                        <span className="font-mono font-black text-rose-700 text-xs">
+                          Rp {previewRemaining.toLocaleString('id-ID')}
+                        </span>
+                        <span className="text-[9.5px] font-mono text-slate-400 block">
+                          DP: Rp {editingTicket.downPayment.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200">
+                      <span className="text-[10.5px] text-slate-600">
+                        Mau konfirmasi perubahan harga ke pelanggan dulu?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyCustomerRevisionWA}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{copiedRevisionMsg ? 'Tersalin!' : 'Salin Info WA Pelanggan'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Previous Revision History if any */}
+              {editingTicket.costRevisionHistory && editingTicket.costRevisionHistory.length > 0 && (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1 text-[10.5px] font-bold text-slate-700">
+                    <History className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Riwayat Perubahan Biaya Sebelumnya:</span>
+                  </div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {editingTicket.costRevisionHistory.map((rev, idx) => (
+                      <div
+                        key={idx}
+                        className="text-[10px] text-slate-600 flex items-center justify-between gap-2 border-t border-slate-200/70 pt-1"
+                      >
+                        <span className="truncate">{rev.reason}</span>
+                        <span className="font-mono font-bold text-slate-800 whitespace-nowrap shrink-0">
+                          Rp {rev.prevTotal.toLocaleString('id-ID')} → Rp {rev.newTotal.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {editError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-4 sm:px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 flex-wrap shrink-0">
+              <button
+                type="button"
+                onClick={() => setEditingTicket(null)}
+                className="min-h-[38px] px-3.5 py-2 border border-slate-200 bg-white rounded-xl text-slate-600 hover:bg-slate-100 font-semibold text-xs cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveRevision(false)}
+                className="min-h-[38px] px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer active:scale-95"
+              >
+                Simpan Perubahan
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveRevision(true)}
+                className="min-h-[38px] px-4 py-2 bg-teal-700 hover:bg-teal-600 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Printer className="w-3.5 h-3.5 text-amber-300" />
+                <span>Simpan &amp; Cetak Nota Revisi</span>
               </button>
             </div>
           </div>
