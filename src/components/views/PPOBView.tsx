@@ -32,11 +32,13 @@ import {
   ShoppingCart,
   History,
   ClipboardPaste,
+  RotateCcw,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { PPOBCategory, PPOBPackage, PPOBTransaction } from '../../types/pos';
 import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
 import { QuickReceiptImportModal } from '../QuickReceiptImportModal';
+import { AutoCaptureBanner } from '../AutoCaptureBanner';
 import { ParsedPPOBItem } from '../../utils/receiptTextParser';
 import {
   buildCustomerDirectory,
@@ -96,19 +98,32 @@ export const PPOBView: React.FC = () => {
     printOrders,
     recordPPOBTransaction,
     updatePPOBTransaction,
-    deletePPOBTransaction,
     openReceipt,
     addPPOBToCart,
     setIsMasterCartModalOpen,
     cartTotalCount,
+    autoCaptureSettings,
+    recordRushLogEntry,
+    revertPPOBTransaction,
   } = usePOS();
 
   const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
 
-  const [category, setCategory] = useState<PPOBCategory>('pulsa');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState('Telkomsel');
+  const savedPpobDraft = (() => {
+    try {
+      const raw = sessionStorage.getItem('jufat_ppob_draft');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [category, setCategory] = useState<PPOBCategory>(savedPpobDraft?.category || 'pulsa');
+  const [phoneNumber, setPhoneNumber] = useState<string>(savedPpobDraft?.phoneNumber || '');
+  const [customerName, setCustomerName] = useState<string>(savedPpobDraft?.customerName || '');
+  const [selectedProvider, setSelectedProvider] = useState<string>(
+    savedPpobDraft?.selectedProvider || 'Telkomsel'
+  );
 
   // Game specific state
   const [selectedGame, setSelectedGame] = useState<string>('Mobile Legends');
@@ -154,6 +169,18 @@ export const PPOBView: React.FC = () => {
 
   // Past customer lookup (PPOB, E-Wallet/ATM Mini, Agen & kontak toko)
   const lastAutoFilledNameRef = useRef<string>('');
+
+  // Auto-save PPOB draft so switching tabs when busy preserves entered number & customer
+  React.useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        'jufat_ppob_draft',
+        JSON.stringify({ category, phoneNumber, customerName, selectedProvider })
+      );
+    } catch {
+      // ignore
+    }
+  }, [category, phoneNumber, customerName, selectedProvider]);
 
   const customerDirectory = useMemo(
     () =>
@@ -541,6 +568,58 @@ export const PPOBView: React.FC = () => {
 
     setErrorMessage('');
     setCheckoutError('');
+
+    // Mode Kilat (1-Klik Langsung Catat Tunai tanpa pop-up konfirmasi & struk)
+    if (autoCaptureSettings.rushModePpob) {
+      const providerLabel =
+        category === 'pln'
+          ? 'PLN Prepaid'
+          : category === 'pln_bulanan'
+          ? 'PLN Pascabayar'
+          : pkg.provider;
+
+      const defaultCustomerName =
+        category === 'game'
+          ? 'Player Game'
+          : category === 'pln_bulanan'
+          ? 'Pelanggan Listrik'
+          : category === 'wifi'
+          ? 'Pelanggan Wifi'
+          : 'Pelanggan PPOB';
+
+      const tx = recordPPOBTransaction(
+        category,
+        providerLabel,
+        target,
+        pkg.name,
+        pkg.hpp,
+        pkg.price,
+        customerName.trim() || defaultCustomerName,
+        'tunai',
+        target,
+        undefined,
+        undefined,
+        undefined,
+        { suppressReceiptModal: true }
+      );
+
+      recordRushLogEntry({
+        txId: tx.id,
+        domain: 'ppob',
+        source: 'rush_tap',
+        sourceApp: providerLabel,
+        summary: `${pkg.name} (${target})`,
+        customerName: tx.customerName,
+        targetNumber: target,
+        amount: pkg.price,
+      });
+
+      setLastTxForReceipt(tx);
+      setSuccessMessage(`Mode Kilat: ${pkg.name} (${target}) langsung dicatat Tunai ke Kas!`);
+      setTimeout(() => setSuccessMessage(''), 4500);
+      return;
+    }
+
     setSelectedPackageForCheckout(pkg);
     setPpobDiscount(0);
     setPpobCashReceived(pkg.price);
@@ -938,6 +1017,9 @@ export const PPOBView: React.FC = () => {
               : 'border-b border-slate-200 bg-slate-50'
           }`}
         >
+          {/* Automation & Mode Kilat Controls + Pending/Recorded Strip */}
+          <AutoCaptureBanner domain="ppob" />
+
           {/* Quick Multi-App Receipt Import Banner Bar */}
           <div className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-2xs flex-wrap">
             <div className="min-w-0">
@@ -948,14 +1030,33 @@ export const PPOBView: React.FC = () => {
                 Catat langsung dari OrderKuota, Mitra Bukalapak, Digipos, Payfazz, BRImo &amp; DANA
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsQuickImportOpen(true)}
-              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
-            >
-              <ClipboardPaste className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>Tempel Struk Multi-App</span>
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {ppobTransactions[0] && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const last = ppobTransactions[0];
+                    setCategory(last.category);
+                    handlePhoneChange(last.targetNumber);
+                    setCustomerName(last.customerName);
+                    if (last.provider) setSelectedProvider(last.provider);
+                  }}
+                  className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold rounded-lg flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
+                  title="Isi ulang nomor/ID pelanggan terakhir"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Ulangi Terakhir</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsQuickImportOpen(true)}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Tempel Struk Multi-App</span>
+              </button>
+            </div>
           </div>
 
           {/* Category Tabs: wrap cleanly on desktop, horizontal swipe on mobile */}
@@ -1945,13 +2046,24 @@ export const PPOBView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleInitiatePurchase(pkg)}
-                              className={`min-h-[38px] px-3.5 py-1.5 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap ${
-                                isGame
-                                  ? 'bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
-                                  : 'bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
+                              className={`min-h-[38px] px-3.5 py-1.5 text-xs font-bold rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap ${
+                                autoCaptureSettings.rushModePpob
+                                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold'
+                                  : isGame
+                                  ? 'text-white bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500'
+                                  : 'text-white bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500'
                               }`}
                             >
-                              <span>{isGame ? 'Top Up' : isBill ? 'Bayar' : 'Beli'}</span>
+                              {autoCaptureSettings.rushModePpob && <Zap className="w-3.5 h-3.5 shrink-0" />}
+                              <span>
+                                {autoCaptureSettings.rushModePpob
+                                  ? 'Catat Kilat'
+                                  : isGame
+                                  ? 'Top Up'
+                                  : isBill
+                                  ? 'Bayar'
+                                  : 'Beli'}
+                              </span>
                             </button>
                           </div>
                         </div>
@@ -2410,9 +2522,9 @@ export const PPOBView: React.FC = () => {
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Hapus Riwayat Transaksi?</h3>
+                <h3 className="text-sm font-bold text-slate-900">Batalkan &amp; Hapus Transaksi?</h3>
                 <p className="text-xs text-slate-500">
-                  Data transaksi ini akan dihapus dari riwayat PPOB
+                  Riwayat PPOB beserta mutasi kas, saldo digital, dan kasbon terkait akan dikembalikan.
                 </p>
               </div>
             </div>
@@ -2437,12 +2549,12 @@ export const PPOBView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  deletePPOBTransaction(txToDelete.id);
+                  revertPPOBTransaction(txToDelete.id);
                   setTxToDelete(null);
                 }}
                 className="px-4 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition cursor-pointer"
               >
-                Ya, Hapus Transaksi
+                Ya, Batalkan &amp; Hapus
               </button>
             </div>
           </div>

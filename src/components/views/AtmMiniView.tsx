@@ -31,11 +31,14 @@ import {
   Percent,
   ShoppingCart,
   ClipboardPaste,
+  Trash2,
+  Zap,
 } from 'lucide-react';
 import { usePOS } from '../../context/POSContext';
 import { AtmMiniType, AtmMiniTransaction } from '../../types/pos';
 import { CustomerNameLookupInput } from '../CustomerNameLookupInput';
 import { QuickReceiptImportModal } from '../QuickReceiptImportModal';
+import { AutoCaptureBanner } from '../AutoCaptureBanner';
 import { ParsedAtmMiniItem } from '../../utils/receiptTextParser';
 import {
   buildCustomerDirectory,
@@ -140,9 +143,21 @@ export const AtmMiniView: React.FC = () => {
     addAtmMiniToCart,
     setIsMasterCartModalOpen,
     cartTotalCount,
+    autoCaptureSettings,
+    recordRushLogEntry,
+    revertAtmMiniTransaction,
   } = usePOS();
 
   const isOwner = shift.cashierSlot === 'owner' || shift.role === 'owner';
+
+  const savedAtmDraft = (() => {
+    try {
+      const raw = sessionStorage.getItem('jufat_atm_draft');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
 
   // 2 Primary Tabs: 'tarik_tunai' | 'transfer_topup'
   const [primaryTab, setPrimaryTab] = useState<'tarik_tunai' | 'transfer_topup'>('tarik_tunai');
@@ -153,15 +168,17 @@ export const AtmMiniView: React.FC = () => {
   const [bankName, setBankName] = useState('BRI');
   const [cardType, setCardType] = useState<AtmMiniTransaction['cardType']>('GPN');
   const [cardNumberLast4, setCardNumberLast4] = useState('7192');
-  const [customerName, setCustomerName] = useState('');
-  const [targetAccountOrPhone, setTargetAccountOrPhone] = useState('');
+  const [customerName, setCustomerName] = useState<string>(savedAtmDraft?.customerName || '');
+  const [targetAccountOrPhone, setTargetAccountOrPhone] = useState<string>(
+    savedAtmDraft?.targetAccountOrPhone || ''
+  );
   const [ewalletProvider, setEwalletProvider] = useState('DANA');
   const [mbankingApp, setMbankingApp] = useState(MBANKING_APPS[0]);
   const [mbankingType, setMbankingType] = useState(MBANKING_TYPES[0]);
   const [qrisProvider, setQrisProvider] = useState(QRIS_PROVIDERS[0]);
   const [qrisType, setQrisType] = useState(QRIS_TYPES[0]);
   const [qrisRrn, setQrisRrn] = useState('RRN-882901');
-  const [nominalInput, setNominalInput] = useState<string>('500.000');
+  const [nominalInput, setNominalInput] = useState<string>(savedAtmDraft?.nominalInput || '500.000');
   const [adminEdcFeeInput, setAdminEdcFeeInput] = useState<string>('3.000');
   const [counterFeeInput, setCounterFeeInput] = useState<string>('5.000');
   const nominal = parseExactRupiah(nominalInput);
@@ -203,6 +220,7 @@ export const AtmMiniView: React.FC = () => {
   const setCashReceivedInput = (val: number) =>
     setCashReceivedInputText(val > 0 ? Math.trunc(val).toLocaleString('id-ID') : '');
   const [selectedTxDetail, setSelectedTxDetail] = useState<any | null>(null);
+  const [txToRevert, setTxToRevert] = useState<AtmMiniTransaction | null>(null);
   const [atmMiniPaymentMethod, setAtmMiniPaymentMethod] = useState<'tunai' | 'qris' | 'hutang'>('tunai');
   const [atmMiniCustomerPhone, setAtmMiniCustomerPhone] = useState('');
   const [atmMiniDebtorName, setAtmMiniDebtorName] = useState('');
@@ -236,6 +254,18 @@ export const AtmMiniView: React.FC = () => {
 
   // Direct customer lookup from past ATM Mini, Agen, PPOB & contacts
   const lastAutoFilledNameRef = useRef<string>('');
+
+  // Auto-save form draft so switching tabs during busy hours never loses entered customer info
+  React.useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        'jufat_atm_draft',
+        JSON.stringify({ customerName, targetAccountOrPhone, nominalInput })
+      );
+    } catch {
+      // ignore
+    }
+  }, [customerName, targetAccountOrPhone, nominalInput]);
 
   const customerDirectory = useMemo(
     () =>
@@ -494,6 +524,113 @@ export const AtmMiniView: React.FC = () => {
     }
 
     setErrorMessage('');
+
+    // Mode Kilat (1-Klik Langsung Catat tanpa pop-up konfirmasi & struk)
+    if (autoCaptureSettings.rushModeAtmMini) {
+      let providerName = bankName;
+      let actualCardType: AtmMiniTransaction['cardType'] = cardType;
+      let maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
+      let destination: string | undefined = undefined;
+
+      if (primaryTab === 'tarik_tunai') {
+        if (tarikChannel === 'kartu_debit') {
+          providerName = bankName;
+          actualCardType = cardType;
+          maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
+          destination = `Kartu Debit ATM (${bankName} - ${cardType})`;
+        } else if (tarikChannel === 'ewallet') {
+          providerName = ewalletProvider;
+          actualCardType = 'E-Wallet';
+          maskedIdentifier = `EW-${ewalletProvider.toUpperCase()} · ${targetAccountOrPhone}`;
+          destination = `Tarik Tunai E-Wallet ${ewalletProvider} (${targetAccountOrPhone})`;
+        } else if (tarikChannel === 'mbanking') {
+          providerName = mbankingApp;
+          actualCardType = 'M-Banking';
+          maskedIdentifier = `APP ${mbankingApp.split(' ')[0]} · ${targetAccountOrPhone || 'Cardless'}`;
+          destination = `Tarik Tunai M-Banking ${mbankingApp} (${targetAccountOrPhone})`;
+        } else {
+          providerName = qrisProvider.split(' ')[0] + ' ' + (qrisProvider.split(' ')[1] || '');
+          actualCardType = 'QRIS';
+          maskedIdentifier = qrisRrn || `RRN-${Math.floor(100000 + Math.random() * 900000)}`;
+          destination = `Tarik Tunai QRIS · ${qrisProvider}`;
+        }
+      } else {
+        if (transferChannel === 'kartu_debit') {
+          providerName = bankName;
+          actualCardType = cardType;
+          maskedIdentifier = `5221 **** **** ${cardNumberLast4.trim() || '8888'}`;
+          destination = targetAccountOrPhone;
+        } else if (transferChannel === 'ewallet') {
+          providerName = ewalletProvider;
+          actualCardType = 'E-Wallet';
+          maskedIdentifier = `EW-${ewalletProvider.toUpperCase()} · ${targetAccountOrPhone}`;
+          destination = `${targetAccountOrPhone} (${ewalletProvider})`;
+        } else if (transferChannel === 'mbanking') {
+          providerName = mbankingApp;
+          actualCardType = 'M-Banking';
+          maskedIdentifier = `APP ${mbankingApp.split(' ')[0]} · Cardless`;
+          destination = targetAccountOrPhone
+            ? `${targetAccountOrPhone} [${mbankingType.split(' ')[0]}]`
+            : mbankingType;
+        } else {
+          providerName = qrisProvider.split(' ')[0] + ' ' + (qrisProvider.split(' ')[1] || '');
+          actualCardType = 'QRIS';
+          maskedIdentifier = qrisRrn || `RRN-${Math.floor(100000 + Math.random() * 900000)}`;
+          destination = `QRIS · ${qrisType}`;
+        }
+      }
+
+      const resolvedDisplayName =
+        customerName.trim() ||
+        (activeMode === 'qris_atm'
+          ? 'Pelanggan QRIS'
+          : activeMode === 'mbanking_atm'
+          ? 'Nasabah M-Banking'
+          : isCurrentChannelCard
+          ? 'Nasabah EDC'
+          : 'Nasabah');
+
+      const tx = recordAtmMiniTransaction(
+        activeMode,
+        providerName,
+        actualCardType,
+        maskedIdentifier,
+        resolvedDisplayName,
+        nominal,
+        adminEdcFee,
+        effectiveCounterFee,
+        destination,
+        note,
+        'tunai',
+        targetAccountOrPhone,
+        undefined,
+        adminDeductionType,
+        counterFeeDiscount > 0 ? counterFeeDiscount : undefined,
+        isTunaiKonter ? totalAdmin : totalDebited,
+        { suppressReceiptModal: true }
+      );
+
+      recordRushLogEntry({
+        txId: tx.id,
+        domain: 'atm_mini',
+        source: 'rush_tap',
+        sourceApp: providerName,
+        summary: `${primaryTab === 'tarik_tunai' ? 'Tarik Tunai' : 'Transfer/TopUp'} ${providerName} Rp ${nominal.toLocaleString('id-ID')}`,
+        customerName: tx.customerName,
+        targetNumber: targetAccountOrPhone || undefined,
+        amount: nominal,
+      });
+
+      setToastMessage(
+        `Mode Kilat: ${providerName} Rp ${nominal.toLocaleString('id-ID')} langsung dicatat ke Kas & Riwayat!`
+      );
+      setTimeout(() => setToastMessage(''), 4500);
+      setTargetAccountOrPhone('');
+      setNote('');
+      setCounterFeeDiscount(0);
+      return;
+    }
+
     // Default payment method & cash received in modal
     setAtmMiniPaymentMethod('tunai');
     setCashReceivedInput(isTunaiKonter ? totalAdmin : totalDebited);
@@ -1064,6 +1201,9 @@ export const AtmMiniView: React.FC = () => {
               <Building2 className="w-3.5 h-3.5 text-sky-600 shrink-0 hidden sm:block" />
             </div>
           </div>
+
+          {/* Automation & Mode Kilat Controls + Pending/Recorded Strip */}
+          <AutoCaptureBanner domain="atm_mini" />
 
           {/* One-Paste Multi-App Quick Import Trigger */}
           <button
@@ -1771,8 +1911,26 @@ export const AtmMiniView: React.FC = () => {
 
             {/* Quick Presets & Dynamic Additives */}
             <div className="space-y-2 pt-0.5">
-              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 font-medium">
                 <span>Pilih Cepat (Nominal Langsung):</span>
+                {atmMiniTransactions[0] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const last = atmMiniTransactions[0];
+                      setNominal(last.nominal);
+                      setAdminEdcFee(last.adminEdcFee);
+                      setCounterFee(last.counterFee);
+                      if (last.customerName) setCustomerName(last.customerName);
+                      if (last.targetAccountOrPhone) setTargetAccountOrPhone(last.targetAccountOrPhone);
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-bold text-[10.5px] transition cursor-pointer whitespace-nowrap"
+                    title="Isi ulang data transaksi terakhir"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Ulangi Terakhir (Rp {atmMiniTransactions[0].nominal.toLocaleString('id-ID')})</span>
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {[50000, 100000, 200000, 500000, 1000000, 1500000, 2000000, 5000000].map(
@@ -2118,9 +2276,15 @@ export const AtmMiniView: React.FC = () => {
           {/* Action / Submit Button */}
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold rounded-xl shadow-md shadow-teal-900/20 transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+            className={`w-full py-3 font-extrabold rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] ${
+              autoCaptureSettings.rushModeAtmMini
+                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-amber-900/15'
+                : 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-teal-900/20'
+            }`}
           >
-            {(primaryTab === 'transfer_topup' && transferChannel === 'qris') || (primaryTab === 'tarik_tunai' && tarikChannel === 'qris') ? (
+            {autoCaptureSettings.rushModeAtmMini ? (
+              <Zap className="w-4 h-4 text-slate-950" />
+            ) : (primaryTab === 'transfer_topup' && transferChannel === 'qris') || (primaryTab === 'tarik_tunai' && tarikChannel === 'qris') ? (
               <QrCode className="w-4 h-4 text-amber-300" />
             ) : (primaryTab === 'tarik_tunai' && tarikChannel === 'ewallet') ||
               (primaryTab === 'transfer_topup' && transferChannel === 'ewallet') ? (
@@ -2132,7 +2296,9 @@ export const AtmMiniView: React.FC = () => {
               <CreditCard className="w-4 h-4 text-amber-300" />
             )}
             <span>
-              {primaryTab === 'tarik_tunai'
+              {autoCaptureSettings.rushModeAtmMini
+                ? `Catat Kilat 1-Klik · Rp ${nominal.toLocaleString('id-ID')} (Langsung Tunai)`
+                : primaryTab === 'tarik_tunai'
                 ? tarikChannel === 'kartu_debit'
                   ? 'Gesek Kartu & Proses Tarik Tunai'
                   : tarikChannel === 'ewallet'
@@ -2376,6 +2542,14 @@ export const AtmMiniView: React.FC = () => {
                           >
                             <Printer className="w-3.5 h-3.5 text-slate-600" />
                             <span>Struk</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTxToRevert(tx)}
+                            className="min-h-[34px] px-2 py-1.5 text-xs font-bold text-slate-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="Batalkan / Hapus Transaksi & Kembalikan Saldo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -3208,6 +3382,52 @@ export const AtmMiniView: React.FC = () => {
         </div>
       );
     })()}
+
+      {txToRevert && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"
+          onClick={() => setTxToRevert(null)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <h4 className="text-sm font-extrabold text-slate-900">
+                Batalkan Transaksi ATM Mini?
+              </h4>
+              <p className="text-xs text-slate-600">
+                Transaksi <strong>{txToRevert.bankName}</strong> sebesar{' '}
+                <strong className="font-mono text-slate-900">
+                  Rp {txToRevert.nominal.toLocaleString('id-ID')}
+                </strong>{' '}
+                ({txToRevert.customerName}) akan dihapus beserta mutasi kas laci &amp; saldo digitalnya.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTxToRevert(null)}
+                className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  revertAtmMiniTransaction(txToRevert.id);
+                  setTxToRevert(null);
+                  setToastMessage('Transaksi dibatalkan dan saldo kas/digital dikembalikan.');
+                  setTimeout(() => setToastMessage(''), 4000);
+                }}
+                className="px-3.5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl cursor-pointer"
+              >
+                Ya, Batalkan &amp; Kembalikan Saldo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <QuickReceiptImportModal
         isOpen={isQuickImportOpen}

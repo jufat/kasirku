@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
   Product,
   CartItem,
@@ -58,6 +58,17 @@ import {
   calculateTieredPricing,
   serializePriceTiersText,
 } from '../utils/tieredPricing';
+import {
+  AutoCaptureSettings,
+  DEFAULT_AUTO_CAPTURE_SETTINGS,
+  PendingAutoCaptureItem,
+  AutoRecordedLogItem,
+  normalizeWebhookStoreKey,
+  computeReceiptFingerprint,
+  looksLikeTransactionReceipt,
+  parseIncomingCaptureToPending,
+} from '../utils/autoCaptureEngine';
+import { ParsedAtmMiniItem, ParsedPPOBItem } from '../utils/receiptTextParser';
 
 interface POSContextType {
   // Navigation & Role
@@ -207,6 +218,8 @@ interface POSContextType {
   ) => PPOBTransaction;
   updatePPOBTransaction: (tx: PPOBTransaction) => void;
   deletePPOBTransaction: (id: string) => void;
+  revertAtmMiniTransaction: (id: string) => boolean;
+  revertPPOBTransaction: (id: string) => boolean;
 
   // Service HP
   services: ServiceTicket[];
@@ -403,6 +416,41 @@ interface POSContextType {
   pullDataFromCloud: (targetCode: string) => Promise<{ success: boolean; message: string; data?: any }>;
   disconnectSync: () => void;
   toggleAutoSync: (enabled: boolean) => void;
+
+  // Auto-Capture & Mode Kilat (Anti-Terlewat PPOB & ATM Mini)
+  autoCaptureSettings: AutoCaptureSettings;
+  updateAutoCaptureSettings: (patch: Partial<AutoCaptureSettings>) => void;
+  pendingAutoCaptures: PendingAutoCaptureItem[];
+  autoRecordedLogs: AutoRecordedLogItem[];
+  latestAutoCaptureToast: AutoRecordedLogItem | null;
+  dismissLatestAutoCaptureToast: () => void;
+  isAutoCaptureModalOpen: boolean;
+  setIsAutoCaptureModalOpen: (open: boolean) => void;
+  clipboardStatus: 'idle' | 'ready' | 'denied' | 'unsupported';
+  checkClipboardNow: (preferredDomain?: 'atm_mini' | 'ppob') => Promise<{
+    status: 'recorded' | 'queued' | 'duplicate' | 'ignored' | 'empty' | 'denied';
+    message: string;
+  }>;
+  processIncomingCaptureText: (
+    rawText: string,
+    source: 'clipboard' | 'paste' | 'webhook',
+    options?: {
+      preferredDomain?: 'atm_mini' | 'ppob';
+      serverId?: string;
+      receivedAt?: string;
+      forceQueueOnly?: boolean;
+    }
+  ) => {
+    status: 'recorded' | 'queued' | 'duplicate' | 'ignored';
+    message: string;
+    recordedCount?: number;
+  };
+  commitPendingAutoCapture: (pendingId: string, openReceiptOnSingle?: boolean) => number;
+  dismissPendingAutoCapture: (pendingId: string) => void;
+  undoAutoRecordedLog: (logId: string) => boolean;
+  clearAutoRecordedLogs: () => void;
+  recordRushLogEntry: (entry: Omit<AutoRecordedLogItem, 'id' | 'recordedAt'>) => AutoRecordedLogItem;
+  testWebhookAutoCapture: (sampleType: 'atm_mini' | 'ppob') => Promise<{ success: boolean; message: string }>;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -2000,7 +2048,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timestamp: nowTime,
         type: 'masuk',
         category: 'pulsa_ppob',
-        description: `Penjualan ${category.toUpperCase()} ${provider} ${packageName} (${targetNumber})`,
+        description: `Penjualan ${category.toUpperCase()} ${provider} ${packageName} [${refNo}] (${targetNumber})`,
         amount: sellingPrice,
         paymentMethod: 'tunai',
         runningCashBalance: baseDrawerCash + sellingPrice,
@@ -2014,7 +2062,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timestamp: nowTime,
         type: 'masuk',
         category: 'pulsa_ppob',
-        description: `Penjualan QRIS ${category.toUpperCase()} ${provider} ${packageName} (${targetNumber})`,
+        description: `Penjualan QRIS ${category.toUpperCase()} ${provider} ${packageName} [${refNo}] (${targetNumber})`,
         amount: sellingPrice,
         paymentMethod: 'non_tunai',
         runningCashBalance: baseDrawerCash,
@@ -2059,6 +2107,62 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deletePPOBTransaction = (id: string) => {
     setPpobTransactions((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const revertPPOBTransaction = (id: string): boolean => {
+    const target = ppobTransactions.find((t) => t.id === id);
+    if (!target) return false;
+
+    setPpobTransactions((prev) => prev.filter((t) => t.id !== id));
+    setDebts((prev) => prev.filter((d) => d.invoiceOrRef !== target.refNo));
+    setMutations((prev) =>
+      prev.filter((m) => {
+        if (m.category !== 'pulsa_ppob') return true;
+        if (m.description.includes(`[${target.refNo}]`)) return false;
+        // Fallback match for legacy PPOB records without [refNo]
+        if (
+          target.targetNumber &&
+          m.description.includes(`(${target.targetNumber})`) &&
+          m.amount === target.sellingPrice &&
+          m.description.includes(target.packageName)
+        ) {
+          return false;
+        }
+        return true;
+      })
+    );
+    return true;
+  };
+
+  const revertAtmMiniTransaction = (id: string): boolean => {
+    const target = atmMiniTransactions.find((t) => t.id === id);
+    if (!target) return false;
+
+    setAtmMiniTransactions((prev) => prev.filter((t) => t.id !== id));
+    setDebts((prev) => prev.filter((d) => d.invoiceOrRef !== `EDC-${target.traceNo}`));
+    setMutations((prev) =>
+      prev.filter((m) => !(m.category === 'jasa_transfer' && m.description.includes(`[${target.traceNo}]`)))
+    );
+
+    const totalAdmin = target.adminEdcFee + target.counterFee;
+    const isTunaiKonter =
+      target.type === 'tarik_tunai_atm' && target.adminDeductionType === 'tunai_konter';
+
+    if (target.type === 'tarik_tunai_atm') {
+      const revertDigital =
+        target.totalDebited + (isTunaiKonter && target.paymentMethod === 'qris' ? totalAdmin : 0);
+      setDigitalBalance((prev) => Math.max(0, prev - revertDigital));
+    } else if (
+      target.paymentMethod === 'tunai' ||
+      (target.isPartialPayment && (target.paidAmount || 0) > 0)
+    ) {
+      const digitalOut = target.nominal + target.adminEdcFee;
+      setDigitalBalance((prev) => prev + digitalOut);
+    } else if (target.paymentMethod === 'qris') {
+      setDigitalBalance((prev) => Math.max(0, prev - target.counterFee));
+    }
+
+    return true;
   };
 
   // Service HP Management
@@ -3789,6 +3893,581 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, [isAutoSyncEnabled, syncCode, products, transactions, mutations, debts, services]);
 
+  // =========================================================================
+  // AUTO-CAPTURE & MODE KILAT ENGINE (Anti-Terlewat PPOB & ATM Mini)
+  // =========================================================================
+  const [autoCaptureSettings, setAutoCaptureSettings] = useState<AutoCaptureSettings>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_auto_capture_settings');
+      if (saved) {
+        return { ...DEFAULT_AUTO_CAPTURE_SETTINGS, ...JSON.parse(saved) };
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_AUTO_CAPTURE_SETTINGS;
+  });
+
+  const [pendingAutoCaptures, setPendingAutoCaptures] = useState<PendingAutoCaptureItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_pending_auto_captures');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [autoRecordedLogs, setAutoRecordedLogs] = useState<AutoRecordedLogItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('jufat_auto_recorded_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [latestAutoCaptureToast, setLatestAutoCaptureToast] = useState<AutoRecordedLogItem | null>(null);
+  const [isAutoCaptureModalOpen, setIsAutoCaptureModalOpen] = useState(false);
+  const [clipboardStatus, setClipboardStatus] = useState<'idle' | 'ready' | 'denied' | 'unsupported'>('idle');
+
+  const processedFingerprintsRef = useRef<Set<string>>((() => {
+    try {
+      const saved = localStorage.getItem('jufat_processed_capture_hashes');
+      const arr = saved ? (JSON.parse(saved) as string[]) : [];
+      return new Set(arr);
+    } catch {
+      return new Set<string>();
+    }
+  })());
+
+  const persistFingerprints = useCallback((fp: string) => {
+    processedFingerprintsRef.current.add(fp);
+    const list = Array.from(processedFingerprintsRef.current).slice(-300);
+    processedFingerprintsRef.current = new Set(list);
+    try {
+      localStorage.setItem('jufat_processed_capture_hashes', JSON.stringify(list));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_auto_capture_settings', JSON.stringify(autoCaptureSettings));
+    } catch {
+      // ignore
+    }
+  }, [autoCaptureSettings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_pending_auto_captures', JSON.stringify(pendingAutoCaptures.slice(0, 50)));
+    } catch {
+      // ignore
+    }
+  }, [pendingAutoCaptures]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jufat_auto_recorded_logs', JSON.stringify(autoRecordedLogs.slice(0, 60)));
+    } catch {
+      // ignore
+    }
+  }, [autoRecordedLogs]);
+
+  const updateAutoCaptureSettings = (patch: Partial<AutoCaptureSettings>) => {
+    setAutoCaptureSettings((prev) => ({ ...prev, ...patch }));
+  };
+
+  const dismissLatestAutoCaptureToast = () => setLatestAutoCaptureToast(null);
+
+  const recordRushLogEntry = (
+    entry: Omit<AutoRecordedLogItem, 'id' | 'recordedAt'>
+  ): AutoRecordedLogItem => {
+    const fullEntry: AutoRecordedLogItem = {
+      ...entry,
+      id: `alog-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      recordedAt: new Date().toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+    };
+    setAutoRecordedLogs((prev) => [fullEntry, ...prev].slice(0, 60));
+    setLatestAutoCaptureToast(fullEntry);
+    return fullEntry;
+  };
+
+  const commitParsedAtmItems = (
+    items: ParsedAtmMiniItem[],
+    source: 'clipboard' | 'paste' | 'webhook',
+    openReceiptOnSingle: boolean = false
+  ): AutoRecordedLogItem[] => {
+    let runningCashOffset = 0;
+    const logs: AutoRecordedLogItem[] = [];
+    const nowLabel = new Date().toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    items.forEach((item, idx) => {
+      if (item.nominal <= 0) return;
+      const totalAdmin = item.adminEdcFee + item.counterFee;
+      const isPotong =
+        item.atmType === 'tarik_tunai_atm' && item.adminDeductionType === 'potong_tunai';
+      const isTunaiKonter =
+        item.atmType === 'tarik_tunai_atm' && item.adminDeductionType === 'tunai_konter';
+      const totalDebited = isPotong || isTunaiKonter ? item.nominal : item.nominal + totalAdmin;
+
+      const maskedId =
+        item.channel === 'ewallet'
+          ? `EW-${item.bankName.toUpperCase()} · ${item.targetAccountOrPhone || '-'}`
+          : item.channel === 'mbanking'
+          ? `APP ${item.bankName.split(' ')[0]} · ${item.referenceNo || 'Cardless'}`
+          : item.channel === 'qris'
+          ? item.referenceNo || `RRN-${Math.floor(100000 + Math.random() * 900000)}`
+          : `AUTO-${item.referenceNo || '8888'}`;
+
+      const destination = item.targetAccountOrPhone
+        ? `${item.targetAccountOrPhone} (${item.bankName})`
+        : item.bankName;
+
+      const shouldOpenReceipt = openReceiptOnSingle && items.length === 1 && idx === 0;
+
+      const recordedTx = recordAtmMiniTransaction(
+        item.atmType,
+        item.bankName,
+        item.cardType,
+        maskedId,
+        item.customerName || (item.sourceApp ? `Nasabah ${item.sourceApp}` : 'Nasabah'),
+        item.nominal,
+        item.adminEdcFee,
+        item.counterFee,
+        destination,
+        item.note,
+        item.paymentMethod,
+        item.targetAccountOrPhone,
+        undefined,
+        item.adminDeductionType,
+        undefined,
+        isTunaiKonter ? totalAdmin : totalDebited,
+        {
+          suppressReceiptModal: !shouldOpenReceipt,
+          cashBalanceOffset: runningCashOffset,
+        }
+      );
+
+      if (item.atmType === 'tarik_tunai_atm') {
+        const cashOut = isPotong ? Math.max(0, item.nominal - totalAdmin) : item.nominal;
+        if (isTunaiKonter && item.paymentMethod === 'tunai') {
+          runningCashOffset += totalAdmin - cashOut;
+        } else {
+          runningCashOffset -= cashOut;
+        }
+      } else if (item.paymentMethod === 'tunai') {
+        runningCashOffset += totalDebited;
+      }
+
+      const typeLabel =
+        item.atmType === 'tarik_tunai_atm'
+          ? 'Tarik Tunai'
+          : item.atmType === 'topup_ewallet_atm'
+          ? 'Top Up'
+          : item.atmType === 'qris_atm'
+          ? 'QRIS'
+          : 'Transfer';
+
+      logs.push({
+        id: `alog-${Date.now()}-${idx}-${Math.floor(100 + Math.random() * 900)}`,
+        txId: recordedTx.id,
+        domain: 'atm_mini',
+        source,
+        sourceApp: item.sourceApp,
+        summary: `${typeLabel} ${item.bankName} Rp ${item.nominal.toLocaleString('id-ID')}`,
+        customerName: recordedTx.customerName,
+        targetNumber: item.targetAccountOrPhone || undefined,
+        amount: item.nominal,
+        recordedAt: nowLabel,
+      });
+    });
+
+    if (logs.length > 0) {
+      setAutoRecordedLogs((prev) => [...logs, ...prev].slice(0, 60));
+      setLatestAutoCaptureToast(logs[0]);
+    }
+    return logs;
+  };
+
+  const commitParsedPpobItems = (
+    items: ParsedPPOBItem[],
+    source: 'clipboard' | 'paste' | 'webhook',
+    openReceiptOnSingle: boolean = false
+  ): AutoRecordedLogItem[] => {
+    let runningCashOffset = 0;
+    const logs: AutoRecordedLogItem[] = [];
+    const nowLabel = new Date().toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    items.forEach((item, idx) => {
+      if (item.sellingPrice <= 0) return;
+      const shouldOpenReceipt = openReceiptOnSingle && items.length === 1 && idx === 0;
+      const recordedTx = recordPPOBTransaction(
+        item.category,
+        item.provider,
+        item.targetNumber || '-',
+        item.packageName,
+        item.hpp,
+        item.sellingPrice,
+        item.customerName || 'Pelanggan PPOB',
+        item.paymentMethod,
+        item.targetNumber || undefined,
+        undefined,
+        item.note,
+        undefined,
+        {
+          suppressReceiptModal: !shouldOpenReceipt,
+          cashBalanceOffset: runningCashOffset,
+        }
+      );
+
+      if (item.paymentMethod === 'tunai') {
+        runningCashOffset += item.sellingPrice;
+      }
+
+      logs.push({
+        id: `alog-${Date.now()}-${idx}-${Math.floor(100 + Math.random() * 900)}`,
+        txId: recordedTx.id,
+        domain: 'ppob',
+        source,
+        sourceApp: item.sourceApp,
+        summary: `${item.packageName} (${item.targetNumber || '-'})`,
+        customerName: recordedTx.customerName,
+        targetNumber: item.targetNumber || undefined,
+        amount: item.sellingPrice,
+        recordedAt: nowLabel,
+      });
+    });
+
+    if (logs.length > 0) {
+      setAutoRecordedLogs((prev) => [...logs, ...prev].slice(0, 60));
+      setLatestAutoCaptureToast(logs[0]);
+    }
+    return logs;
+  };
+
+  const ackServerPendingIds = (ids: string[], action: 'recorded' | 'dismissed') => {
+    if (ids.length === 0) return;
+    const storeKey = normalizeWebhookStoreKey(autoCaptureSettings.webhookStoreKey || syncCode);
+    fetch('/api/auto-capture/ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: storeKey, ids, action }),
+    }).catch(() => {});
+  };
+
+  const processIncomingCaptureText = (
+    rawText: string,
+    source: 'clipboard' | 'paste' | 'webhook',
+    options?: {
+      preferredDomain?: 'atm_mini' | 'ppob';
+      serverId?: string;
+      receivedAt?: string;
+      forceQueueOnly?: boolean;
+    }
+  ): {
+    status: 'recorded' | 'queued' | 'duplicate' | 'ignored';
+    message: string;
+    recordedCount?: number;
+  } => {
+    if (source !== 'webhook' && !looksLikeTransactionReceipt(rawText)) {
+      return {
+        status: 'ignored',
+        message: 'Teks bukan merupakan struk/notifikasi transaksi yang valid.',
+      };
+    }
+
+    const fp = computeReceiptFingerprint(rawText);
+    if (!fp) {
+      return { status: 'ignored', message: 'Teks kosong.' };
+    }
+
+    if (processedFingerprintsRef.current.has(fp)) {
+      if (options?.serverId) ackServerPendingIds([options.serverId], 'recorded');
+      return {
+        status: 'duplicate',
+        message: 'Struk ini sudah tercatat sebelumnya (anti-duplikat aktif).',
+      };
+    }
+
+    const activeDomainPref =
+      options?.preferredDomain ||
+      (activeTab === 'ppob' ? 'ppob' : activeTab === 'atm_mini' || activeTab === 'transfer' ? 'atm_mini' : undefined);
+
+    const parsedPending = parseIncomingCaptureToPending(rawText, source, {
+      preferredDomain: activeDomainPref,
+      serverId: options?.serverId,
+      receivedAt: options?.receivedAt,
+    });
+
+    if (!parsedPending) {
+      return { status: 'ignored', message: 'Struk tidak dapat dikenali.' };
+    }
+
+    persistFingerprints(fp);
+
+    const canAutoCommit =
+      !options?.forceQueueOnly && autoCaptureSettings.autoCommitMode === 'auto_save';
+
+    if (canAutoCommit && parsedPending.domain === 'atm_mini' && parsedPending.atmItems) {
+      const allHighConfidence =
+        parsedPending.atmItems.length > 0 &&
+        parsedPending.atmItems.every((it) => it.confidence === 'tinggi' && it.nominal > 0);
+      if (allHighConfidence) {
+        const logs = commitParsedAtmItems(parsedPending.atmItems, source, false);
+        if (options?.serverId) ackServerPendingIds([options.serverId], 'recorded');
+        return {
+          status: 'recorded',
+          recordedCount: logs.length,
+          message: `${logs.length} transaksi ATM Mini (${parsedPending.sourceApp}) tercatat otomatis ke Kas & Riwayat!`,
+        };
+      }
+    }
+
+    if (canAutoCommit && parsedPending.domain === 'ppob' && parsedPending.ppobItems) {
+      const allHighConfidence =
+        parsedPending.ppobItems.length > 0 &&
+        parsedPending.ppobItems.every(
+          (it) => it.confidence === 'tinggi' && it.sellingPrice > 0 && it.targetNumber.trim().length > 0
+        );
+      if (allHighConfidence) {
+        const logs = commitParsedPpobItems(parsedPending.ppobItems, source, false);
+        if (options?.serverId) ackServerPendingIds([options.serverId], 'recorded');
+        return {
+          status: 'recorded',
+          recordedCount: logs.length,
+          message: `${logs.length} transaksi PPOB (${parsedPending.sourceApp}) tercatat otomatis ke Kas & Riwayat!`,
+        };
+      }
+    }
+
+    setPendingAutoCaptures((prev) => {
+      if (prev.some((p) => p.fingerprint === fp)) return prev;
+      return [parsedPending, ...prev].slice(0, 30);
+    });
+
+    return {
+      status: 'queued',
+      message: `Struk dari ${parsedPending.sourceApp} masuk ke Antrean Otomatis untuk 1-tap konfirmasi.`,
+    };
+  };
+
+  const commitPendingAutoCapture = (
+    pendingId: string,
+    openReceiptOnSingle: boolean = false
+  ): number => {
+    const target = pendingAutoCaptures.find((p) => p.id === pendingId);
+    if (!target) return 0;
+
+    let count = 0;
+    if (target.domain === 'atm_mini' && target.atmItems) {
+      count = commitParsedAtmItems(target.atmItems, target.source, openReceiptOnSingle).length;
+    } else if (target.domain === 'ppob' && target.ppobItems) {
+      count = commitParsedPpobItems(target.ppobItems, target.source, openReceiptOnSingle).length;
+    }
+
+    if (target.serverId) {
+      ackServerPendingIds([target.serverId], 'recorded');
+    }
+    setPendingAutoCaptures((prev) => prev.filter((p) => p.id !== pendingId));
+    return count;
+  };
+
+  const dismissPendingAutoCapture = (pendingId: string) => {
+    const target = pendingAutoCaptures.find((p) => p.id === pendingId);
+    if (target?.serverId) {
+      ackServerPendingIds([target.serverId], 'dismissed');
+    }
+    setPendingAutoCaptures((prev) => prev.filter((p) => p.id !== pendingId));
+  };
+
+  const undoAutoRecordedLog = (logId: string): boolean => {
+    const log = autoRecordedLogs.find((l) => l.id === logId);
+    if (!log || log.reverted) return false;
+
+    const ok =
+      log.domain === 'atm_mini'
+        ? revertAtmMiniTransaction(log.txId)
+        : revertPPOBTransaction(log.txId);
+
+    if (ok) {
+      setAutoRecordedLogs((prev) =>
+        prev.map((l) => (l.id === logId ? { ...l, reverted: true } : l))
+      );
+      setLatestAutoCaptureToast((prev) => (prev?.id === logId ? null : prev));
+    }
+    return ok;
+  };
+
+  const clearAutoRecordedLogs = () => {
+    setAutoRecordedLogs([]);
+    setLatestAutoCaptureToast(null);
+  };
+
+  const checkClipboardNow = async (preferredDomain?: 'atm_mini' | 'ppob') => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
+      setClipboardStatus('unsupported');
+      return {
+        status: 'denied' as const,
+        message: 'Browser tidak mendukung baca clipboard otomatis. Gunakan Ctrl+V langsung di layar POS.',
+      };
+    }
+
+    try {
+      const clipText = await navigator.clipboard.readText();
+      setClipboardStatus('ready');
+      if (!clipText || !clipText.trim()) {
+        return { status: 'empty' as const, message: 'Clipboard kosong.' };
+      }
+      return processIncomingCaptureText(clipText, 'clipboard', { preferredDomain });
+    } catch {
+      setClipboardStatus('denied');
+      return {
+        status: 'denied' as const,
+        message: 'Izin baca clipboard belum diizinkan browser. Cukup tekan Ctrl+V di mana saja pada menu PPOB/ATM.',
+      };
+    }
+  };
+
+  const testWebhookAutoCapture = async (sampleType: 'atm_mini' | 'ppob') => {
+    const storeKey = normalizeWebhookStoreKey(autoCaptureSettings.webhookStoreKey || syncCode);
+    const samplePayload =
+      sampleType === 'atm_mini'
+        ? {
+            code: storeKey,
+            app: 'BRImo',
+            title: 'Transfer Berhasil',
+            text: `Transfer ke BCA 8812093812 a.n. Rizky Pratama\nNominal: Rp 350.000\nBiaya Admin: Rp 2.500\nNo. Ref: BR${Date.now().toString().slice(-6)}`,
+            domain: 'atm_mini',
+          }
+        : {
+            code: storeKey,
+            app: 'OrderKuota',
+            title: 'TRX SUKSES',
+            text: `TRX SUKSES OrderKuota\nToken Listrik PLN 50.000\nID Pel: 54210987654 a.n. Bu Sari\nModal: Rp 50.250\nSN: 4819-2019-${Date.now().toString().slice(-4)}`,
+            domain: 'ppob',
+          };
+
+    try {
+      const res = await fetch('/api/auto-capture/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(samplePayload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        return { success: false, message: json.message || 'Gagal mengirim simulasi webhook.' };
+      }
+
+      const result = processIncomingCaptureText(
+        `${samplePayload.app}\n${samplePayload.title}\n${samplePayload.text}`,
+        'webhook',
+        { preferredDomain: sampleType, serverId: json.id }
+      );
+      return { success: true, message: result.message };
+    } catch {
+      return { success: false, message: 'Tidak dapat menghubungi endpoint webhook server.' };
+    }
+  };
+
+  const processCaptureRef = useRef(processIncomingCaptureText);
+  processCaptureRef.current = processIncomingCaptureText;
+
+  // Global Paste (Ctrl+V anywhere outside inputs) & Window Focus Clipboard Monitor
+  useEffect(() => {
+    if (!autoCaptureSettings.autoClipboardEnabled) return;
+
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      const tag = activeEl?.tagName?.toLowerCase();
+      const isEditingField =
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        Boolean(activeEl?.isContentEditable);
+      if (isEditingField) return;
+
+      const pasted = e.clipboardData?.getData('text') || '';
+      if (!pasted.trim()) return;
+      if (looksLikeTransactionReceipt(pasted)) {
+        e.preventDefault();
+        processCaptureRef.current(pasted, 'paste');
+      }
+    };
+
+    const handleWindowFocus = async () => {
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      if (!navigator.clipboard?.readText) return;
+      try {
+        const text = await navigator.clipboard.readText();
+        setClipboardStatus('ready');
+        if (text && looksLikeTransactionReceipt(text)) {
+          processCaptureRef.current(text, 'clipboard');
+        }
+      } catch {
+        // Silent fallback: browsers may block unprompted background clipboard read
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [autoCaptureSettings.autoClipboardEnabled]);
+
+  // Real Webhook Poller (/api/auto-capture/pending)
+  useEffect(() => {
+    if (!autoCaptureSettings.webhookEnabled) return;
+    const storeKey = normalizeWebhookStoreKey(autoCaptureSettings.webhookStoreKey || syncCode);
+    let cancelled = false;
+
+    const pollPending = async () => {
+      try {
+        const res = await fetch(`/api/auto-capture/pending?code=${encodeURIComponent(storeKey)}`);
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        if (!json.success || !Array.isArray(json.items) || json.items.length === 0) return;
+
+        for (const srvItem of json.items) {
+          if (cancelled) break;
+          processCaptureRef.current(srvItem.rawText, 'webhook', {
+            preferredDomain: srvItem.domainHint,
+            serverId: srvItem.id,
+            receivedAt: srvItem.receivedAt,
+          });
+        }
+      } catch {
+        // Offline / server unavailable - skip silently
+      }
+    };
+
+    pollPending();
+    const timer = setInterval(pollPending, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [
+    autoCaptureSettings.webhookEnabled,
+    autoCaptureSettings.webhookStoreKey,
+    syncCode,
+  ]);
+
   return (
     <POSContext.Provider
       value={{
@@ -3916,6 +4595,25 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pullDataFromCloud,
         disconnectSync,
         toggleAutoSync,
+        revertAtmMiniTransaction,
+        revertPPOBTransaction,
+        autoCaptureSettings,
+        updateAutoCaptureSettings,
+        pendingAutoCaptures,
+        autoRecordedLogs,
+        latestAutoCaptureToast,
+        dismissLatestAutoCaptureToast,
+        isAutoCaptureModalOpen,
+        setIsAutoCaptureModalOpen,
+        clipboardStatus,
+        checkClipboardNow,
+        processIncomingCaptureText,
+        commitPendingAutoCapture,
+        dismissPendingAutoCapture,
+        undoAutoRecordedLog,
+        clearAutoRecordedLogs,
+        recordRushLogEntry,
+        testWebhookAutoCapture,
       }}
     >
       {children}
